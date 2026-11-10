@@ -8,14 +8,12 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "my_verify_token";
 
-// সঠিক পেজ ম্যাপিং
 const PAGES = {
   "102803132669088": "Swapons World",
-  "1133872699971391": "Swapons World", // ব্যাকআপ আইডি
+  "1133872699971391": "Swapons World",
   "250386238168336": "Stone Rose BD"
 };
 
-// মডারেটরদের স্বাগতম মেসেজ ও নাম কনফিগারেশন
 const MODERATOR_RULES = [
   { name: 'ফাহিম', keywords: ['আমি ফাহিম', 'ফাহিম'] },
   { name: 'আজাদ', keywords: ['আমি আজাদ', 'আজাদ'] },
@@ -36,7 +34,6 @@ const MODERATOR_RULES = [
   { name: 'আরিফ', keywords: ['আমি আরিফ', 'আরিফ'] }
 ];
 
-// টেক্সট থেকে মডারেটর খোঁজার ফাংশন
 function detectModerator(text) {
   if (!text) return null;
   const clean = text.toLowerCase();
@@ -52,14 +49,11 @@ function detectModerator(text) {
 
 app.use(express.json());
 
-// ডাটাবেস পাথ নির্ধারণ
 const dbDir = process.env.DATA_DIR || (fs.existsSync("/data") ? "/data" : ".");
 const dbPath = path.join(dbDir, "messenger.db");
-
 const db = new Database(dbPath);
 db.pragma("journal_mode = WAL");
 
-// টেবিল ইনিশিয়ালাইজেশন
 db.exec(`
   CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -92,108 +86,215 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(page_id, sender_id);
 `);
 
-// মাইগ্রেশন হ্যান্ডলিং
 try { db.exec(`ALTER TABLE messages ADD COLUMN read_time INTEGER;`); } catch (e) {}
 try { db.exec(`ALTER TABLE messages ADD COLUMN phone_number TEXT;`); } catch (e) {}
 try { db.exec(`ALTER TABLE messages ADD COLUMN assigned_moderator TEXT;`); } catch (e) {}
 try { db.exec(`ALTER TABLE replies ADD COLUMN moderator TEXT;`); } catch (e) {}
 try { db.exec(`ALTER TABLE replies ADD COLUMN is_order_confirm INTEGER DEFAULT 0;`); } catch (e) {}
 
-// ফোন নম্বর বের করার ফাংশন
 function extractPhoneNumber(text) {
   if (!text) return null;
   const match = text.match(/(?:\+?88)?01[3-9]\d{8}\b/);
   return match ? match[0] : null;
 }
 
-// প্রিমিয়াম ডার্ক নিয়ন ড্যাশবোর্ড (HTML + CSS + JS)
-const DASHBOARD_HTML = `
-<!DOCTYPE html>
-<html lang="bn">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ডেইলি মেসেঞ্জার ও সেলস ড্যাশবোর্ড</title>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Hind+Siliguri:wght@400;600;700&display=swap" rel="stylesheet">
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: 'Hind Siliguri', 'Plus Jakarta Sans', sans-serif;
-      background-color: #0b0f17;
-      background-image: 
-        radial-gradient(at 10% 10%, rgba(16, 185, 129, 0.05) 0px, transparent 50%),
-        radial-gradient(at 90% 90%, rgba(59, 130, 246, 0.05) 0px, transparent 50%),
-        linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
-      background-size: 100% 100%, 100% 100%, 30px 30px, 30px 30px;
-      color: #f1f5f9;
-      min-height: 100vh;
-      padding: 35px 20px;
+// index.html ফাইল সার্ভ করা
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "index.html"));
+});
+
+// মেটা ভেরিফিকেশন
+app.get("/webhook", (req, res) => {
+  const mode = req.query["hub.mode"];
+  const token = req.query["hub.verify_token"];
+  const challenge = req.query["hub.challenge"];
+
+  if (mode && token === VERIFY_TOKEN) {
+    console.log("[Meta] Webhook Verified successfully!");
+    res.status(200).send(challenge);
+  } else {
+    res.sendStatus(403);
+  }
+});
+
+// মেটা ইভেন্ট হ্যান্ডলার
+app.post("/webhook", (req, res) => {
+  const body = req.body;
+
+  if (body.object === "page") {
+    body.entry.forEach((entry) => {
+      const pageId = entry.id;
+
+      if (entry.messaging) {
+        entry.messaging.forEach((event) => {
+          // ১. কাস্টমার মেসেজ
+          if (event.message && !event.message.is_echo) {
+            const rawText = event.message.text || "";
+            const phone = extractPhoneNumber(rawText);
+
+            const stmt = db.prepare(`
+              INSERT OR IGNORE INTO messages 
+              (page_id, sender_id, message_id, message_text, message_time, phone_number, status)
+              VALUES (?, ?, ?, ?, ?, ?, 'unread')
+            `);
+            stmt.run(
+              pageId,
+              event.sender.id,
+              event.message.mid,
+              rawText,
+              event.timestamp,
+              phone
+            );
+          }
+
+          // ২. সিন ইভেন্ট
+          if (event.read) {
+            const customerId = event.sender.id;
+            const watermark = event.read.watermark;
+            const readTime = Date.now();
+
+            db.prepare(`
+              UPDATE messages 
+              SET status = 'read', read_time = ? 
+              WHERE page_id = ? AND sender_id = ? AND message_time <= ? AND status = 'unread'
+            `).run(readTime, pageId, customerId, watermark);
+          }
+
+          // ৩. পেজ রিপ্লাই
+          if (event.message && event.message.is_echo) {
+            const customerId = event.recipient.id;
+            const replyText = event.message.text || "";
+            const replyTime = event.timestamp || Date.now();
+
+            const isConfirm = replyText.toLowerCase().includes("your order confirm") ? 1 : 0;
+            const detectedMod = detectModerator(replyText);
+
+            db.prepare(`
+              INSERT INTO replies 
+              (page_id, sender_id, message_id, reply_text, reply_time, moderator, is_order_confirm)
+              VALUES (?, ?, ?, ?, ?, ?, ?)
+            `).run(
+              pageId,
+              customerId,
+              event.message.mid,
+              replyText,
+              replyTime,
+              detectedMod,
+              isConfirm
+            );
+
+            // প্রথম স্বাগতম মেসেজ লকিং রুল
+            if (detectedMod) {
+              db.prepare(`
+                UPDATE messages 
+                SET assigned_moderator = ? 
+                WHERE page_id = ? 
+                  AND sender_id = ? 
+                  AND assigned_moderator IS NULL
+                  AND date(created_at, 'localtime') = date('now', 'localtime')
+              `).run(detectedMod, pageId, customerId);
+            }
+
+            db.prepare(`
+              UPDATE messages 
+              SET status = 'replied' 
+              WHERE page_id = ? AND sender_id = ? AND status != 'replied'
+            `).run(pageId, customerId);
+          }
+        });
+      }
+    });
+
+    return res.status(200).send("EVENT_RECEIVED");
+  }
+
+  res.sendStatus(404);
+});
+
+// ড্যাশবোর্ড ডেটা API
+app.get("/api/daily-report", (req, res) => {
+  try {
+    const targetDate = req.query.date || new Date().toISOString().slice(0, 10);
+    const targetPage = req.query.page_id;
+
+    let pageFilter = "";
+    let params = [targetDate];
+
+    if (targetPage && targetPage !== "all") {
+      if (targetPage === "102803132669088" || targetPage === "1133872699971391") {
+        pageFilter = " AND page_id IN ('102803132669088', '1133872699971391')";
+      } else {
+        pageFilter = " AND page_id = ?";
+        params.push(targetPage);
+      }
     }
-    .container { max-width: 1100px; margin: 0 auto; }
-    .header-card {
-      background: #111827;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      padding: 20px 28px;
-      border-radius: 20px;
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: space-between;
-      align-items: center;
-      gap: 16px;
-      margin-bottom: 25px;
-      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
-    }
-    .title-area { display: flex; align-items: center; gap: 12px; }
-    .header-card h2 { font-size: 22px; font-weight: 700; color: #f8fafc; }
-    .badge-live {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      background: rgba(16, 185, 129, 0.15);
-      border: 1px solid rgba(16, 185, 129, 0.3);
-      color: #34d399;
-      font-size: 12px;
-      font-weight: 600;
-      padding: 3px 10px;
-      border-radius: 9999px;
-    }
-    .pulse-dot {
-      width: 7px; height: 7px;
-      background-color: #10b981;
-      border-radius: 50%;
-      box-shadow: 0 0 8px #10b981;
-      animation: pulse 1.5s infinite;
-    }
-    @keyframes pulse { 0% { opacity: 0.8; } 50% { opacity: 1; transform: scale(1.2); } 100% { opacity: 0.8; } }
-    .controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-    .controls select, .controls input {
-      padding: 9px 14px;
-      background: #1f2937;
-      border: 1px solid #374151;
-      border-radius: 10px;
-      font-size: 14px;
-      font-weight: 500;
-      color: #e5e7eb;
-      outline: none;
-    }
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-      gap: 20px;
-      margin-bottom: 30px;
-    }
-    .card {
-      background: #111827;
-      border-radius: 20px;
-      padding: 24px;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      min-height: 165px;
-      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      transition: transform 0.2s ease;
-    }
-    .card:hover { transform: translateY(-3px); }
-    .card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
+
+    const totalReceived = db.prepare(`
+      SELECT COUNT(*) as count FROM messages 
+      WHERE date(created_at, 'localtime') = ? ${pageFilter}
+    `).get(...params).count;
+
+    const totalReplied = db.prepare(`
+      SELECT COUNT(*) as count FROM messages 
+      WHERE status = 'replied' AND date(created_at, 'localtime') = ? ${pageFilter}
+    `).get(...params).count;
+
+    const unreadPending = db.prepare(`
+      SELECT COUNT(*) as count FROM messages 
+      WHERE status = 'unread' AND date(created_at, 'localtime') = ? ${pageFilter}
+    `).get(...params).count;
+
+    // ৪ নম্বর: সিন হয়েছে কিন্তু কোনো রিপ্লাই নেই
+    const readNoReply = db.prepare(`
+      SELECT COUNT(*) as count FROM messages 
+      WHERE status = 'read' 
+        AND date(created_at, 'localtime') = ? 
+        ${pageFilter}
+    `).get(...params).count;
+
+    const orderConfirms = db.prepare(`
+      SELECT COUNT(*) as count FROM replies 
+      WHERE is_order_confirm = 1 AND date(created_at, 'localtime') = ? ${pageFilter}
+    `).get(...params).count;
+
+    const phoneCount = db.prepare(`
+      SELECT COUNT(DISTINCT phone_number) as count FROM messages 
+      WHERE phone_number IS NOT NULL AND phone_number != '' AND date(created_at, 'localtime') = ? ${pageFilter}
+    `).get(...params).count;
+
+    const moderatorStats = db.prepare(`
+      SELECT assigned_moderator AS name, COUNT(DISTINCT sender_id) AS total_conversations
+      FROM messages
+      WHERE assigned_moderator IS NOT NULL 
+        AND date(created_at, 'localtime') = ?
+        ${pageFilter}
+      GROUP BY assigned_moderator
+      ORDER BY total_conversations DESC
+    `).all(...params);
+
+    res.json({
+      date: targetDate,
+      page_id: targetPage || "all",
+      page_name: targetPage && PAGES[targetPage] ? PAGES[targetPage] : "All Pages",
+      stats: {
+        total_received: totalReceived,
+        total_replied: totalReplied,
+        unread_pending: unreadPending,
+        read_without_reply: readNoReply,
+        total_confirmed_orders: orderConfirms,
+        total_phone_numbers: phoneCount
+      },
+      moderators: moderatorStats
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/privacy-policy", (req, res) => {
+  res.send(`<h1>Privacy Policy</h1><p>Analytics application for connected Facebook pages.</p>`);
+});
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
