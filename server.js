@@ -8,6 +8,12 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "my_verify_token";
 
+// পেজ ম্যাপিং
+const PAGES = {
+  "1133872699971391": "Swapon's World",
+  "250386238168336": "Stone Rose BD"
+};
+
 app.use(express.json());
 
 // ক্লাউডে স্থায়ী ডিস্ক /data থাকলে সেখানে সেভ হবে, অন্যথায় লোকাল ফোল্ডারে
@@ -17,7 +23,7 @@ const dbPath = path.join(dbDir, "messenger.db");
 const db = new Database(dbPath);
 db.pragma("journal_mode = WAL");
 
-// টেবিল তৈরি
+// টেবিল তৈরি ও কলাম মাইগ্রেশন
 db.exec(`
   CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -26,7 +32,9 @@ db.exec(`
     message_id TEXT UNIQUE,
     message_text TEXT,
     message_time INTEGER,
+    phone_number TEXT,
     status TEXT DEFAULT 'unread',
+    read_time INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -37,6 +45,7 @@ db.exec(`
     message_id TEXT,
     reply_text TEXT,
     reply_time INTEGER,
+    is_order_confirm INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -45,14 +54,26 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(page_id, sender_id);
 `);
 
-// প্রিমিয়াম ও মডার্ন ড্যাশবোর্ডের মূল HTML
+// পূর্বের ডাটাবেস থাকলে কলাম অ্যাড করার সেফটি চেক
+try { db.exec(`ALTER TABLE messages ADD COLUMN read_time INTEGER;`); } catch (e) {}
+try { db.exec(`ALTER TABLE messages ADD COLUMN phone_number TEXT;`); } catch (e) {}
+try { db.exec(`ALTER TABLE replies ADD COLUMN is_order_confirm INTEGER DEFAULT 0;`); } catch (e) {}
+
+// ফোন নাম্বার ফিল্টার করার হেল্পার ফাংশন
+function extractPhoneNumber(text) {
+  if (!text) return null;
+  const match = text.match(/(?:\+?88)?01[3-9]\d{8}\b/);
+  return match ? match[0] : null;
+}
+
+// প্রিমিয়াম ও মডার্ন ড্যাশবোর্ডের মূল HTML
 const DASHBOARD_HTML = `
 <!DOCTYPE html>
 <html lang="bn">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ডেইলি মেসেঞ্জার রিপোর্ট - স্বপন'স ওয়ার্ল্ড</title>
+  <title>ডেইলি মেসেঞ্জার ও অর্ডার রিপোর্ট</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -63,7 +84,7 @@ const DASHBOARD_HTML = `
       padding: 40px 20px;
     }
     .container {
-      max-width: 960px;
+      max-width: 1050px;
       margin: 0 auto;
     }
     .header-card {
@@ -112,30 +133,36 @@ const DASHBOARD_HTML = `
       font-weight: 700;
       color: #0f172a;
     }
-    .date-wrapper input {
-      padding: 10px 16px;
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .controls select, .controls input {
+      padding: 10px 14px;
       border: 1.5px solid #cbd5e1;
       border-radius: 10px;
       font-size: 14px;
       font-weight: 500;
       color: #334155;
       outline: none;
-      transition: border-color 0.2s, box-shadow 0.2s;
       background: #f8fafc;
+      transition: border-color 0.2s, box-shadow 0.2s;
     }
-    .date-wrapper input:focus {
+    .controls select:focus, .controls input:focus {
       border-color: #3b82f6;
       box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
       background: #fff;
     }
     .grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
       gap: 20px;
     }
     .card {
       background: #ffffff;
-      padding: 28px 24px;
+      padding: 26px 22px;
       border-radius: 16px;
       box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.03);
       border: 1px solid #f1f5f9;
@@ -159,11 +186,11 @@ const DASHBOARD_HTML = `
       font-size: 14px;
       font-weight: 600;
       color: #64748b;
-      margin-bottom: 16px;
+      margin-bottom: 14px;
       line-height: 1.4;
     }
     .card .count {
-      font-size: 42px;
+      font-size: 38px;
       font-weight: 800;
       letter-spacing: -1px;
     }
@@ -175,17 +202,26 @@ const DASHBOARD_HTML = `
     .red .count { color: #dc2626; }
     .orange::before { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
     .orange .count { color: #d97706; }
+    .purple::before { background: linear-gradient(90deg, #8b5cf6, #a78bfa); }
+    .purple .count { color: #7c3aed; }
+    .teal::before { background: linear-gradient(90deg, #0d9488, #2dd4bf); }
+    .teal .count { color: #0f766e; }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="header-card">
       <div class="title-area">
-        <h2>📊 স্বপন'স ওয়ার্ল্ড পেজ রিপোর্ট</h2>
+        <h2 id="dashboardTitle">📊 পেজ রিপোর্ট</h2>
         <span class="badge-live"><span class="pulse-dot"></span> লাইভ</span>
       </div>
-      <div class="date-wrapper">
-        <input type="date" id="datePicker" onchange="fetchReport(this.value)">
+      <div class="controls">
+        <select id="pagePicker" onchange="fetchReport()">
+          <option value="all">সব পেজ (একসাথে)</option>
+          <option value="1133872699971391">Swapon's World</option>
+          <option value="250386238168336">Stone Rose BD</option>
+        </select>
+        <input type="date" id="datePicker" onchange="fetchReport()">
       </div>
     </div>
     
@@ -203,8 +239,16 @@ const DASHBOARD_HTML = `
         <div class="count" id="unread_pending">0</div>
       </div>
       <div class="card orange">
-        <h3>৪. সিন হয়েছে কিন্তু কোনো রিপ্লাই নেই</h3>
+        <h3>৪. সিন হয়েছে কিন্তু ২ মিনিটে রিপ্লাই নেই</h3>
         <div class="count" id="read_without_reply">0</div>
+      </div>
+      <div class="card purple">
+        <h3>৫. কনফার্ম অর্ডার (Your order confirm)</h3>
+        <div class="count" id="total_confirmed_orders">0</div>
+      </div>
+      <div class="card teal">
+        <h3>৬. ফোন নম্বর এসেছে (ইউনিক কাস্টমার)</h3>
+        <div class="count" id="total_phone_numbers">0</div>
       </div>
     </div>
   </div>
@@ -213,20 +257,35 @@ const DASHBOARD_HTML = `
     const today = new Date().toISOString().slice(0, 10);
     document.getElementById('datePicker').value = today;
 
-    async function fetchReport(date) {
+    async function fetchReport() {
       try {
-        const res = await fetch('/api/daily-report?date=' + date);
+        const date = document.getElementById('datePicker').value;
+        const pagePicker = document.getElementById('pagePicker');
+        const pageId = pagePicker.value;
+        const selectedText = pagePicker.options[pagePicker.selectedIndex].text;
+        
+        document.getElementById('dashboardTitle').innerText = '📊 ' + selectedText + ' রিপোর্ট';
+
+        let url = '/api/daily-report?date=' + date;
+        if (pageId && pageId !== 'all') {
+          url += '&page_id=' + pageId;
+        }
+
+        const res = await fetch(url);
         const data = await res.json();
         document.getElementById('total_received').innerText = data.stats.total_received;
         document.getElementById('total_replied').innerText = data.stats.total_replied;
         document.getElementById('unread_pending').innerText = data.stats.unread_pending;
         document.getElementById('read_without_reply').innerText = data.stats.read_without_reply;
+        document.getElementById('total_confirmed_orders').innerText = data.stats.total_confirmed_orders;
+        document.getElementById('total_phone_numbers').innerText = data.stats.total_phone_numbers;
       } catch (err) {
         console.error('Failed to load report:', err);
       }
     }
-    fetchReport(today);
-    setInterval(() => fetchReport(document.getElementById('datePicker').value), 5000);
+
+    fetchReport();
+    setInterval(fetchReport, 5000);
   </script>
 </body>
 </html>
@@ -263,46 +322,56 @@ app.post("/webhook", (req, res) => {
         entry.messaging.forEach((event) => {
           // কাস্টমার মেসেজ
           if (event.message && !event.message.is_echo) {
+            const rawText = event.message.text || "";
+            const phone = extractPhoneNumber(rawText);
+
             const stmt = db.prepare(`
               INSERT OR IGNORE INTO messages 
-              (page_id, sender_id, message_id, message_text, message_time, status)
-              VALUES (?, ?, ?, ?, ?, 'unread')
+              (page_id, sender_id, message_id, message_text, message_time, phone_number, status)
+              VALUES (?, ?, ?, ?, ?, ?, 'unread')
             `);
             stmt.run(
               pageId,
               event.sender.id,
               event.message.mid,
-              event.message.text || "",
-              event.timestamp
+              rawText,
+              event.timestamp,
+              phone
             );
           }
 
-          // সিন ইভেন্ট
+          // সিন ইভেন্ট (সিন হওয়ার সময় মিলিসেকেন্ড সেভ রাখা)
           if (event.read) {
             const customerId = event.sender.id;
             const watermark = event.read.watermark;
+            const readTime = Date.now();
 
             db.prepare(`
               UPDATE messages 
-              SET status = 'read' 
+              SET status = 'read', read_time = ? 
               WHERE page_id = ? AND sender_id = ? AND message_time <= ? AND status = 'unread'
-            `).run(pageId, customerId, watermark);
+            `).run(readTime, pageId, customerId, watermark);
           }
 
           // পেজ রিপ্লাই
           if (event.message && event.message.is_echo) {
             const customerId = event.recipient.id;
+            const replyText = event.message.text || "";
+            
+            // "your order confirm" চেক
+            const isConfirm = replyText.toLowerCase().includes("your order confirm") ? 1 : 0;
 
             db.prepare(`
               INSERT INTO replies 
-              (page_id, sender_id, message_id, reply_text, reply_time)
-              VALUES (?, ?, ?, ?, ?)
+              (page_id, sender_id, message_id, reply_text, reply_time, is_order_confirm)
+              VALUES (?, ?, ?, ?, ?, ?)
             `).run(
               pageId,
               customerId,
               event.message.mid,
-              event.message.text || "",
-              event.timestamp
+              replyText,
+              event.timestamp,
+              isConfirm
             );
 
             db.prepare(`
@@ -321,7 +390,7 @@ app.post("/webhook", (req, res) => {
   res.sendStatus(404);
 });
 
-// মেটা অ্যাপ ভেরিফিকেশন ও লাইভ করার জন্য প্রাইভেসি পলিসি রাউট
+// প্রাইভেসি পলিসি রাউট
 app.get("/privacy-policy", (req, res) => {
   res.send(`
     <!DOCTYPE html>
@@ -329,69 +398,104 @@ app.get("/privacy-policy", (req, res) => {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Privacy Policy - Swapon's World</title>
+      <title>Privacy Policy</title>
       <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; line-height: 1.6; padding: 40px 20px; max-width: 750px; margin: auto; color: #1e293b; }
         h1 { font-size: 28px; margin-bottom: 8px; color: #0f172a; border-bottom: 2px solid #e2e8f0; padding-bottom: 12px; }
-        h2 { font-size: 20px; margin-top: 24px; margin-bottom: 8px; color: #1e293b; }
         p { margin-bottom: 16px; color: #475569; }
       </style>
     </head>
     <body>
       <h1>Privacy Policy</h1>
       <p>Last updated: November 2026</p>
-      
-      <h2>1. Information We Collect</h2>
-      <p>Our Messenger bot application collects incoming message timestamps, basic sender IDs, and conversation volume sent to our Facebook Page to track customer service metrics and generate daily analytics reports.</p>
-      
-      <h2>2. Use of Information</h2>
-      <p>The collected data is used exclusively to track customer message volumes, calculate reply counts, and improve communication efficiency. We do not sell, rent, or share personal user data with third-party organizations.</p>
-      
-      <h2>3. Data Storage & Security</h2>
-      <p>All recorded operational metrics are stored securely within our private server database and are accessible only by authorized administrators.</p>
-      
-      <h2>4. User Rights & Data Deletion</h2>
-      <p>Users may request the deletion of their message logs or data records at any time by sending a message directly to our Facebook Page administrator.</p>
-      
-      <h2>5. Contact Us</h2>
-      <p>If you have questions or concerns regarding this policy, please reach out via our official Facebook Page.</p>
+      <p>Our Messenger bot application collects incoming message timestamps, customer volumes, and order status sent to our Facebook Pages to generate daily performance analytics.</p>
     </body>
     </html>
   `);
+});
+
+// সক্রিয় সব পেজের আইডি পাওয়ার API
+app.get("/api/pages", (req, res) => {
+  try {
+    const pages = db.prepare(`SELECT DISTINCT page_id FROM messages WHERE page_id IS NOT NULL AND page_id != ''`).all();
+    res.json(pages);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ড্যাশবোর্ড ডেটা API
 app.get("/api/daily-report", (req, res) => {
   try {
     const targetDate = req.query.date || new Date().toISOString().slice(0, 10);
+    const targetPage = req.query.page_id;
 
+    let pageFilter = "";
+    let params = [targetDate];
+
+    if (targetPage && targetPage !== "all") {
+      pageFilter = " AND page_id = ?";
+      params = [targetDate, targetPage];
+    }
+
+    // ১. মোট কাস্টমার মেসেজ
     const totalReceived = db.prepare(`
       SELECT COUNT(*) as count FROM messages 
-      WHERE date(created_at, 'localtime') = ?
-    `).get(targetDate).count;
+      WHERE date(created_at, 'localtime') = ? ${pageFilter}
+    `).get(...params).count;
 
+    // ২. উত্তর দেওয়া সম্পন্ন
     const totalReplied = db.prepare(`
       SELECT COUNT(*) as count FROM messages 
-      WHERE status = 'replied' AND date(created_at, 'localtime') = ?
-    `).get(targetDate).count;
+      WHERE status = 'replied' AND date(created_at, 'localtime') = ? ${pageFilter}
+    `).get(...params).count;
 
+    // ৩. আনরিড পেন্ডিং
     const unreadPending = db.prepare(`
       SELECT COUNT(*) as count FROM messages 
-      WHERE status = 'unread' AND date(created_at, 'localtime') = ?
-    `).get(targetDate).count;
+      WHERE status = 'unread' AND date(created_at, 'localtime') = ? ${pageFilter}
+    `).get(...params).count;
+
+    // ৪. সিন হয়েছে কিন্তু ২ মিনিট পার হয়ে গেলেও রিপ্লাই নেই (120,000 ms)
+    const twoMinutesAgo = Date.now() - (2 * 60 * 1000);
+    let readParams = [targetDate, twoMinutesAgo];
+    let readPageFilter = "";
+    if (targetPage && targetPage !== "all") {
+      readPageFilter = " AND page_id = ?";
+      readParams = [targetDate, twoMinutesAgo, targetPage];
+    }
 
     const readNoReply = db.prepare(`
       SELECT COUNT(*) as count FROM messages 
-      WHERE status = 'read' AND date(created_at, 'localtime') = ?
-    `).get(targetDate).count;
+      WHERE status = 'read' 
+      AND date(created_at, 'localtime') = ? 
+      AND (read_time IS NULL OR read_time <= ?)
+      ${readPageFilter}
+    `).get(...readParams).count;
+
+    // ৫. কনফার্ম অর্ডার (replies টেবিলে 'your order confirm' টেক্সট পাঠানো হয়েছে)
+    const orderConfirms = db.prepare(`
+      SELECT COUNT(*) as count FROM replies 
+      WHERE is_order_confirm = 1 AND date(created_at, 'localtime') = ? ${pageFilter}
+    `).get(...params).count;
+
+    // ৬. ফোন নাম্বার এসেছে (ইউনিক নম্বর)
+    const phoneCount = db.prepare(`
+      SELECT COUNT(DISTINCT phone_number) as count FROM messages 
+      WHERE phone_number IS NOT NULL AND phone_number != '' AND date(created_at, 'localtime') = ? ${pageFilter}
+    `).get(...params).count;
 
     res.json({
       date: targetDate,
+      page_id: targetPage || "all",
+      page_name: targetPage && PAGES[targetPage] ? PAGES[targetPage] : "All Pages",
       stats: {
         total_received: totalReceived,
         total_replied: totalReplied,
         unread_pending: unreadPending,
-        read_without_reply: readNoReply
+        read_without_reply: readNoReply,
+        total_confirmed_orders: orderConfirms,
+        total_phone_numbers: phoneCount
       }
     });
   } catch (err) {
