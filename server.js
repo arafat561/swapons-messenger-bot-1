@@ -344,15 +344,15 @@ const DASHBOARD_HTML = `
         </div>
       </div>
 
-      <!-- ৪. সিন হয়েছে কিন্তু ২ মিনিটে রিপ্লাই নেই -->
+      <!-- ৪. সিন হয়েছে কিন্তু রিপ্লাই দেওয়া হয়নি (আপডেটেড টাইটেল ও ব্যাজ) -->
       <div class="card card-orange">
         <div class="card-top">
-          <span class="card-title">৪. সিন হয়েছে কিন্তু ২ মিনিটে রিপ্লাই নেই ⚠️</span>
-          <div class="card-icon">⚡</div>
+          <span class="card-title">৪. সিন হয়েছে কিন্তু রিপ্লাই দেওয়া হয়নি ⚠️</span>
+          <div class="card-icon">👁️</div>
         </div>
         <div class="card-mid">
           <div class="count" id="read_without_reply">0</div>
-          <span class="badge-pill">লেট রিপ্লাই</span>
+          <span class="badge-pill">পেন্ডিং সিন</span>
         </div>
         <div class="card-bottom">
           <svg class="sparkline-svg" viewBox="0 0 100 25" preserveAspectRatio="none">
@@ -398,7 +398,7 @@ const DASHBOARD_HTML = `
 
     <!-- মডারেটরদের পারফরম্যান্স টেবিল -->
     <div class="mod-section">
-      <h3>👥 আজকের মডারেটর পারফরম্যান্স রিপোর্ট (প্রথম রেসপন্স অনুযায়ী)</h3>
+      <h3>👥 আজকের মডারেটর পারফরম্যান্স রিপোর্ট (প্রথম স্বাগতম রিপ্লাই অনুযায়ী)</h3>
       <table class="mod-table">
         <thead>
           <tr>
@@ -457,13 +457,13 @@ const DASHBOARD_HTML = `
         // মডারেটর টেবিল আপডেট
         const modBody = document.getElementById('moderatorTableBody');
         if (data.moderators && data.moderators.length > 0) {
-          modBody.innerHTML = data.moderators.map(m => \`
+          modBody.innerHTML = data.moderators.map(m => `
             <tr>
               <td style="font-weight:600; color:#f8fafc;">\${m.name}</td>
               <td><span class="mod-badge">\${m.total_conversations} জন কাস্টমার</span></td>
               <td><span style="color:#10b981;">✓ একটিভ</span></td>
             </tr>
-          \`).join('');
+          `).join('');
         } else {
           modBody.innerHTML = '<tr><td colspan="3" style="text-align:center; color:#64748b;">আজকে এখনো কোনো মডারেটরের স্বাগতম মেসেজ রেকর্ড হয়নি</td></tr>';
         }
@@ -535,7 +535,7 @@ app.post("/webhook", (req, res) => {
             const watermark = event.read.watermark;
             const readTime = Date.now();
 
-            // শুধুমাত্র unread মেসেজগুলোকেই read করা হবে
+            // কাস্টমারের মেসেজ সিন হলে status = 'read' হবে (যদি আগে রিপ্লাই না দেওয়া হয়ে থাকে)
             db.prepare(`
               UPDATE messages 
               SET status = 'read', read_time = ? 
@@ -555,7 +555,7 @@ app.post("/webhook", (req, res) => {
             // মডারেটরের পরিচয় শনাক্তকরণ
             const detectedMod = detectModerator(replyText);
 
-            // রিপ্লাই টেবিলে লগ
+            // রিপ্লাই টেবিলে রেকর্ড সেভ
             db.prepare(`
               INSERT INTO replies 
               (page_id, sender_id, message_id, reply_text, reply_time, moderator, is_order_confirm)
@@ -570,16 +570,21 @@ app.post("/webhook", (req, res) => {
               isConfirm
             );
 
-            // কনভার্সেশন অ্যাসাইনমেন্ট: এই কাস্টমারকে আগে কেউ অ্যাসাইন না করে থাকলে, প্রথম রিপ্লাই দেওয়া মডারেটরই অ্যাসাইন হবে
+            // প্রথম স্বাগতম রিপ্লাই লকিং রুল (First-Response Assignment Lock):
+            // যদি এই কাস্টমারের আজকের কনভার্সেশনে আগে কোনো মডারেটরের নাম অ্যাসাইন না থাকে,
+            // তবেই প্রথম স্বাগতম মেসেজ দেওয়া মডারেটরের নাম সেভ হবে। পরবর্তীতে অন্য কেউ রিপ্লাই দিলেও তা পরিবর্তন হবে না।
             if (detectedMod) {
               db.prepare(`
                 UPDATE messages 
                 SET assigned_moderator = ? 
-                WHERE page_id = ? AND sender_id = ? AND assigned_moderator IS NULL
+                WHERE page_id = ? 
+                  AND sender_id = ? 
+                  AND assigned_moderator IS NULL
+                  AND date(created_at, 'localtime') = date('now', 'localtime')
               `).run(detectedMod, pageId, customerId);
             }
 
-            // মেসেজ স্ট্যাটাস আপডেট: রিপ্লাই দিয়ে ফেললে status = 'replied' হবে
+            // মেসেজ রিপ্লাই হয়ে গেলে status = 'replied' করে দেওয়া
             db.prepare(`
               UPDATE messages 
               SET status = 'replied' 
@@ -626,27 +631,19 @@ app.get("/api/daily-report", (req, res) => {
       WHERE status = 'replied' AND date(created_at, 'localtime') = ? ${pageFilter}
     `).get(...params).count;
 
-    // ৩. আনরিড পেন্ডিং (এখনো সিনও করেনি, রিপ্লাইও দেয়নি)
+    // ৩. আনরিড পেন্ডিং (সিন বা রিপ্লাই কোনোটিই করা হয়নি)
     const unreadPending = db.prepare(`
       SELECT COUNT(*) as count FROM messages 
       WHERE status = 'unread' AND date(created_at, 'localtime') = ? ${pageFilter}
     `).get(...params).count;
 
-    // ৪. সিন হয়েছে কিন্তু ২ মিনিটে রিপ্লাই নেই (সঠিক ও নির্ভুল হিসাব)
-    // শর্ত: status = 'read' (সিন হয়েছে কিন্তু কোনো রিপ্লাই দেওয়া হয়নি) এবং সিন করার সময় থেকে ২ মিনিট পার হয়ে গেছে
-    const twoMinutesAgo = Date.now() - (2 * 60 * 1000);
-    let readParams = [targetDate, twoMinutesAgo];
-    if (targetPage && targetPage !== "all" && targetPage !== "102803132669088" && targetPage !== "1133872699971391") {
-      readParams.push(targetPage);
-    }
-
+    // ৪. সিন হয়েছে কিন্তু রিপ্লাই দেওয়া হয়নি (দিনের হিসাব দিনে, কোনো সময়সীমা ছাড়া)
     const readNoReply = db.prepare(`
       SELECT COUNT(*) as count FROM messages 
       WHERE status = 'read' 
         AND date(created_at, 'localtime') = ? 
-        AND read_time <= ?
         ${pageFilter}
-    `).get(...readParams).count;
+    `).get(...params).count;
 
     // ৫. কনফার্ম অর্ডার
     const orderConfirms = db.prepare(`
@@ -660,7 +657,7 @@ app.get("/api/daily-report", (req, res) => {
       WHERE phone_number IS NOT NULL AND phone_number != '' AND date(created_at, 'localtime') = ? ${pageFilter}
     `).get(...params).count;
 
-    // ৭. মডারেটরদের তালিকা ও কাউন্ট (আজকের দিনে কে কতজন কাস্টমার হ্যান্ডেল করেছে)
+    // ৭. মডারেটরদের তালিকা ও কাউন্ট (প্রথম স্বাগতম মেসেজ অনুযায়ী ইউনিক কাস্টমার গণনা)
     const moderatorStats = db.prepare(`
       SELECT assigned_moderator AS name, COUNT(DISTINCT sender_id) AS total_conversations
       FROM messages
