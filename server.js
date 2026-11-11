@@ -2,7 +2,7 @@ const express = require("express");
 const Database = require("better-sqlite3");
 const fs = require("fs");
 const path = require("path");
-const https = require("https"); // নোড.জেএস বিল্ট-ইন মডিউল
+const https = require("https");
 require("dotenv").config();
 
 const app = express();
@@ -13,17 +13,17 @@ const DASHBOARD_USER = process.env.DASHBOARD_USER || "admin";
 const DASHBOARD_PASS = process.env.DASHBOARD_PASS || "swapons123";
 const META_ACCESS_TOKEN = process.env.META_ACCESS_TOKEN || "";
 
-// ৯টি অ্যাড অ্যাকাউন্টের সম্পূর্ণ সঠিক নাম ও আইডি ম্যাপিং
+// ৯টি অ্যাড অ্যাকাউন্টের শতভাগ নির্ভুল ম্যাপিং
 const AD_ACCOUNTS = [
-  { id: "act_722336793300354", name: "ST-07 (Stone Rose)" },
-  { id: "act_770104971706610", name: "ST-09 (Stone Rose)" },
-  { id: "act_3681717408727534", name: "ST-10 (Stone Rose)" },
-  { id: "act_412119051932043", name: "ST-18 (Stone Rose)" },
-  { id: "act_2788254531383177", name: "SW-BM" },
-  { id: "act_414594386485433", name: "Swapons World-2" },
-  { id: "act_846240430355170", name: "Swapons World-3" },
   { id: "act_705111815068714", name: "ZXC19 (Stone rose)" },
-  { id: "act_7707351539304206", name: "ZXC20 (Stone Rose)" }
+  { id: "act_722336793300354", name: "ST-07 (Stone Rose)" },
+  { id: "act_3681717408727534", name: "ST-10 (Stone Rose)" },
+  { id: "act_770104971706610", name: "ST-09 (Stone Rose)" },
+  { id: "act_412119051932043", name: "ST-18 (Stone Rose)" },
+  { id: "act_7707351539304206", name: "ZXC20 (Stone Rose)" },
+  { id: "act_846240430355170", name: "Swapons World-3" },
+  { id: "act_414594386485433", name: "Swapons World-2" },
+  { id: "act_2788254531383177", name: "SW-BM" }
 ];
 
 function requireAuth(req, res, next) {
@@ -227,7 +227,6 @@ app.post("/webhook", (req, res) => {
   res.sendStatus(404);
 });
 
-// সরাসরি নোড.জেএস বিল্ট-ইন HTTPS দিয়ে মেটা API কল
 function httpsGet(url) {
   return new Promise((resolve) => {
     https.get(url, (res) => {
@@ -246,51 +245,82 @@ function httpsGet(url) {
   });
 }
 
+// মেটা এপিআই থেকে বিজ্ঞাপন পারফরম্যান্সের নির্ভুল ফেচ
 async function fetchMetaAdsMetrics(targetDate) {
   if (!META_ACCESS_TOKEN) return { accounts: [], summary: {} };
 
-  const timeRange = encodeURIComponent(JSON.stringify({ since: targetDate, until: targetDate }));
+  // আজ হলে সরাসরি মেটার date_preset=today ব্যবহার হবে, অন্য তারিখে time_range
+  const todayStr = new Date().toISOString().slice(0, 10);
+  let dateQuery = "date_preset=today";
+  if (targetDate && targetDate !== todayStr) {
+    dateQuery = `time_range=${encodeURIComponent(JSON.stringify({ since: targetDate, until: targetDate }))}`;
+  }
 
   const promises = AD_ACCOUNTS.map(async (acc) => {
     try {
       const cleanId = acc.id.replace(/\s+/g, "");
-      const url = `https://graph.facebook.com/v19.0/${cleanId}/insights?access_token=${META_ACCESS_TOKEN}&time_range=${timeRange}&fields=spend,actions`;
+      // ক্যাম্পেইন লেভেলে ডেটা আনা যাতে Sales ক্যাম্পেইন এবং Messaging ক্যাম্পেইনের স্পেন্ড আলাদাভাবে সঠিক থাকে
+      const url = `https://graph.facebook.com/v19.0/${cleanId}/insights?access_token=${META_ACCESS_TOKEN}&${dateQuery}&level=campaign&fields=spend,actions,cost_per_action_type`;
       const response = await httpsGet(url);
 
-      const data = response && response.data && response.data[0] ? response.data[0] : null;
-      const spend = data ? parseFloat(data.spend || 0) : 0;
+      let totalSpend = 0;
+      let totalMessages = 0;
+      let totalOrders = 0;
+      let salesSpend = 0;
+      let msgSpend = 0;
 
-      let fbMessages = 0;
-      let websiteOrders = 0;
+      if (response && response.data && response.data.length > 0) {
+        response.data.forEach((camp) => {
+          const campSpend = parseFloat(camp.spend || 0);
+          totalSpend += campSpend;
 
-      if (data && data.actions) {
-        data.actions.forEach((act) => {
-          if (
-            act.action_type === "onsite_conversion.messaging_conversation_started_7d" ||
-            act.action_type === "onsite_conversion.total_messaging_connection"
-          ) {
-            fbMessages += parseInt(act.value || 0, 10);
+          let campMsgs = 0;
+          let campOrders = 0;
+
+          if (camp.actions) {
+            // ১. নির্ভুল মেসেজ সংখ্যা (ডুপ্লিকেট ছাড়া একক আইডি)
+            const msgAction = camp.actions.find(a => 
+              a.action_type === "onsite_conversion.messaging_conversation_started_7d" ||
+              a.action_type === "onsite_conversion.messaging_first_reply"
+            );
+            if (msgAction) {
+              campMsgs = parseInt(msgAction.value || 0, 10);
+            }
+
+            // ২. নির্ভুল ওয়েবসাইট পারচেজ / অর্ডার (ডুপ্লিকেট ফিল্টার ছাড়া কেবল একটি কাউন্ট)
+            const orderAction = camp.actions.find(a => 
+              a.action_type === "purchase" ||
+              a.action_type === "offsite_conversion.fb_pixel_purchase"
+            );
+            if (orderAction) {
+              campOrders = parseInt(orderAction.value || 0, 10);
+            }
           }
-          if (
-            act.action_type === "purchase" ||
-            act.action_type === "omni_purchase" ||
-            act.action_type === "offsite_conversion.fb_pixel_purchase"
-          ) {
-            websiteOrders += parseInt(act.value || 0, 10);
-          }
+
+          totalMessages += campMsgs;
+          totalOrders += campOrders;
+
+          if (campOrders > 0) salesSpend += campSpend;
+          if (campMsgs > 0) msgSpend += campSpend;
         });
       }
 
-      const costPerMsgCents = fbMessages > 0 ? ((spend / fbMessages) * 100).toFixed(1) : 0;
-      const costPerOrderUsd = websiteOrders > 0 ? (spend / websiteOrders).toFixed(2) : "0.00";
+      // কস্ট পার মেসেজ (সেন্ট) এবং কস্ট পার পারচেজ (ডলার) মেটার হিসাব অনুযায়ী
+      const costPerMsgCents = totalMessages > 0 
+        ? (((msgSpend > 0 ? msgSpend : totalSpend) / totalMessages) * 100).toFixed(1) 
+        : 0;
+
+      const costPerOrderUsd = totalOrders > 0 
+        ? ((salesSpend > 0 ? salesSpend : totalSpend) / totalOrders).toFixed(2) 
+        : "0.00";
 
       return {
         id: cleanId,
         name: acc.name,
-        spend: spend.toFixed(2),
-        messages: fbMessages,
+        spend: totalSpend.toFixed(2),
+        messages: totalMessages,
         cost_per_msg_cents: costPerMsgCents,
-        orders: websiteOrders,
+        orders: totalOrders,
         cost_per_order_usd: costPerOrderUsd
       };
     } catch (err) {
@@ -308,20 +338,20 @@ async function fetchMetaAdsMetrics(targetDate) {
 
   const results = await Promise.all(promises);
 
-  const totalSpend = results.reduce((acc, curr) => acc + parseFloat(curr.spend || 0), 0);
-  const totalMsgs = results.reduce((acc, curr) => acc + curr.messages, 0);
-  const totalOrders = results.reduce((acc, curr) => acc + curr.orders, 0);
+  const totalSpendSum = results.reduce((acc, curr) => acc + parseFloat(curr.spend || 0), 0);
+  const totalMsgsSum = results.reduce((acc, curr) => acc + curr.messages, 0);
+  const totalOrdersSum = results.reduce((acc, curr) => acc + curr.orders, 0);
 
-  const avgCostPerMsgCents = totalMsgs > 0 ? ((totalSpend / totalMsgs) * 100).toFixed(1) : 0;
-  const avgCostPerOrderUsd = totalOrders > 0 ? (totalSpend / totalOrders).toFixed(2) : "0.00";
+  const avgCostPerMsgCents = totalMsgsSum > 0 ? ((totalSpendSum / totalMsgsSum) * 100).toFixed(1) : 0;
+  const avgCostPerOrderUsd = totalOrdersSum > 0 ? (totalSpendSum / totalOrdersSum).toFixed(2) : "0.00";
 
   return {
     accounts: results,
     summary: {
-      total_spend: totalSpend.toFixed(2),
-      total_messages: totalMsgs,
+      total_spend: totalSpendSum.toFixed(2),
+      total_messages: totalMsgsSum,
       avg_cost_per_msg_cents: avgCostPerMsgCents,
-      total_orders: totalOrders,
+      total_orders: totalOrdersSum,
       avg_cost_per_order_usd: avgCostPerOrderUsd
     }
   };
