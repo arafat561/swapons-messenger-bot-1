@@ -206,6 +206,7 @@ app.post("/webhook", (req, res) => {
               VALUES (?, ?, ?, ?, ?, ?, ?)
             `).run(pageId, customerId, event.message.mid, replyText, replyTime, detectedMod, isConfirm);
 
+            // আজকের দিনের মেসেজের ক্ষেত্রে মডারেটর লক হবে (প্রথম উত্তরকারী)
             if (detectedMod) {
               db.prepare(`
                 UPDATE messages 
@@ -254,7 +255,7 @@ function httpsGet(url) {
   });
 }
 
-// মেটা অ্যাডস ম্যানেজারের ক্যাম্পেইন ডেটা ফেচ
+// মেটা অ্যাডস ম্যানেজারের ক্যাম্পেইন লেভেল নিখুঁত ডেটা ফেচ (মেসেজিং ও সেলস ক্যাম্পেইন আলাদা বাকেটে)
 async function fetchMetaAdsMetrics(targetDate) {
   if (!META_ACCESS_TOKEN) return { accounts: [], summary: {} };
 
@@ -285,6 +286,7 @@ async function fetchMetaAdsMetrics(targetDate) {
           let campOrders = 0;
 
           if (camp.actions) {
+            // মেটা থেকে আসা মেসেজিং অ্যাকশন
             const msgAction = camp.actions.find(a => 
               a.action_type === "onsite_conversion.messaging_conversation_started_7d" ||
               a.action_type === "onsite_conversion.messaging_first_reply"
@@ -293,6 +295,7 @@ async function fetchMetaAdsMetrics(targetDate) {
               campMsgs = parseInt(msgAction.value || 0, 10);
             }
 
+            // মেটা থেকে আসা ওয়েবসাইট পারচেজ অ্যাকশন
             const orderAction = camp.actions.find(a => 
               a.action_type === "purchase" ||
               a.action_type === "offsite_conversion.fb_pixel_purchase"
@@ -305,6 +308,7 @@ async function fetchMetaAdsMetrics(targetDate) {
           totalMessages += campMsgs;
           totalOrders += campOrders;
 
+          // স্পেন্ড পৃথকীকরণ
           if (campMsgs > 0) {
             msgCampaignSpend += campSpend;
           }
@@ -314,12 +318,14 @@ async function fetchMetaAdsMetrics(targetDate) {
         });
       }
 
+      // ১. Cost per message (শুধুমাত্র মেসেজিং ক্যাম্পেইনের খরচ দিয়ে ভাগ)
       let costPerMsgCents = 0;
       if (totalMessages > 0) {
         const applicableMsgSpend = msgCampaignSpend > 0 ? msgCampaignSpend : totalSpend;
         costPerMsgCents = ((applicableMsgSpend / totalMessages) * 100).toFixed(1);
       }
 
+      // ২. Cost per purchase (শুধুমাত্র সেলস ক্যাম্পেইনের খরচ দিয়ে ভাগ)
       let costPerOrderUsd = "0.00";
       if (totalOrders > 0) {
         const applicableSalesSpend = salesCampaignSpend > 0 ? salesCampaignSpend : totalSpend;
@@ -333,7 +339,9 @@ async function fetchMetaAdsMetrics(targetDate) {
         messages: totalMessages,
         cost_per_msg_cents: costPerMsgCents,
         orders: totalOrders,
-        cost_per_order_usd: costPerOrderUsd
+        cost_per_order_usd: costPerOrderUsd,
+        msg_spend: msgCampaignSpend,
+        sales_spend: salesCampaignSpend
       };
     } catch (err) {
       return {
@@ -343,7 +351,9 @@ async function fetchMetaAdsMetrics(targetDate) {
         messages: 0,
         cost_per_msg_cents: 0,
         orders: 0,
-        cost_per_order_usd: "0.00"
+        cost_per_order_usd: "0.00",
+        msg_spend: 0,
+        sales_spend: 0
       };
     }
   });
@@ -354,8 +364,17 @@ async function fetchMetaAdsMetrics(targetDate) {
   const totalMsgsSum = results.reduce((acc, curr) => acc + curr.messages, 0);
   const totalOrdersSum = results.reduce((acc, curr) => acc + curr.orders, 0);
 
-  const avgCostPerMsgCents = totalMsgsSum > 0 ? ((totalSpendSum / totalMsgsSum) * 100).toFixed(1) : 0;
-  const avgCostPerOrderUsd = totalOrdersSum > 0 ? (totalSpendSum / totalOrdersSum).toFixed(2) : "0.00";
+  const totalMsgSpendSum = results.reduce((acc, curr) => acc + curr.msg_spend, 0);
+  const totalSalesSpendSum = results.reduce((acc, curr) => acc + curr.sales_spend, 0);
+
+  // সামারি কার্ডের জন্য সঠিক গড় কস্ট ক্যালকুলেশন
+  const avgCostPerMsgCents = totalMsgsSum > 0 
+    ? (((totalMsgSpendSum > 0 ? totalMsgSpendSum : totalSpendSum) / totalMsgsSum) * 100).toFixed(1) 
+    : 0;
+
+  const avgCostPerOrderUsd = totalOrdersSum > 0 
+    ? (((totalSalesSpendSum > 0 ? totalSalesSpendSum : totalSpendSum) / totalOrdersSum)).toFixed(2) 
+    : "0.00";
 
   return {
     accounts: results,
@@ -369,7 +388,7 @@ async function fetchMetaAdsMetrics(targetDate) {
   };
 }
 
-// ড্যাশবোর্ড রিপোর্ট API
+// প্রতিদিনের ইউনিক কাস্টমার ও মেসেজিং ড্যাশবোর্ড রিপোর্ট
 app.get("/api/daily-report", requireAuth, async (req, res) => {
   try {
     const targetDate = req.query.date || new Date().toISOString().slice(0, 10);
@@ -387,72 +406,45 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       }
     }
 
-    // ১. আজকের নতুন কাস্টমার
+    // ১. মোট সক্রিয় কাস্টমার: ২ দিন আগের বা আজকের যেই হোক—আজকে নক দিলে ১ জনই ইউনিক কাস্টমার হিসেবে কাউন্ট হবে
     const totalReceived = db.prepare(`
       SELECT COUNT(DISTINCT sender_id) as count 
-      FROM messages m1
-      WHERE date(created_at, 'localtime') = ?
-        ${pageCondition}
-        AND NOT EXISTS (
-          SELECT 1 FROM messages m2 
-          WHERE m2.sender_id = m1.sender_id 
-            AND m2.page_id = m1.page_id 
-            AND date(m2.created_at, 'localtime') < ?
-        )
-    `).get(targetDate, ...pageParam, targetDate).count;
+      FROM messages 
+      WHERE date(created_at, 'localtime') = ? ${pageCondition}
+    `).get(targetDate, ...pageParam).count;
 
-    // ২. উত্তর সম্পন্ন হয়েছে
+    // ২. উত্তর দেওয়া সম্পন্ন কাস্টমার: আজকের মেসেজ রিপ্লাই হয়েছে
     const totalReplied = db.prepare(`
       SELECT COUNT(DISTINCT sender_id) as count 
-      FROM messages m1
-      WHERE status = 'replied'
-        AND date(created_at, 'localtime') = ?
-        ${pageCondition}
-        AND NOT EXISTS (
-          SELECT 1 FROM messages m2 
-          WHERE m2.sender_id = m1.sender_id 
-            AND m2.page_id = m1.page_id 
-            AND date(m2.created_at, 'localtime') < ?
-        )
-    `).get(targetDate, ...pageParam, targetDate).count;
+      FROM messages 
+      WHERE status = 'replied' 
+        AND date(created_at, 'localtime') = ? ${pageCondition}
+    `).get(targetDate, ...pageParam).count;
 
-    // ৩. এখনো দেখা হয়নি
+    // ৩. এখনো দেখা হয়নি (Unread)
     const unreadPending = db.prepare(`
       SELECT COUNT(DISTINCT sender_id) as count 
-      FROM messages m1
-      WHERE status = 'unread'
-        AND date(created_at, 'localtime') = ?
+      FROM messages 
+      WHERE status = 'unread' 
+        AND date(created_at, 'localtime') = ? ${pageCondition}
+    `).get(targetDate, ...pageParam).count;
+
+    // ৪. সিন হয়েছে কিন্তু কোনো রিপ্লাই দেওয়া হয়নি (মডারেটর সিন করে রেখেছে কিন্তু রিপ্লাই দেয়নি)
+    const readNoReply = db.prepare(`
+      SELECT COUNT(DISTINCT sender_id) as count 
+      FROM messages m
+      WHERE status = 'read' 
+        AND date(created_at, 'localtime') = ? 
         ${pageCondition}
         AND NOT EXISTS (
-          SELECT 1 FROM messages m2 
-          WHERE m2.sender_id = m1.sender_id 
-            AND m2.page_id = m1.page_id 
-            AND date(m2.created_at, 'localtime') < ?
+          SELECT 1 FROM replies r 
+          WHERE r.sender_id = m.sender_id 
+            AND r.page_id = m.page_id 
+            AND date(r.created_at, 'localtime') = ?
         )
     `).get(targetDate, ...pageParam, targetDate).count;
 
-    // ৪. সিন হয়েছে কিন্তু কোনো রিপ্লাই দেওয়া হয়নি ⚠️
-    const readNoReply = db.prepare(`
-      SELECT COUNT(DISTINCT sender_id) as count 
-      FROM messages m1
-      WHERE status = 'read'
-        AND date(created_at, 'localtime') = ?
-        ${pageCondition}
-        AND NOT EXISTS (
-          SELECT 1 FROM messages m2 
-          WHERE m2.sender_id = m1.sender_id 
-            AND m2.page_id = m1.page_id 
-            AND date(m2.created_at, 'localtime') < ?
-        )
-        AND NOT EXISTS (
-          SELECT 1 FROM replies r 
-          WHERE r.sender_id = m1.sender_id 
-            AND r.page_id = m1.page_id 
-            AND date(r.created_at, 'localtime') = ?
-        )
-    `).get(targetDate, ...pageParam, targetDate, targetDate).count;
-
-    // ৫. কনফার্ম অর্ডার
+    // ৫. আজকের কনফার্ম অর্ডার
     const orderConfirms = db.prepare(`
       SELECT COUNT(DISTINCT sender_id) as count 
       FROM replies 
@@ -461,39 +453,27 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
         ${pageCondition}
     `).get(targetDate, ...pageParam).count;
 
-    // ৬. ইউনিক ফোন নম্বর
+    // ৬. আজকের ইউনিক ফোন নম্বর
     const phoneCount = db.prepare(`
       SELECT COUNT(DISTINCT phone_number) as count 
-      FROM messages m1
+      FROM messages 
       WHERE phone_number IS NOT NULL 
         AND phone_number != '' 
-        AND date(created_at, 'localtime') = ? 
-        ${pageCondition}
-        AND NOT EXISTS (
-          SELECT 1 FROM messages m2 
-          WHERE m2.sender_id = m1.sender_id 
-            AND m2.page_id = m1.page_id 
-            AND date(m2.created_at, 'localtime') < ?
-        )
-    `).get(targetDate, ...pageParam, targetDate).count;
+        AND date(created_at, 'localtime') = ? ${pageCondition}
+    `).get(targetDate, ...pageParam).count;
 
-    // মডারেটর পারফরম্যান্স
+    // মডারেটর পারফরম্যান্স: আজকের ইউনিক কাস্টমারদের মধ্যে কে কয়টি সফল হ্যান্ডেল করেছে
     const moderatorStats = db.prepare(`
       SELECT assigned_moderator AS name, COUNT(DISTINCT sender_id) AS total_conversations
-      FROM messages m1
+      FROM messages
       WHERE assigned_moderator IS NOT NULL 
         AND date(created_at, 'localtime') = ?
         ${pageCondition}
-        AND NOT EXISTS (
-          SELECT 1 FROM messages m2 
-          WHERE m2.sender_id = m1.sender_id 
-            AND m2.page_id = m1.page_id 
-            AND date(m2.created_at, 'localtime') < ?
-        )
       GROUP BY assigned_moderator
       ORDER BY total_conversations DESC
-    `).all(targetDate, ...pageParam, targetDate);
+    `).all(targetDate, ...pageParam);
 
+    // মেটা বিজ্ঞাপন পারফরম্যান্স ফেচ
     const adsData = await fetchMetaAdsMetrics(targetDate);
 
     res.json({
