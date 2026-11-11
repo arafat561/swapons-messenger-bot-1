@@ -2,7 +2,7 @@ const express = require("express");
 const Database = require("better-sqlite3");
 const fs = require("fs");
 const path = require("path");
-const https = require("https"); // নোড.জেএস বিল্ট-ইন মডিউল (কোনো ইনস্টলেশন লাগবে না)
+const https = require("https"); // নোড.জেএস বিল্ট-ইন মডিউল
 require("dotenv").config();
 
 const app = express();
@@ -13,17 +13,17 @@ const DASHBOARD_USER = process.env.DASHBOARD_USER || "admin";
 const DASHBOARD_PASS = process.env.DASHBOARD_PASS || "swapons123";
 const META_ACCESS_TOKEN = process.env.META_ACCESS_TOKEN || "";
 
-// ৯টি অ্যাড অ্যাকাউন্ট তালিকা
+// ৯টি অ্যাড অ্যাকাউন্টের সম্পূর্ণ সঠিক নাম ও আইডি ম্যাপিং
 const AD_ACCOUNTS = [
-  { id: "act_722336793300354", name: "SW - BM" },
-  { id: "act_770104971706610", name: "Swapon's World - 2" },
-  { id: "act_3681717408727534", name: "Swapon's World - 3" },
-  { id: "act_412119051932043", name: "ST-07 (Stone Rose)" },
-  { id: "act_2788254531383177", name: "ST-10 (Stone Rose)" },
-  { id: "act_414594386485433", name: "ST-09 (Stone Rose)" },
-  { id: "act_846240430355170", name: "ZXC20 (Stone Rose)" },
-  { id: "act_705111815068714", name: "Account 8" },
-  { id: "act_7707351539304206", name: "Account 9" }
+  { id: "act_722336793300354", name: "ST-07 (Stone Rose)" },
+  { id: "act_770104971706610", name: "ST-09 (Stone Rose)" },
+  { id: "act_3681717408727534", name: "ST-10 (Stone Rose)" },
+  { id: "act_412119051932043", name: "ST-18 (Stone Rose)" },
+  { id: "act_2788254531383177", name: "SW-BM" },
+  { id: "act_414594386485433", name: "Swapons World-2" },
+  { id: "act_846240430355170", name: "Swapons World-3" },
+  { id: "act_705111815068714", name: "ZXC19 (Stone rose)" },
+  { id: "act_7707351539304206", name: "ZXC20 (Stone Rose)" }
 ];
 
 function requireAuth(req, res, next) {
@@ -227,7 +227,7 @@ app.post("/webhook", (req, res) => {
   res.sendStatus(404);
 });
 
-// সরাসরি নোড.জেএস বিল্ট-ইন HTTPS দিয়ে মেটা API কল
+// সরাসরি নোড.জেএস বিল্ট-ইন HTTPS দিয়ে মেটা API কল
 function httpsGet(url) {
   return new Promise((resolve) => {
     https.get(url, (res) => {
@@ -253,7 +253,8 @@ async function fetchMetaAdsMetrics(targetDate) {
 
   const promises = AD_ACCOUNTS.map(async (acc) => {
     try {
-      const url = `https://graph.facebook.com/v19.0/${acc.id}/insights?access_token=${META_ACCESS_TOKEN}&time_range=${timeRange}&fields=spend,actions`;
+      const cleanId = acc.id.replace(/\s+/g, "");
+      const url = `https://graph.facebook.com/v19.0/${cleanId}/insights?access_token=${META_ACCESS_TOKEN}&time_range=${timeRange}&fields=spend,actions`;
       const response = await httpsGet(url);
 
       const data = response && response.data && response.data[0] ? response.data[0] : null;
@@ -284,7 +285,7 @@ async function fetchMetaAdsMetrics(targetDate) {
       const costPerOrderUsd = websiteOrders > 0 ? (spend / websiteOrders).toFixed(2) : "0.00";
 
       return {
-        id: acc.id,
+        id: cleanId,
         name: acc.name,
         spend: spend.toFixed(2),
         messages: fbMessages,
