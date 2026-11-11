@@ -3,677 +3,239 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Swapons World & Stone Rose BD - Daily Analytics Dashboard</title>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Hind+Siliguri:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <title>Analytics & Operations Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    
-    body {
-      font-family: 'Plus Jakarta Sans', 'Hind Siliguri', sans-serif;
-      background-color: #0c1017;
-      color: #f1f5f9;
-      min-height: 100vh;
-    }
-
-    #loginOverlay {
-      position: fixed;
-      inset: 0;
-      background-color: #0c1017;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      z-index: 9999;
-      padding: 20px;
-    }
-    .auth-card {
-      background: #111827;
-      border: 1px solid #1f293d;
-      border-radius: 28px;
-      padding: 48px 36px 42px;
-      width: 100%;
-      max-width: 410px;
-      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.7);
-      text-align: center;
-    }
-    .auth-icon { font-size: 46px; margin-bottom: 24px; display: inline-block; line-height: 1; }
-    .auth-title { font-size: 26px; font-weight: 800; color: #ffffff; margin-bottom: 8px; letter-spacing: -0.5px; }
-    .auth-subtitle { font-size: 14px; color: #94a3b8; margin-bottom: 34px; }
-    .form-group { text-align: left; margin-bottom: 20px; }
-    .form-group label { display: block; font-size: 13.5px; font-weight: 700; color: #cbd5e1; margin-bottom: 10px; }
-    .form-group input {
-      width: 100%;
-      padding: 15px 18px;
-      background: #0b111e;
-      border: 1px solid #1e293b;
-      border-radius: 14px;
-      color: #ffffff;
-      font-size: 15px;
-      outline: none;
-      transition: all 0.2s ease;
-      font-family: inherit;
-    }
-    .form-group input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15); }
-    .auth-submit-btn {
-      width: 100%;
-      padding: 15px;
-      background: #009966;
-      border: none;
-      border-radius: 14px;
-      color: #ffffff;
-      font-size: 16px;
-      font-weight: 800;
-      cursor: pointer;
-      margin-top: 14px;
-      box-shadow: 0 8px 24px rgba(0, 153, 102, 0.25);
-      transition: all 0.2s ease;
-      font-family: inherit;
-    }
-    .auth-submit-btn:hover { background: #008558; transform: translateY(-1px); }
-    .auth-error {
-      color: #f87171;
-      font-size: 13px;
-      margin-top: 14px;
-      display: none;
-      background: rgba(239, 68, 68, 0.1);
-      border: 1px solid rgba(239, 68, 68, 0.25);
-      padding: 10px;
-      border-radius: 10px;
-    }
-
-    #dashboardScreen {
-      display: none;
-      padding: 30px 20px;
-      max-width: 1240px;
-      margin: 0 auto;
-    }
-
-    .top-navbar {
-      background: #141a24;
-      border: 1px solid #1f2737;
-      border-radius: 18px;
-      padding: 22px 30px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 16px;
-      margin-bottom: 24px;
-      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.35);
-    }
-    .navbar-left { display: flex; flex-direction: column; gap: 4px; }
-    .heading-inline { display: flex; align-items: center; gap: 10px; }
-    .signal-icon { color: #38bdf8; font-size: 15px; font-weight: bold; }
-    .page-title { font-size: 19px; font-weight: 800; color: #ffffff; letter-spacing: -0.3px; }
-    .live-badge {
-      background: #0284c7;
-      color: #ffffff;
-      font-size: 11px;
-      font-weight: 800;
-      padding: 2px 8px;
-      border-radius: 6px;
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-    }
-    .live-badge::before { content: ""; width: 5px; height: 5px; background: #ffffff; border-radius: 50%; }
-    .page-subtitle { font-size: 13px; color: #8292a6; }
-
-    .navbar-right { display: flex; align-items: center; gap: 12px; }
-    .dropdown-box, .date-box {
-      background: #1a2230;
-      border: 1px solid #28364b;
-      border-radius: 10px;
-      color: #cbd5e1;
-      padding: 9px 15px;
-      font-size: 13px;
-      font-weight: 600;
-      outline: none;
-      cursor: pointer;
-    }
-    .logout-button {
-      background: rgba(239, 68, 68, 0.12);
-      border: 1px solid rgba(239, 68, 68, 0.25);
-      color: #f87171;
-      padding: 9px 14px;
-      font-size: 13px;
-      font-weight: 700;
-      border-radius: 10px;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    .logout-button:hover { background: rgba(239, 68, 68, 0.22); }
-
-    .dashboard-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 20px;
-      margin-bottom: 24px;
-    }
-    @media (max-width: 1024px) { .dashboard-grid { grid-template-columns: repeat(2, 1fr); } }
-    @media (max-width: 640px) { .dashboard-grid { grid-template-columns: 1fr; } }
-
-    .dash-card {
-      background: #141a24;
-      border-radius: 18px;
-      padding: 22px 24px;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      min-height: 185px;
-      border: 1.5px solid transparent;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-    }
-    .card-head { display: flex; gap: 14px; align-items: center; }
-    .symbol-box {
-      width: 44px;
-      height: 44px;
-      border-radius: 12px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 20px;
-      flex-shrink: 0;
-    }
-    .card-labels { display: flex; flex-direction: column; }
-    .txt-bn { font-size: 15px; font-weight: 700; color: #ffffff; }
-    .txt-en { font-size: 12px; color: #7f8e9d; font-weight: 500; margin-top: 2px; }
-    .card-number { font-size: 44px; font-weight: 800; letter-spacing: -1px; margin: 14px 0 8px 0; line-height: 1; }
-    .card-foot { display: flex; justify-content: space-between; align-items: center; margin-top: auto; }
-    .ratio-caption { font-size: 12px; color: #7a889b; font-weight: 600; }
-    .status-pill { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 6px; }
-
-    .c-blue { border-color: #1e3a8a; }
-    .c-blue .symbol-box { background: #1e293b; color: #38bdf8; border: 1px solid #334155; }
-    .c-blue .card-number { color: #38bdf8; }
-
-    .c-green { border-color: #064e3b; }
-    .c-green .symbol-box { background: #064e3b; color: #34d399; }
-    .c-green .card-number { color: #34d399; }
-    .fill-track { width: 100%; height: 8px; background: #152425; border-radius: 99px; overflow: hidden; }
-    .fill-thumb { height: 100%; background: #10b981; border-radius: 99px; width: 0%; transition: width 0.4s ease; }
-
-    .c-red { border-color: #7f1d1d; }
-    .c-red .symbol-box { background: #451a1a; color: #f87171; }
-    .c-red .card-number { color: #f87171; }
-    .c-red .status-pill { background: #451a1a; color: #f87171; border: 1px solid #7f1d1d; }
-
-    .c-orange { border-color: #78350f; }
-    .c-orange .symbol-box { background: #45240f; color: #fbbf24; }
-    .c-orange .card-number { color: #fbbf24; }
-    .c-orange .status-pill { background: #45240f; color: #fbbf24; border: 1px solid #78350f; }
-
-    .c-purple { border-color: #581c87; }
-    .c-purple .symbol-box { background: #3b1464; color: #c084fc; }
-    .c-purple .card-number { color: #c084fc; }
-
-    .c-teal { border-color: #134e4a; }
-    .c-teal .symbol-box { background: #0f3736; color: #2dd4bf; }
-    .c-teal .card-number { color: #2dd4bf; }
-
-    .mod-card-container {
-      background: #141a24;
-      border: 1px solid #1f2737;
-      border-radius: 18px;
-      padding: 26px 30px;
-      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.35);
-      margin-bottom: 24px;
-    }
-    .mod-title-head {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-size: 16px;
-      font-weight: 700;
-      color: #ffffff;
-      margin-bottom: 22px;
-    }
-    .tbl-table { width: 100%; border-collapse: collapse; }
-    .tbl-table th {
-      text-align: left;
-      font-size: 12px;
-      font-weight: 600;
-      color: #64748b;
-      padding-bottom: 14px;
-      border-bottom: 1px solid #1e2638;
-      text-transform: capitalize;
-    }
-    .tbl-table td {
-      padding: 16px 0;
-      border-bottom: 1px solid #171f2e;
-      font-size: 14px;
-      vertical-align: middle;
-    }
-    .mod-flex { display: flex; align-items: center; gap: 12px; font-weight: 600; color: #f8fafc; }
-    .user-avatar-circle {
-      width: 36px;
-      height: 36px;
-      border-radius: 50%;
-      background: #1e293b;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 17px;
-      border: 1px solid #334155;
-    }
-    .count-bold { font-weight: 700; color: #ffffff; font-size: 15px; }
-    .track-bg { width: 80%; height: 8px; background: #1a2232; border-radius: 99px; overflow: hidden; }
-    .track-line { height: 100%; border-radius: 99px; background: #38bdf8; }
-
-    .badge-cents {
-      background: rgba(56, 189, 248, 0.15);
-      color: #38bdf8;
-      padding: 3px 8px;
-      border-radius: 6px;
-      font-weight: 700;
-      border: 1px solid rgba(56, 189, 248, 0.3);
-    }
-    .badge-order {
-      background: rgba(52, 211, 153, 0.15);
-      color: #34d399;
-      padding: 3px 8px;
-      border-radius: 6px;
-      font-weight: 700;
-      border: 1px solid rgba(52, 211, 153, 0.3);
-    }
+    body { font-family: 'Hind Siliguri', sans-serif; background-color: #0b1120; color: #f1f5f9; }
   </style>
 </head>
-<body>
+<body class="p-4 md:p-8">
+  <div class="max-w-7xl mx-auto space-y-6">
 
-  <div id="loginOverlay">
-    <div class="auth-card">
-      <div class="auth-icon">🔐</div>
-      <h2 class="auth-title">ড্যাশবোর্ড লগইন</h2>
-      <p class="auth-subtitle">অ্যাক্সেস করতে আপনার পরিচয় দিন</p>
-      
-      <form onsubmit="handleUserLogin(event)">
-        <div class="form-group">
-          <label>ইউজারনেম</label>
-          <input type="text" id="usernameInput" placeholder="Username লিখুন" required autocomplete="username">
-        </div>
-        <div class="form-group">
-          <label>পাসওয়ার্ড</label>
-          <input type="password" id="passwordInput" placeholder="Password লিখুন" required autocomplete="current-password">
-        </div>
-        <button type="submit" class="auth-submit-btn">লগইন করুন</button>
-        <div id="authAlert" class="auth-error">ভুল ইউজারনেম অথবা পাসওয়ার্ড!</div>
-      </form>
-    </div>
-  </div>
-
-  <div id="dashboardScreen">
-    
-    <div class="top-navbar">
-      <div class="navbar-left">
-        <div class="heading-inline">
-          <span class="signal-icon">((•))</span>
-          <h1 class="page-title">Swapons World & Stone Rose BD - Daily Analytics Dashboard</h1>
-          <span class="live-badge">LIVE</span>
-        </div>
-        <div class="page-subtitle">Facebook Messenger, Ads & Sales analytics platform</div>
+    <!-- Top Bar -->
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-900/90 p-5 rounded-2xl border border-slate-800 backdrop-blur-md shadow-xl">
+      <div>
+        <h1 class="text-2xl font-bold text-white flex items-center gap-2">
+          📊 লাইভ অ্যানালিটিক্স ও অপারেশন ড্যাশবোর্ড
+        </h1>
+        <p class="text-xs text-slate-400 mt-1">ক্যাম্পেইনভিত্তিক খরচ ও কাস্টমার ট্র্যাকিং</p>
       </div>
-      <div class="navbar-right">
-        <select id="pagePickerSelect" class="dropdown-box" onchange="fetchAnalyticsData()">
-          <option value="all">সব পেজ (একসাথে)</option>
+      <div class="flex flex-wrap items-center gap-3">
+        <input type="date" id="datePicker" class="bg-slate-800 text-white text-sm px-3 py-2 rounded-xl border border-slate-700 outline-none focus:border-blue-500">
+        <select id="pageFilter" class="bg-slate-800 text-white text-sm px-3 py-2 rounded-xl border border-slate-700 outline-none focus:border-blue-500">
+          <option value="all">সব পেজ (All Pages)</option>
           <option value="102803132669088">Swapons World</option>
           <option value="250386238168336">Stone Rose BD</option>
         </select>
-        <input type="date" id="datePickerInput" class="date-box" onchange="fetchAnalyticsData()">
-        <button class="logout-button" onclick="performLogout()">লগআউট</button>
+        <button onclick="loadDashboard()" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-xl transition shadow">
+          রিফ্রেশ
+        </button>
       </div>
     </div>
 
-    <!-- ফেসবুক বিজ্ঞাপন ওভারভিউ (Ads Summary 4 Cards) -->
-    <div class="dashboard-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 24px;">
-      <div class="dash-card c-blue" style="min-height: 140px; padding: 18px 20px;">
-        <div class="card-head">
-          <div class="symbol-box">💵</div>
-          <div class="card-labels">
-            <span class="txt-bn">মোট Ads খরচ</span>
-            <span class="txt-en">Total Spend (USD)</span>
-          </div>
-        </div>
-        <div class="card-number" id="ads_total_spend" style="font-size: 32px; margin: 10px 0 0 0;">$0.00</div>
+    <!-- Ads Summary Cards (Website vs SMS Campaign আলাদা) -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div class="bg-slate-900/80 p-5 rounded-2xl border border-slate-800 shadow-md">
+        <div class="text-xs text-slate-400 font-medium">মোট Ads খরচ (Total Spend)</div>
+        <div id="totalSpend" class="text-3xl font-bold text-sky-400 mt-2">$0.00</div>
+        <div class="text-[11px] text-slate-500 mt-1">সবগুলো অ্যাকাউন্টের মোট বাজেট</div>
       </div>
 
-      <div class="dash-card c-green" style="min-height: 140px; padding: 18px 20px;">
-        <div class="card-head">
-          <div class="symbol-box">📩</div>
-          <div class="card-labels">
-            <span class="txt-bn">অ্যাডস থেকে মেসেজ</span>
-            <span class="txt-en">Ads Messaging</span>
-          </div>
-        </div>
-        <div class="card-number" id="ads_total_msgs" style="font-size: 32px; margin: 10px 0 0 0;">0</div>
-        <div class="card-foot" style="margin-top: 6px;">
-          <span class="ratio-caption">গড় খরচ: <strong id="ads_avg_cpm" class="badge-cents">0¢</strong></span>
+      <div class="bg-slate-900/80 p-5 rounded-2xl border border-slate-800 shadow-md">
+        <div class="text-xs text-slate-400 font-medium">মেসেজ ক্যাম্পেইন (Messaging)</div>
+        <div id="totalMessages" class="text-3xl font-bold text-emerald-400 mt-2">0</div>
+        <div class="text-[11px] text-slate-400 mt-1">
+          খরচ: <span id="msgSpend" class="text-white font-medium">$0.00</span> | প্রতি SMS: <span id="costPerMsg" class="text-emerald-400 font-bold bg-emerald-950/60 px-1.5 py-0.5 rounded">0.0¢</span>
         </div>
       </div>
 
-      <div class="dash-card c-purple" style="min-height: 140px; padding: 18px 20px;">
-        <div class="card-head">
-          <div class="symbol-box">🛒</div>
-          <div class="card-labels">
-            <span class="txt-bn">ওয়েবসাইট মোট অর্ডার</span>
-            <span class="txt-en">Website Purchases</span>
-          </div>
-        </div>
-        <div class="card-number" id="ads_total_orders" style="font-size: 32px; margin: 10px 0 0 0;">0</div>
-        <div class="card-foot" style="margin-top: 6px;">
-          <span class="ratio-caption">প্রতি অর্ডার: <strong id="ads_avg_cpo" class="badge-order">$0.00</strong></span>
+      <div class="bg-slate-900/80 p-5 rounded-2xl border border-slate-800 shadow-md">
+        <div class="text-xs text-slate-400 font-medium">ওয়েবসাইট ক্যাম্পেইন (Sales)</div>
+        <div id="totalOrders" class="text-3xl font-bold text-purple-400 mt-2">0</div>
+        <div class="text-[11px] text-slate-400 mt-1">
+          খরচ: <span id="salesSpend" class="text-white font-medium">$0.00</span> | প্রতি অর্ডার: <span id="costPerOrder" class="text-purple-400 font-bold bg-purple-950/60 px-1.5 py-0.5 rounded">$0.00</span>
         </div>
       </div>
 
-      <div class="dash-card c-orange" style="min-height: 140px; padding: 18px 20px;">
-        <div class="card-head">
-          <div class="symbol-box">📊</div>
-          <div class="card-labels">
-            <span class="txt-bn">সক্রিয় অ্যাড একাউন্ট</span>
-            <span class="txt-en">Connected Accounts</span>
-          </div>
-        </div>
-        <div class="card-number" id="ads_acc_count" style="font-size: 32px; margin: 10px 0 0 0;">9টি</div>
+      <div class="bg-slate-900/80 p-5 rounded-2xl border border-slate-800 shadow-md">
+        <div class="text-xs text-slate-400 font-medium">অ্যাক্টিভ অ্যাড অ্যাকাউন্ট</div>
+        <div id="activeAccounts" class="text-3xl font-bold text-amber-400 mt-2">0টি</div>
+        <div class="text-[11px] text-slate-500 mt-1">সংযুক্ত মোট ৯টি মেটা অ্যাকাউন্ট</div>
       </div>
     </div>
 
-    <!-- মূল ৬টি পেজ মেসেঞ্জার কার্ড -->
-    <div class="dashboard-grid">
-      <div class="dash-card c-blue">
-        <div class="card-head">
-          <div class="symbol-box">💬</div>
-          <div class="card-labels">
-            <span class="txt-bn">১. মোট কাস্টমার মেসেজ এসেছে</span>
-            <span class="txt-en">Total Received</span>
-          </div>
-        </div>
-        <div class="card-number" id="val_total_received">0</div>
-        <div class="card-foot">
-          <svg width="100%" height="24" viewBox="0 0 100 25" preserveAspectRatio="none">
-            <path d="M0,20 Q15,5 30,16 T60,6 T80,18 T100,2" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round"/>
-          </svg>
-        </div>
+    <!-- Operations / Inbox Summary Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-6 gap-3">
+      <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800">
+        <div class="text-xs text-slate-400">মোট সক্রিয় কাস্টমার</div>
+        <div id="statReceived" class="text-xl font-bold text-blue-400 mt-1">0</div>
+        <div class="text-[10px] text-slate-500">ইউনিক মানুষ (SMS + Direct)</div>
       </div>
-
-      <div class="dash-card c-green">
-        <div class="card-head">
-          <div class="symbol-box">✓</div>
-          <div class="card-labels">
-            <span class="txt-bn">২. উত্তর দেওয়া সম্পন্ন হয়েছে</span>
-            <span class="txt-en">Replies Done</span>
-          </div>
-        </div>
-        <div class="card-number" id="val_total_replied">0</div>
-        <div class="card-foot" style="margin-top: 15px;">
-          <div class="fill-track">
-            <div class="fill-thumb" id="val_replied_bar"></div>
-          </div>
-        </div>
+      <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800">
+        <div class="text-xs text-slate-400">উত্তর দেওয়া সম্পন্ন</div>
+        <div id="statReplied" class="text-xl font-bold text-green-400 mt-1">0</div>
+        <div class="text-[10px] text-slate-500">রিপ্লাই পেয়েছে</div>
       </div>
-
-      <div class="dash-card c-red">
-        <div class="card-head">
-          <div class="symbol-box">⌛</div>
-          <div class="card-labels">
-            <span class="txt-bn">৩. দেখা হয়নি (Unread / বাকি)</span>
-            <span class="txt-en">Unread / বাকি</span>
-          </div>
-        </div>
-        <div class="card-number" id="val_unread_pending">0</div>
-        <div class="card-foot">
-          <span class="ratio-caption" id="val_unread_ratio">Conversion % of 0</span>
-          <span class="status-pill">অ্যাকশন দরকার</span>
-        </div>
+      <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800">
+        <div class="text-xs text-slate-400">দেখা হয়নি (Unread)</div>
+        <div id="statUnread" class="text-xl font-bold text-amber-400 mt-1">0</div>
+        <div class="text-[10px] text-slate-500">ইনবক্সে পেন্ডিং</div>
       </div>
-
-      <div class="dash-card c-orange">
-        <div class="card-head">
-          <div class="symbol-box">👁️</div>
-          <div class="card-labels">
-            <span class="txt-bn">৪. সিন হয়েছে কিন্তু রিপ্লাই দেওয়া হয়নি ⚠️</span>
-            <span class="txt-en">Seen Without Reply</span>
-          </div>
-        </div>
-        <div class="card-number" id="val_seen_no_reply">0</div>
-        <div class="card-foot">
-          <span></span>
-          <span class="status-pill">Status করনি</span>
-        </div>
+      <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800">
+        <div class="text-xs text-slate-400">সিন কিন্তু রিপ্লাই নেই ⚠️</div>
+        <div id="statReadNoReply" class="text-xl font-bold text-red-400 mt-1">0</div>
+        <div class="text-[10px] text-slate-500">উত্তর দেওয়া হয়নি</div>
       </div>
-
-      <div class="dash-card c-purple">
-        <div class="card-head">
-          <div class="symbol-box">📦</div>
-          <div class="card-labels">
-            <span class="txt-bn">৫. কনফার্ম অর্ডার (Your order confirm)</span>
-            <span class="txt-en">Parcel moderator</span>
-          </div>
-        </div>
-        <div class="card-number" id="val_confirmed_orders">0</div>
-        <div class="card-foot">
-          <span class="ratio-caption" id="val_orders_ratio">Conversion % 00.00%</span>
-        </div>
+      <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800">
+        <div class="text-xs text-slate-400">ইনবক্স কনফার্ম অর্ডার</div>
+        <div id="statOrders" class="text-xl font-bold text-purple-400 mt-1">0</div>
+        <div class="text-[10px] text-slate-500">চ্যাটে কনফার্ম</div>
       </div>
-
-      <div class="dash-card c-teal">
-        <div class="card-head">
-          <div class="symbol-box">📞</div>
-          <div class="card-labels">
-            <span class="txt-bn">৬. ফোন নম্বর এসেছে (ইউনিক কাস্টমার)</span>
-            <span class="txt-en">Unique Phone Leads</span>
-          </div>
-        </div>
-        <div class="card-number" id="val_phone_numbers">0</div>
-        <div class="card-foot">
-          <span class="ratio-caption">ইউনিক লিড</span>
-        </div>
+      <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800">
+        <div class="text-xs text-slate-400">মোট ফোন নম্বর</div>
+        <div id="statPhones" class="text-xl font-bold text-teal-400 mt-1">0</div>
+        <div class="text-[10px] text-slate-500">ইউনিক লিড</div>
       </div>
     </div>
 
-    <!-- নতুন সেকশন: ৯টি অ্যাড অ্যাকাউন্টের লাইভ ব্রেকডাউন টেবিল -->
-    <div class="mod-card-container">
-      <div class="mod-title-head">
-        <span>📢</span>
-        <span>অ্যাড অ্যাকাউন্ট ভিত্তিক লাইভ পারফরম্যান্স (Ads Breakdown)</span>
+    <!-- Ads Breakdown Table -->
+    <div class="bg-slate-900/90 rounded-2xl border border-slate-800 overflow-hidden shadow-xl">
+      <div class="p-4 border-b border-slate-800 flex justify-between items-center">
+        <h2 class="text-base font-semibold text-white flex items-center gap-2">
+          📢 অ্যাড অ্যাকাউন্ট ভিত্তিক লাইভ পারফরম্যান্স (Ads Breakdown)
+        </h2>
       </div>
-      <table class="tbl-table">
-        <thead>
-          <tr>
-            <th style="width: 25%;">অ্যাকাউন্ট নাম ও আইডি</th>
-            <th style="width: 15%;">মোট খরচ (Spend)</th>
-            <th style="width: 15%;">মেসেজ (SMS)</th>
-            <th style="width: 15%;">প্রতি মেসেজ খরচ</th>
-            <th style="width: 15%;">ওয়েবসাইট অর্ডার</th>
-            <th style="width: 15%;">প্রতি অর্ডার খরচ</th>
-          </tr>
-        </thead>
-        <tbody id="adsReportList">
-          <tr><td colspan="6" style="text-align: center; color: #64748b; padding: 25px;">বিজ্ঞাপন ডেটা লোড হচ্ছে...</td></tr>
-        </tbody>
-      </table>
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-sm">
+          <thead class="bg-slate-950/60 text-slate-400 text-xs uppercase border-b border-slate-800">
+            <tr>
+              <th class="py-3 px-4">অ্যাকাউন্ট নাম ও আইডি</th>
+              <th class="py-3 px-4">মোট খরচ</th>
+              <th class="py-3 px-4">মেসেজ ক্যাম্পেইন</th>
+              <th class="py-3 px-4">প্রতি SMS খরচ</th>
+              <th class="py-3 px-4">ওয়েবসাইট ক্যাম্পেইন</th>
+              <th class="py-3 px-4">প্রতি অর্ডার খরচ</th>
+            </tr>
+          </thead>
+          <tbody id="adsTableBody" class="divide-y divide-slate-800/60 text-slate-300">
+            <tr><td colspan="6" class="text-center py-6 text-slate-500">লোড হচ্ছে...</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
 
-    <!-- মডারেটর টেবিল সেকশন -->
-    <div class="mod-card-container">
-      <div class="mod-title-head">
-        <span>👥</span>
-        <span>আজকের মডারেটর পারফরম্যান্স</span>
+    <!-- Moderator Performance Table -->
+    <div class="bg-slate-900/90 rounded-2xl border border-slate-800 overflow-hidden shadow-xl">
+      <div class="p-4 border-b border-slate-800">
+        <h2 class="text-base font-semibold text-white flex items-center gap-2">
+          👥 মডারেটর পারফরম্যান্স (Moderator Conversations)
+        </h2>
       </div>
-      <table class="tbl-table">
-        <thead>
-          <tr>
-            <th style="width: 35%;">Moderator name</th>
-            <th style="width: 25%;">Customer count</th>
-            <th style="width: 40%;">Progress</th>
-          </tr>
-        </thead>
-        <tbody id="moderatorReportList">
-          <tr><td colspan="3" style="text-align: center; color: #64748b; padding: 25px;">তথ্য লোড হচ্ছে...</td></tr>
-        </tbody>
-      </table>
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-sm">
+          <thead class="bg-slate-950/60 text-slate-400 text-xs uppercase border-b border-slate-800">
+            <tr>
+              <th class="py-3 px-4">মডারেটরের নাম</th>
+              <th class="py-3 px-4">আজকের হ্যান্ডেল করা কাস্টমার সংখ্যা</th>
+            </tr>
+          </thead>
+          <tbody id="modTableBody" class="divide-y divide-slate-800/60 text-slate-300">
+            <tr><td colspan="2" class="text-center py-6 text-slate-500">লোড হচ্ছে...</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
 
   </div>
 
   <script>
-    let activeToken = localStorage.getItem('dash_auth') || '';
-    const todayDate = new Date().toISOString().slice(0, 10);
-    document.getElementById('datePickerInput').value = todayDate;
+    document.getElementById("datePicker").value = new Date().toISOString().slice(0, 10);
 
-    if (activeToken) {
-      showDashboardView();
-    }
+    const AUTH_HEADER = "Basic " + btoa("admin:swapons123");
 
-    async function handleUserLogin(e) {
-      e.preventDefault();
-      const u = document.getElementById('usernameInput').value.trim();
-      const p = document.getElementById('passwordInput').value.trim();
-      const encoded = 'Basic ' + btoa(u + ':' + p);
+    async function loadDashboard() {
+      const date = document.getElementById("datePicker").value;
+      const pageId = document.getElementById("pageFilter").value;
 
       try {
-        const verifyRes = await fetch('/api/daily-report?date=' + todayDate, {
-          headers: { 'Authorization': encoded }
+        const res = await fetch(`/api/daily-report?date=${date}&page_id=${pageId}`, {
+          headers: { "Authorization": AUTH_HEADER }
         });
-
-        if (verifyRes.status === 200) {
-          activeToken = encoded;
-          localStorage.setItem('dash_auth', encoded);
-          showDashboardView();
-        } else {
-          document.getElementById('authAlert').style.display = 'block';
-        }
-      } catch (err) {
-        document.getElementById('authAlert').innerText = 'সার্ভারে কানেক্ট করা যাচ্ছে না!';
-        document.getElementById('authAlert').style.display = 'block';
-      }
-    }
-
-    function showDashboardView() {
-      document.getElementById('loginOverlay').style.display = 'none';
-      document.getElementById('dashboardScreen').style.display = 'block';
-      fetchAnalyticsData();
-    }
-
-    function performLogout() {
-      localStorage.removeItem('dash_auth');
-      location.reload();
-    }
-
-    async function fetchAnalyticsData() {
-      if (!activeToken) return;
-
-      const dateStr = document.getElementById('datePickerInput').value;
-      const pageSelect = document.getElementById('pagePickerSelect');
-      const selectedPage = pageSelect.value;
-
-      let apiEndpoint = '/api/daily-report?date=' + dateStr;
-      if (selectedPage && selectedPage !== 'all') {
-        apiEndpoint += '&page_id=' + selectedPage;
-      }
-
-      try {
-        const res = await fetch(apiEndpoint, {
-          headers: { 'Authorization': activeToken }
-        });
-
-        if (res.status === 401) {
-          performLogout();
-          return;
-        }
-
         const data = await res.json();
-        
-        const total = data.stats.total_received || 0;
-        const replied = data.stats.total_replied || 0;
-        const unread = data.stats.unread_pending || 0;
-        const seenNoReply = data.stats.read_without_reply || 0;
-        const orders = data.stats.total_confirmed_orders || 0;
-        const phones = data.stats.total_phone_numbers || 0;
 
-        document.getElementById('val_total_received').innerText = total;
-        document.getElementById('val_total_replied').innerText = replied;
-        document.getElementById('val_unread_pending').innerText = unread;
-        document.getElementById('val_seen_no_reply').innerText = seenNoReply;
-        document.getElementById('val_confirmed_orders').innerText = orders;
-        document.getElementById('val_phone_numbers').innerText = phones;
+        // 1. Inbox Stats
+        document.getElementById("statReceived").innerText = data.stats.total_received || 0;
+        document.getElementById("statReplied").innerText = data.stats.total_replied || 0;
+        document.getElementById("statUnread").innerText = data.stats.unread_pending || 0;
+        document.getElementById("statReadNoReply").innerText = data.stats.read_without_reply || 0;
+        document.getElementById("statOrders").innerText = data.stats.total_confirmed_orders || 0;
+        document.getElementById("statPhones").innerText = data.stats.total_phone_numbers || 0;
 
-        const replyRatio = total > 0 ? Math.round((replied / total) * 100) : 0;
-        document.getElementById('val_replied_bar').style.width = Math.min(replyRatio, 100) + '%';
-        document.getElementById('val_unread_ratio').innerText = 'Conversion % of ' + total;
-
-        const orderRatio = total > 0 ? ((orders / total) * 100).toFixed(2) : '00.00';
-        document.getElementById('val_orders_ratio').innerText = 'Conversion % ' + orderRatio + '%';
-
-        // Ads Summary কার্ড আপডেট
+        // 2. Ads Summary Cards
         if (data.ads && data.ads.summary) {
-          document.getElementById('ads_total_spend').innerText = '$' + (data.ads.summary.total_spend || '0.00');
-          document.getElementById('ads_total_msgs').innerText = data.ads.summary.total_messages || 0;
-          document.getElementById('ads_avg_cpm').innerText = (data.ads.summary.avg_cost_per_msg_cents || 0) + '¢';
-          document.getElementById('ads_total_orders').innerText = data.ads.summary.total_orders || 0;
-          document.getElementById('ads_avg_cpo').innerText = '$' + (data.ads.summary.avg_cost_per_order_usd || '0.00');
+          const s = data.ads.summary;
+          document.getElementById("totalSpend").innerText = `$${s.total_spend || "0.00"}`;
+          document.getElementById("totalMessages").innerText = s.total_messages || 0;
+          document.getElementById("msgSpend").innerText = `$${s.msg_spend || "0.00"}`;
+          document.getElementById("costPerMsg").innerText = `${s.avg_cost_per_msg_cents || "0.0"}¢`;
+
+          document.getElementById("totalOrders").innerText = s.total_orders || 0;
+          document.getElementById("salesSpend").innerText = `$${s.sales_spend || "0.00"}`;
+          document.getElementById("costPerOrder").innerText = `$${s.avg_cost_per_order_usd || "0.00"}`;
+          document.getElementById("activeAccounts").innerText = `${data.ads.accounts ? data.ads.accounts.length : 0}টি`;
         }
 
-        // Ads Breakdown টেবিল আপডেট
-        const adsTableBody = document.getElementById('adsReportList');
+        // 3. Ads Breakdown Table
+        const adsTable = document.getElementById("adsTableBody");
         if (data.ads && data.ads.accounts && data.ads.accounts.length > 0) {
-          let adsRows = '';
-          data.ads.accounts.forEach((acc) => {
-            adsRows += `
-              <tr>
-                <td>
-                  <div style="font-weight: 700; color: #ffffff;">${acc.name}</div>
-                  <div style="font-size: 11px; color: #64748b;">${acc.id}</div>
-                </td>
-                <td style="font-weight: 700; color: #38bdf8;">$${acc.spend}</td>
-                <td style="font-weight: 700; color: #ffffff;">${acc.messages}</td>
-                <td><span class="badge-cents">${acc.cost_per_msg_cents}¢</span></td>
-                <td style="font-weight: 700; color: #34d399;">${acc.orders}</td>
-                <td><span class="badge-order">$${acc.cost_per_order_usd}</span></td>
-              </tr>
-            `;
-          });
-          adsTableBody.innerHTML = adsRows;
+          adsTable.innerHTML = data.ads.accounts.map(acc => `
+            <tr class="hover:bg-slate-800/40 transition">
+              <td class="py-3 px-4">
+                <div class="font-semibold text-white">${acc.name}</div>
+                <div class="text-xs text-slate-500 font-mono">${acc.id}</div>
+              </td>
+              <td class="py-3 px-4 font-semibold text-sky-400">$${acc.spend}</td>
+              <td class="py-3 px-4">
+                <span class="font-bold text-emerald-400">${acc.messages} SMS</span>
+                <span class="text-xs text-slate-400 ml-1">($${acc.msg_spend})</span>
+              </td>
+              <td class="py-3 px-4">
+                <span class="bg-emerald-950/60 text-emerald-400 px-2 py-0.5 rounded font-bold">${acc.cost_per_msg_cents}¢</span>
+              </td>
+              <td class="py-3 px-4">
+                <span class="font-bold text-purple-400">${acc.orders} অর্ডার</span>
+                <span class="text-xs text-slate-400 ml-1">($${acc.sales_spend})</span>
+              </td>
+              <td class="py-3 px-4">
+                <span class="bg-purple-950/60 text-purple-400 px-2 py-0.5 rounded font-bold">$${acc.cost_per_order_usd}</span>
+              </td>
+            </tr>
+          `).join("");
         } else {
-          adsTableBody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #64748b; padding: 20px;">অ্যাড ডেটা পাওয়া যায়নি</td></tr>';
+          adsTable.innerHTML = `<tr><td colspan="6" class="text-center py-6 text-slate-500">অ্যাড ডেটা পাওয়া যায়নি</td></tr>`;
         }
 
-        // মডারেটর টেবিল আপডেট
-        const tableBody = document.getElementById('moderatorReportList');
+        // 4. Moderator Table
+        const modTable = document.getElementById("modTableBody");
         if (data.moderators && data.moderators.length > 0) {
-          let rowsHtml = '';
-          const maxVal = Math.max(...data.moderators.map(m => m.total_conversations), 1);
-          const barPalette = ['#38bdf8', '#34d399', '#c084fc', '#fbbf24', '#f87171'];
-
-          data.moderators.forEach((mod, idx) => {
-            const barWidth = Math.round((mod.total_conversations / maxVal) * 100);
-            const color = barPalette[idx % barPalette.length];
-            const iconEmoji = ['👨🏻‍💼', '👩🏻‍💼', '🧑🏻‍💻', '👨🏻‍💻'][idx % 4];
-
-            rowsHtml += `
-              <tr>
-                <td>
-                  <div class="mod-flex">
-                    <div class="user-avatar-circle">${iconEmoji}</div>
-                    <span>${mod.name}</span>
-                  </div>
-                </td>
-                <td class="count-bold">${mod.total_conversations}</td>
-                <td>
-                  <div class="track-bg">
-                    <div class="track-line" style="width: ${barWidth}%; background: ${color};"></div>
-                  </div>
-                </td>
-              </tr>
-            `;
-          });
-          tableBody.innerHTML = rowsHtml;
+          modTable.innerHTML = data.moderators.map(m => `
+            <tr class="hover:bg-slate-800/40 transition">
+              <td class="py-3 px-4 font-medium text-white">${m.name}</td>
+              <td class="py-3 px-4 font-bold text-emerald-400">${m.total_conversations}</td>
+            </tr>
+          `).join("");
         } else {
-          tableBody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: #64748b; padding: 24px;">আজকে এখনো কোনো মডারেটরের রেকর্ড পাওয়া যায়নি</td></tr>';
+          modTable.innerHTML = `<tr><td colspan="2" class="text-center py-6 text-slate-500">কোনো মডারেটর ডেটা পাওয়া যায়নি</td></tr>`;
         }
+
       } catch (err) {
-        console.error('Error fetching analytics:', err);
+        console.error("Dashboard Load Error:", err);
       }
     }
 
-    setInterval(fetchAnalyticsData, 10000);
+    loadDashboard();
+    setInterval(loadDashboard, 30000); // প্রতি ৩০ সেকেন্ড পর পর লাইভ আপডেট
   </script>
 </body>
 </html>
