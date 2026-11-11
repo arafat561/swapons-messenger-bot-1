@@ -13,7 +13,7 @@ const DASHBOARD_USER = process.env.DASHBOARD_USER || "admin";
 const DASHBOARD_PASS = process.env.DASHBOARD_PASS || "swapons123";
 const META_ACCESS_TOKEN = process.env.META_ACCESS_TOKEN || "";
 
-// ৯টি অ্যাড অ্যাকাউন্টের সম্পূর্ণ নির্ভুল তালিকা
+// ৯টি অ্যাড অ্যাকাউন্ট
 const AD_ACCOUNTS = [
   { id: "act_705111815068714", name: "ZXC19 (Stone rose)" },
   { id: "act_722336793300354", name: "ST-07 (Stone Rose)" },
@@ -53,7 +53,6 @@ const PAGES = {
   "250386238168336": "Stone Rose BD"
 };
 
-// মডারেটরদের তালিকা (আপন ও ফারজানা সহ)
 const MODERATOR_RULES = [
   { name: 'ফাহিম', keywords: ['আমি ফাহিম', 'ফাহিম'] },
   { name: 'আজাদ', keywords: ['আমি আজাদ', 'আজাদ'] },
@@ -251,7 +250,7 @@ function httpsGet(url) {
   });
 }
 
-// মেটা এপিআই থেকে বিজ্ঞাপন ডেটা নিখুঁতভাবে ফেচ
+// ক্যাম্পেইনভিত্তিক নির্ভুল মেটা এপিআই কল
 async function fetchMetaAdsMetrics(targetDate) {
   if (!META_ACCESS_TOKEN) return { accounts: [], summary: {} };
 
@@ -264,14 +263,15 @@ async function fetchMetaAdsMetrics(targetDate) {
   const promises = AD_ACCOUNTS.map(async (acc) => {
     try {
       const cleanId = acc.id.replace(/\s+/g, "");
-      const url = `https://graph.facebook.com/v19.0/${cleanId}/insights?access_token=${META_ACCESS_TOKEN}&${dateQuery}&level=campaign&fields=campaign_name,spend,actions,cost_per_action_type`;
+      // ক্যাম্পেইন লেভেলে স্পেন্ড এবং অবজেক্টিভ আনা হচ্ছে
+      const url = `https://graph.facebook.com/v19.0/${cleanId}/insights?access_token=${META_ACCESS_TOKEN}&${dateQuery}&level=campaign&fields=campaign_name,objective,spend,actions`;
       const response = await httpsGet(url);
 
       let totalSpend = 0;
       let totalMessages = 0;
       let totalOrders = 0;
-      let msgCampaignSpend = 0;
-      let salesCampaignSpend = 0;
+      let msgSpend = 0;
+      let salesSpend = 0;
 
       if (response && response.data && response.data.length > 0) {
         response.data.forEach((camp) => {
@@ -282,7 +282,7 @@ async function fetchMetaAdsMetrics(targetDate) {
           let campOrders = 0;
 
           if (camp.actions) {
-            // মেটা থেকে আসা ইউনিক মেসেজ কনভারসেশন
+            // ১. ইউনিক মেসেজ
             const msgAction = camp.actions.find(a => 
               a.action_type === "onsite_conversion.messaging_conversation_started_7d"
             );
@@ -290,9 +290,9 @@ async function fetchMetaAdsMetrics(targetDate) {
               campMsgs = parseInt(msgAction.value || 0, 10);
             }
 
-            // মেটা থেকে আসা ইউনিক ওয়েবসাইট পারচেজ
+            // ২. ইউনিক ওয়েবসাইট পারচেজ
             const orderAction = camp.actions.find(a => 
-              a.action_type === "purchase" ||
+              a.action_type === "purchase" || 
               a.action_type === "offsite_conversion.fb_pixel_purchase"
             );
             if (orderAction) {
@@ -303,34 +303,42 @@ async function fetchMetaAdsMetrics(targetDate) {
           totalMessages += campMsgs;
           totalOrders += campOrders;
 
-          // যে ক্যাম্পেইনে মেসেজ আসছে সেই ক্যাম্পেইনের স্পেন্ড আলাদা যোগ হবে
+          // ক্যাম্পেইনের উদ্দেশ্য ও রেজাল্টের ভিত্তিতে স্পেন্ড আলাদা করা
+          const obj = (camp.objective || "").toUpperCase();
+          const isMsgObj = obj.includes("MESSAGES") || obj.includes("ENGAGEMENT");
+          const isSalesObj = obj.includes("OUTCOME_SALES") || obj.includes("CONVERSIONS");
+
           if (campMsgs > 0 && campOrders === 0) {
-            msgCampaignSpend += campSpend;
+            msgSpend += campSpend;
           } else if (campOrders > 0 && campMsgs === 0) {
-            salesCampaignSpend += campSpend;
-          } else if (campMsgs > 0 && campOrders > 0) {
-            // যদি একই ক্যাম্পেইনে দুটোই আসে তবে সমান অনুপাতে ভাগ
-            msgCampaignSpend += (campSpend / 2);
-            salesCampaignSpend += (campSpend / 2);
+            salesSpend += campSpend;
+          } else if (isMsgObj && !isSalesObj) {
+            msgSpend += campSpend;
+          } else if (isSalesObj && !isMsgObj) {
+            salesSpend += campSpend;
+          } else {
+            // যদি মিশ্র হয়
+            if (campMsgs > 0) msgSpend += (campSpend / 2);
+            if (campOrders > 0) salesSpend += (campSpend / 2);
           }
         });
       }
 
-      // ১. Cost per SMS (Cents এ) -> মেটা অ্যাড ম্যানেজারের মতো নিখুঁত সেন্ট হিসাব
-      let costPerMsgCents = 0;
+      // ১. Cost per SMS: শুধুমাত্র মেসেজিং ক্যাম্পেইনের খরচ দিয়ে ভাগ
+      let costPerMsgCents = "0.0";
       if (totalMessages > 0) {
-        const applicableMsgSpend = msgCampaignSpend > 0 ? msgCampaignSpend : (totalOrders === 0 ? totalSpend : 0);
-        if (applicableMsgSpend > 0) {
-          costPerMsgCents = ((applicableMsgSpend / totalMessages) * 100).toFixed(1);
+        const costSpend = msgSpend > 0 ? msgSpend : (totalOrders === 0 ? totalSpend : 0);
+        if (costSpend > 0) {
+          costPerMsgCents = ((costSpend / totalMessages) * 100).toFixed(1);
         }
       }
 
-      // ২. Cost per Purchase (USD তে)
+      // ২. Cost per Order: শুধুমাত্র ওয়েবসাইট সেলস ক্যাম্পেইনের খরচ দিয়ে ভাগ
       let costPerOrderUsd = "0.00";
       if (totalOrders > 0) {
-        const applicableSalesSpend = salesCampaignSpend > 0 ? salesCampaignSpend : (totalMessages === 0 ? totalSpend : 0);
-        if (applicableSalesSpend > 0) {
-          costPerOrderUsd = (applicableSalesSpend / totalOrders).toFixed(2);
+        const costSpend = salesSpend > 0 ? salesSpend : (totalMessages === 0 ? totalSpend : 0);
+        if (costSpend > 0) {
+          costPerOrderUsd = (costSpend / totalOrders).toFixed(2);
         }
       }
 
@@ -339,11 +347,11 @@ async function fetchMetaAdsMetrics(targetDate) {
         name: acc.name,
         spend: totalSpend.toFixed(2),
         messages: totalMessages,
+        msg_spend: msgSpend.toFixed(2),
         cost_per_msg_cents: costPerMsgCents,
         orders: totalOrders,
-        cost_per_order_usd: costPerOrderUsd,
-        msg_spend: msgCampaignSpend > 0 ? msgCampaignSpend : (totalOrders === 0 ? totalSpend : 0),
-        sales_spend: salesCampaignSpend > 0 ? salesCampaignSpend : (totalMessages === 0 ? totalSpend : 0)
+        sales_spend: salesSpend.toFixed(2),
+        cost_per_order_usd: costPerOrderUsd
       };
     } catch (err) {
       return {
@@ -351,11 +359,11 @@ async function fetchMetaAdsMetrics(targetDate) {
         name: acc.name,
         spend: "0.00",
         messages: 0,
-        cost_per_msg_cents: 0,
+        msg_spend: "0.00",
+        cost_per_msg_cents: "0.0",
         orders: 0,
-        cost_per_order_usd: "0.00",
-        msg_spend: 0,
-        sales_spend: 0
+        sales_spend: "0.00",
+        cost_per_order_usd: "0.00"
       };
     }
   });
@@ -366,15 +374,14 @@ async function fetchMetaAdsMetrics(targetDate) {
   const totalMsgsSum = results.reduce((acc, curr) => acc + curr.messages, 0);
   const totalOrdersSum = results.reduce((acc, curr) => acc + curr.orders, 0);
 
-  const totalMsgSpendSum = results.reduce((acc, curr) => acc + curr.msg_spend, 0);
-  const totalSalesSpendSum = results.reduce((acc, curr) => acc + curr.sales_spend, 0);
+  const totalMsgSpendSum = results.reduce((acc, curr) => acc + parseFloat(curr.msg_spend || 0), 0);
+  const totalSalesSpendSum = results.reduce((acc, curr) => acc + parseFloat(curr.sales_spend || 0), 0);
 
-  // সামারি কার্ডের জন্য মেসেজিং ক্যাম্পেইনের নিখুঁত সেন্ট (¢) গড়
+  // সামারি কার্ডের জন্য মেসেজ ক্যাম্পেইন ও সেলস ক্যাম্পেইনের আলাদা গড়
   const avgCostPerMsgCents = totalMsgsSum > 0 && totalMsgSpendSum > 0
     ? ((totalMsgSpendSum / totalMsgsSum) * 100).toFixed(1)
-    : 0;
+    : "0.0";
 
-  // সামারি কার্ডের জন্য ওয়েবসাইট পারচেজ ক্যাম্পেইনের নিখুঁত ডলার ($) গড়
   const avgCostPerOrderUsd = totalOrdersSum > 0 && totalSalesSpendSum > 0
     ? (totalSalesSpendSum / totalOrdersSum).toFixed(2)
     : "0.00";
@@ -384,14 +391,16 @@ async function fetchMetaAdsMetrics(targetDate) {
     summary: {
       total_spend: totalSpendSum.toFixed(2),
       total_messages: totalMsgsSum,
+      msg_spend: totalMsgSpendSum.toFixed(2),
       avg_cost_per_msg_cents: avgCostPerMsgCents,
       total_orders: totalOrdersSum,
+      sales_spend: totalSalesSpendSum.toFixed(2),
       avg_cost_per_order_usd: avgCostPerOrderUsd
     }
   };
 }
 
-// প্রতিদিনের ইউনিক কাস্টমার ও মেসেজিং ড্যাশবোর্ড রিপোর্ট
+// ড্যাশবোর্ড API
 app.get("/api/daily-report", requireAuth, async (req, res) => {
   try {
     const targetDate = req.query.date || new Date().toISOString().slice(0, 10);
@@ -409,14 +418,14 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       }
     }
 
-    // ১. মোট সক্রিয় ইউনিক কাস্টমার
+    // ১. মোট ইউনিক সক্রিয় কাস্টমার (যেকোনো দিন আগের কাস্টমারই হোক, আজ নক দিলে ১ জন হিসেবেই কাউন্ট)
     const totalReceived = db.prepare(`
       SELECT COUNT(DISTINCT sender_id) as count 
       FROM messages 
       WHERE date(created_at, 'localtime') = ? ${pageCondition}
     `).get(targetDate, ...pageParam).count;
 
-    // ২. উত্তর দেওয়া সম্পন্ন কাস্টমার
+    // ২. উত্তর সম্পন্ন কাস্টমার
     const totalReplied = db.prepare(`
       SELECT COUNT(DISTINCT sender_id) as count 
       FROM messages 
@@ -432,7 +441,7 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
         AND date(created_at, 'localtime') = ? ${pageCondition}
     `).get(targetDate, ...pageParam).count;
 
-    // ৪. সিন হয়েছে কিন্তু কোনো রিপ্লাই দেওয়া হয়নি
+    // ৪. সিন কিন্তু কোনো উত্তর নেই
     const readNoReply = db.prepare(`
       SELECT COUNT(DISTINCT sender_id) as count 
       FROM messages m
