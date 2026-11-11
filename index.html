@@ -1,155 +1,301 @@
 <!DOCTYPE html>
-<html lang="bn">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Analytics & Operations Dashboard</title>
+  <title>Live Analytics & Operations Dashboard</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
   <style>
-    body { font-family: 'Hind Siliguri', sans-serif; background-color: #0b1120; color: #f1f5f9; }
+    body {
+      background-color: #070b14;
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(37, 99, 235, 0.16) 0px, transparent 50%),
+        radial-gradient(at 100% 0%, rgba(147, 51, 234, 0.14) 0px, transparent 50%),
+        radial-gradient(at 50% 100%, rgba(16, 185, 129, 0.1) 0px, transparent 50%);
+      background-attachment: fixed;
+    }
+
+    /* Base Glassmorphism Card Style */
+    .glass-card {
+      background: rgba(15, 23, 42, 0.78);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    /* Universal Interactive Hover Effect: 3D Lift, Glow & Subtle Color Shift */
+    .hover-lift {
+      transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+      cursor: pointer;
+    }
+    .hover-lift:hover {
+      transform: translateY(-6px) scale(1.02);
+      border-color: rgba(96, 165, 250, 0.6);
+      background: rgba(30, 41, 59, 0.88);
+      box-shadow: 0 16px 32px -6px rgba(37, 99, 235, 0.3), 0 0 18px rgba(59, 130, 246, 0.25);
+    }
+
+    /* Main Customer Active Card Special Pulse Glow */
+    .customer-hero-card {
+      position: relative;
+      overflow: hidden;
+      transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .customer-hero-card:hover {
+      transform: translateY(-8px) scale(1.03);
+      border-color: rgba(56, 189, 248, 0.85);
+      background: radial-gradient(circle at top right, rgba(37, 99, 235, 0.3), rgba(15, 23, 42, 0.96));
+      box-shadow: 0 22px 38px -8px rgba(14, 165, 233, 0.45);
+    }
+    .customer-hero-card:hover .customer-number {
+      color: #38bdf8;
+      text-shadow: 0 0 20px rgba(56, 189, 248, 0.8);
+      transform: scale(1.06);
+    }
+
+    /* Form Input Focus & Hover Transitions */
+    .form-control-hover {
+      transition: all 0.25s ease;
+    }
+    .form-control-hover:hover {
+      border-color: rgba(96, 165, 250, 0.5);
+      background: rgba(15, 23, 42, 0.95);
+    }
   </style>
 </head>
-<body class="p-4 md:p-8">
+<body class="text-slate-100 min-h-screen p-4 md:p-8 antialiased">
   <div class="max-w-7xl mx-auto space-y-6">
 
-    <!-- Top Bar -->
-    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-900/90 p-5 rounded-2xl border border-slate-800 backdrop-blur-md shadow-xl">
-      <div>
-        <h1 class="text-2xl font-bold text-white flex items-center gap-2">
-          📊 লাইভ অ্যানালিটিক্স ও অপারেশন ড্যাশবোর্ড
-        </h1>
-        <p class="text-xs text-slate-400 mt-1">ক্যাম্পেইনভিত্তিক খরচ ও কাস্টমার ট্র্যাকিং</p>
+    <!-- Top Navigation Header (Fully English & Modern Glass Form) -->
+    <header class="glass-card hover-lift rounded-2xl p-5 shadow-2xl flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5 border border-slate-800">
+      <div class="flex items-center gap-4">
+        <div class="w-12 h-12 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center shadow-lg shadow-blue-500/25 text-2xl animate-pulse">
+          📊
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-xl md:text-2xl font-extrabold tracking-tight text-white">Live Analytics & Operations Dashboard</h1>
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span> LIVE
+            </span>
+          </div>
+          <p class="text-xs text-slate-400 mt-0.5">Campaign-segmented ad spend & unified messenger customer tracking</p>
+        </div>
       </div>
-      <div class="flex flex-wrap items-center gap-3">
-        <input type="date" id="datePicker" class="bg-slate-800 text-white text-sm px-3 py-2 rounded-xl border border-slate-700 outline-none focus:border-blue-500">
-        <select id="pageFilter" class="bg-slate-800 text-white text-sm px-3 py-2 rounded-xl border border-slate-700 outline-none focus:border-blue-500">
-          <option value="all">সব পেজ (All Pages)</option>
-          <option value="102803132669088">Swapons World</option>
-          <option value="250386238168336">Stone Rose BD</option>
-        </select>
-        <button onclick="loadDashboard()" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2 rounded-xl transition shadow">
-          রিফ্রেশ
+
+      <!-- Real-time Filter Form Controls -->
+      <form id="filterForm" onsubmit="event.preventDefault(); loadDashboard();" class="w-full lg:w-auto flex flex-wrap items-center gap-3 bg-slate-950/70 p-2.5 rounded-xl border border-slate-800/80">
+        <!-- Date Selector -->
+        <div class="form-control-hover flex items-center gap-2 bg-slate-900/90 px-3.5 py-2 rounded-lg border border-slate-800 focus-within:border-blue-500">
+          <label for="datePicker" class="text-slate-400 text-xs font-semibold cursor-pointer">Date:</label>
+          <input type="date" id="datePicker" class="bg-transparent text-white text-xs md:text-sm font-medium outline-none cursor-pointer">
+        </div>
+
+        <!-- Channel / Page Selector -->
+        <div class="form-control-hover flex items-center gap-2 bg-slate-900/90 px-3.5 py-2 rounded-lg border border-slate-800 focus-within:border-blue-500">
+          <label for="pageFilter" class="text-slate-400 text-xs font-semibold cursor-pointer">Channel:</label>
+          <select id="pageFilter" class="bg-transparent text-white text-xs md:text-sm font-medium outline-none cursor-pointer pr-1">
+            <option value="all" class="bg-slate-900">All Channels (Pages)</option>
+            <option value="102803132669088" class="bg-slate-900">Swapons World</option>
+            <option value="250386238168336" class="bg-slate-900">Stone Rose BD</option>
+          </select>
+        </div>
+
+        <!-- Refresh Button (English & Dynamic Interactive) -->
+        <button type="submit" class="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95 text-white text-xs md:text-sm font-semibold px-5 py-2.5 rounded-lg transition-all duration-200 shadow-lg shadow-blue-600/30 cursor-pointer">
+          <svg id="refreshIcon" class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+          </svg>
+          <span>Refresh</span>
         </button>
-      </div>
-    </div>
+      </form>
+    </header>
 
-    <!-- Ads Summary Cards (Website vs SMS Campaign আলাদা) -->
-    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-      <div class="bg-slate-900/80 p-5 rounded-2xl border border-slate-800 shadow-md">
-        <div class="text-xs text-slate-400 font-medium">মোট Ads খরচ (Total Spend)</div>
-        <div id="totalSpend" class="text-3xl font-bold text-sky-400 mt-2">$0.00</div>
-        <div class="text-[11px] text-slate-500 mt-1">সবগুলো অ্যাকাউন্টের মোট বাজেট</div>
-      </div>
-
-      <div class="bg-slate-900/80 p-5 rounded-2xl border border-slate-800 shadow-md">
-        <div class="text-xs text-slate-400 font-medium">মেসেজ ক্যাম্পেইন (Messaging)</div>
-        <div id="totalMessages" class="text-3xl font-bold text-emerald-400 mt-2">0</div>
-        <div class="text-[11px] text-slate-400 mt-1">
-          খরচ: <span id="msgSpend" class="text-white font-medium">$0.00</span> | প্রতি SMS: <span id="costPerMsg" class="text-emerald-400 font-bold bg-emerald-950/60 px-1.5 py-0.5 rounded">0.0¢</span>
+    <!-- Meta Ads Core Summary Cards (Interactive Lift & Glow on Hover) -->
+    <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      
+      <!-- Total Spend Card -->
+      <div class="glass-card hover-lift rounded-2xl p-5 relative overflow-hidden">
+        <div class="flex justify-between items-start">
+          <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Ads Spend</span>
+          <span class="w-9 h-9 rounded-xl bg-sky-500/10 text-sky-400 flex items-center justify-center text-base">💵</span>
+        </div>
+        <div id="totalSpend" class="text-3xl font-extrabold text-white mt-3 tracking-tight font-mono">$0.00</div>
+        <div class="text-[11px] text-slate-400 mt-2 flex items-center gap-1.5">
+          <span class="inline-block w-2 h-2 rounded-full bg-sky-400"></span> Cumulative budget across 9 accounts
         </div>
       </div>
 
-      <div class="bg-slate-900/80 p-5 rounded-2xl border border-slate-800 shadow-md">
-        <div class="text-xs text-slate-400 font-medium">ওয়েবসাইট ক্যাম্পেইন (Sales)</div>
-        <div id="totalOrders" class="text-3xl font-bold text-purple-400 mt-2">0</div>
-        <div class="text-[11px] text-slate-400 mt-1">
-          খরচ: <span id="salesSpend" class="text-white font-medium">$0.00</span> | প্রতি অর্ডার: <span id="costPerOrder" class="text-purple-400 font-bold bg-purple-950/60 px-1.5 py-0.5 rounded">$0.00</span>
+      <!-- Messaging Campaign Card -->
+      <div class="glass-card hover-lift rounded-2xl p-5 relative overflow-hidden">
+        <div class="flex justify-between items-start">
+          <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Messaging Campaigns</span>
+          <span class="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center text-base">💬</span>
+        </div>
+        <div id="totalMessages" class="text-3xl font-extrabold text-emerald-400 mt-3 tracking-tight font-mono">0</div>
+        <div class="text-[11px] text-slate-300 mt-2 flex flex-wrap items-center gap-2">
+          <span>Spend: <strong id="msgSpend" class="text-white font-mono">$0.00</strong></span>
+          <span class="text-slate-600">•</span>
+          <span class="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded font-mono font-bold" id="costPerMsg">0.0¢</span>
         </div>
       </div>
 
-      <div class="bg-slate-900/80 p-5 rounded-2xl border border-slate-800 shadow-md">
-        <div class="text-xs text-slate-400 font-medium">অ্যাক্টিভ অ্যাড অ্যাকাউন্ট</div>
-        <div id="activeAccounts" class="text-3xl font-bold text-amber-400 mt-2">0টি</div>
-        <div class="text-[11px] text-slate-500 mt-1">সংযুক্ত মোট ৯টি মেটা অ্যাকাউন্ট</div>
+      <!-- Website Sales Campaign Card -->
+      <div class="glass-card hover-lift rounded-2xl p-5 relative overflow-hidden">
+        <div class="flex justify-between items-start">
+          <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Website Purchases</span>
+          <span class="w-9 h-9 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center text-base">🛍️</span>
+        </div>
+        <div id="totalOrders" class="text-3xl font-extrabold text-purple-400 mt-3 tracking-tight font-mono">0</div>
+        <div class="text-[11px] text-slate-300 mt-2 flex flex-wrap items-center gap-2">
+          <span>Spend: <strong id="salesSpend" class="text-white font-mono">$0.00</strong></span>
+          <span class="text-slate-600">•</span>
+          <span class="bg-purple-500/10 text-purple-400 border border-purple-500/20 px-2 py-0.5 rounded font-mono font-bold" id="costPerOrder">$0.00</span>
+        </div>
       </div>
-    </div>
 
-    <!-- Operations / Inbox Summary Cards -->
-    <div class="grid grid-cols-2 md:grid-cols-6 gap-3">
-      <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800">
-        <div class="text-xs text-slate-400">মোট সক্রিয় কাস্টমার</div>
-        <div id="statReceived" class="text-xl font-bold text-blue-400 mt-1">0</div>
-        <div class="text-[10px] text-slate-500">ইউনিক মানুষ (SMS + Direct)</div>
+      <!-- Active Connected Accounts Card -->
+      <div class="glass-card hover-lift rounded-2xl p-5 relative overflow-hidden">
+        <div class="flex justify-between items-start">
+          <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Connected Accounts</span>
+          <span class="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center text-base">⚡</span>
+        </div>
+        <div id="activeAccounts" class="text-3xl font-extrabold text-amber-400 mt-3 tracking-tight font-mono">0</div>
+        <div class="text-[11px] text-slate-400 mt-2 flex items-center gap-1.5">
+          <span class="inline-block w-2 h-2 rounded-full bg-amber-400"></span> Active Meta Marketing API Stream
+        </div>
       </div>
-      <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800">
-        <div class="text-xs text-slate-400">উত্তর দেওয়া সম্পন্ন</div>
-        <div id="statReplied" class="text-xl font-bold text-green-400 mt-1">0</div>
-        <div class="text-[10px] text-slate-500">রিপ্লাই পেয়েছে</div>
-      </div>
-      <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800">
-        <div class="text-xs text-slate-400">দেখা হয়নি (Unread)</div>
-        <div id="statUnread" class="text-xl font-bold text-amber-400 mt-1">0</div>
-        <div class="text-[10px] text-slate-500">ইনবক্সে পেন্ডিং</div>
-      </div>
-      <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800">
-        <div class="text-xs text-slate-400">সিন কিন্তু রিপ্লাই নেই ⚠️</div>
-        <div id="statReadNoReply" class="text-xl font-bold text-red-400 mt-1">0</div>
-        <div class="text-[10px] text-slate-500">উত্তর দেওয়া হয়নি</div>
-      </div>
-      <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800">
-        <div class="text-xs text-slate-400">ইনবক্স কনফার্ম অর্ডার</div>
-        <div id="statOrders" class="text-xl font-bold text-purple-400 mt-1">0</div>
-        <div class="text-[10px] text-slate-500">চ্যাটে কনফার্ম</div>
-      </div>
-      <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800">
-        <div class="text-xs text-slate-400">মোট ফোন নম্বর</div>
-        <div id="statPhones" class="text-xl font-bold text-teal-400 mt-1">0</div>
-        <div class="text-[10px] text-slate-500">ইউনিক লিড</div>
-      </div>
-    </div>
 
-    <!-- Ads Breakdown Table -->
-    <div class="bg-slate-900/90 rounded-2xl border border-slate-800 overflow-hidden shadow-xl">
-      <div class="p-4 border-b border-slate-800 flex justify-between items-center">
-        <h2 class="text-base font-semibold text-white flex items-center gap-2">
-          📢 অ্যাড অ্যাকাউন্ট ভিত্তিক লাইভ পারফরম্যান্স (Ads Breakdown)
-        </h2>
+    </section>
+
+    <!-- Operational Inbox Stats (Interactive 3D Hover & Glow Highlights) -->
+    <section class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+      
+      <!-- Interactive Main Total Customers Card -->
+      <div class="glass-card customer-hero-card rounded-xl p-4 border border-blue-500/40 cursor-pointer">
+        <div class="flex items-center justify-between">
+          <div class="text-[11px] uppercase tracking-wider text-blue-300 font-bold">Active Customers</div>
+          <span class="text-xs">👥</span>
+        </div>
+        <div id="statReceived" class="customer-number text-2xl md:text-3xl font-extrabold text-blue-400 mt-1 font-mono transition-all duration-300">0</div>
+        <div class="text-[10px] text-slate-400 mt-1">Unique (Ads + Direct)[cite: 2]</div>
       </div>
+
+      <!-- Replied Done Card -->
+      <div class="glass-card hover-lift rounded-xl p-4 border border-emerald-500/20 hover:border-emerald-500/60">
+        <div class="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Replied Done</div>
+        <div id="statReplied" class="text-2xl font-extrabold text-emerald-400 mt-1 font-mono">0</div>
+        <div class="text-[10px] text-slate-500 mt-1">Response dispatched</div>
+      </div>
+
+      <!-- Unread Pending Card -->
+      <div class="glass-card hover-lift rounded-xl p-4 border border-amber-500/20 hover:border-amber-500/60">
+        <div class="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Unread Pending</div>
+        <div id="statUnread" class="text-2xl font-extrabold text-amber-400 mt-1 font-mono">0</div>
+        <div class="text-[10px] text-slate-500 mt-1">Awaiting attention</div>
+      </div>
+
+      <!-- Seen No Reply Card -->
+      <div class="glass-card hover-lift rounded-xl p-4 border border-rose-500/30 hover:border-rose-500 bg-rose-950/10">
+        <div class="text-[11px] uppercase tracking-wider text-rose-400 font-semibold">Seen No Reply ⚠️</div>
+        <div id="statReadNoReply" class="text-2xl font-extrabold text-rose-400 mt-1 font-mono">0</div>
+        <div class="text-[10px] text-rose-300/60 mt-1">Urgent follow-up</div>
+      </div>
+
+      <!-- Confirmed Orders Card -->
+      <div class="glass-card hover-lift rounded-xl p-4 border border-purple-500/20 hover:border-purple-500/60">
+        <div class="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Confirmed Orders</div>
+        <div id="statOrders" class="text-2xl font-extrabold text-purple-400 mt-1 font-mono">0</div>
+        <div class="text-[10px] text-slate-500 mt-1">Verified in Chat</div>
+      </div>
+
+      <!-- Collected Phone Numbers Card -->
+      <div class="glass-card hover-lift rounded-xl p-4 border border-teal-500/20 hover:border-teal-500/60">
+        <div class="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Collected Leads</div>
+        <div id="statPhones" class="text-2xl font-extrabold text-teal-400 mt-1 font-mono">0</div>
+        <div class="text-[10px] text-slate-500 mt-1">Unique phone numbers</div>
+      </div>
+
+    </section>
+
+    <!-- Meta Ad Accounts Breakdown Table -->
+    <div class="glass-card hover-lift rounded-2xl overflow-hidden shadow-2xl border border-slate-800">
+      <div class="p-4 md:px-6 border-b border-slate-800/80 flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <span class="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></span>
+          <h2 class="text-sm md:text-base font-bold text-white tracking-wide">Live Ad Accounts Breakdown</h2>
+        </div>
+        <span class="text-xs text-slate-400 font-medium font-mono">Real-time Attribution</span>
+      </div>
+
       <div class="overflow-x-auto">
         <table class="w-full text-left text-sm">
-          <thead class="bg-slate-950/60 text-slate-400 text-xs uppercase border-b border-slate-800">
+          <thead class="bg-slate-950/80 text-slate-400 text-[11px] uppercase tracking-wider font-semibold border-b border-slate-800 font-mono">
             <tr>
-              <th class="py-3 px-4">অ্যাকাউন্ট নাম ও আইডি</th>
-              <th class="py-3 px-4">মোট খরচ</th>
-              <th class="py-3 px-4">মেসেজ ক্যাম্পেইন</th>
-              <th class="py-3 px-4">প্রতি SMS খরচ</th>
-              <th class="py-3 px-4">ওয়েবসাইট ক্যাম্পেইন</th>
-              <th class="py-3 px-4">প্রতি অর্ডার খরচ</th>
+              <th class="py-3.5 px-4 md:px-6">Account Name & ID</th>
+              <th class="py-3.5 px-4">Total Spend</th>
+              <th class="py-3.5 px-4">Messaging Campaign</th>
+              <th class="py-3.5 px-4">Cost / SMS</th>
+              <th class="py-3.5 px-4">Sales Campaign</th>
+              <th class="py-3.5 px-4">Cost / Order</th>
             </tr>
           </thead>
-          <tbody id="adsTableBody" class="divide-y divide-slate-800/60 text-slate-300">
-            <tr><td colspan="6" class="text-center py-6 text-slate-500">লোড হচ্ছে...</td></tr>
+          <tbody id="adsTableBody" class="divide-y divide-slate-800/50">
+            <tr><td colspan="6" class="text-center py-8 text-slate-500 font-mono">Syncing with Meta Marketing API...</td></tr>
           </tbody>
         </table>
       </div>
     </div>
 
-    <!-- Moderator Performance Table -->
-    <div class="bg-slate-900/90 rounded-2xl border border-slate-800 overflow-hidden shadow-xl">
-      <div class="p-4 border-b border-slate-800">
-        <h2 class="text-base font-semibold text-white flex items-center gap-2">
-          👥 মডারেটর পারফরম্যান্স (Moderator Conversations)
-        </h2>
+    <!-- Moderator Team Performance Table -->
+    <div class="glass-card hover-lift rounded-2xl overflow-hidden shadow-2xl border border-slate-800">
+      <div class="p-4 md:px-6 border-b border-slate-800/80 flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+          <h2 class="text-sm md:text-base font-bold text-white tracking-wide">Moderator Team Attribution</h2>
+        </div>
+        <span class="text-xs text-slate-400 font-medium font-mono">First Reply Locking[cite: 2]</span>
       </div>
+
       <div class="overflow-x-auto">
         <table class="w-full text-left text-sm">
-          <thead class="bg-slate-950/60 text-slate-400 text-xs uppercase border-b border-slate-800">
+          <thead class="bg-slate-950/80 text-slate-400 text-[11px] uppercase tracking-wider font-semibold border-b border-slate-800 font-mono">
             <tr>
-              <th class="py-3 px-4">মডারেটরের নাম</th>
-              <th class="py-3 px-4">আজকের হ্যান্ডেল করা কাস্টমার সংখ্যা</th>
+              <th class="py-3.5 px-4 md:px-6">Moderator Identity</th>
+              <th class="py-3.5 px-4">Handled Conversations Today</th>
             </tr>
           </thead>
-          <tbody id="modTableBody" class="divide-y divide-slate-800/60 text-slate-300">
-            <tr><td colspan="2" class="text-center py-6 text-slate-500">লোড হচ্ছে...</td></tr>
+          <tbody id="modTableBody" class="divide-y divide-slate-800/50">
+            <tr><td colspan="2" class="text-center py-8 text-slate-500 font-mono">Loading team metrics...</td></tr>
           </tbody>
         </table>
       </div>
     </div>
+
+    <footer class="text-center text-xs text-slate-600 pb-4 font-mono">
+      Internal BI Engine • Auto-refreshing every 30 seconds
+    </footer>
 
   </div>
 
   <script>
+    // Set default date to today
     document.getElementById("datePicker").value = new Date().toISOString().slice(0, 10);
 
     const AUTH_HEADER = "Basic " + btoa("admin:swapons123");
@@ -157,6 +303,9 @@
     async function loadDashboard() {
       const date = document.getElementById("datePicker").value;
       const pageId = document.getElementById("pageFilter").value;
+      const refreshIcon = document.getElementById("refreshIcon");
+
+      refreshIcon.classList.add("animate-spin");
 
       try {
         const res = await fetch(`/api/daily-report?date=${date}&page_id=${pageId}`, {
@@ -164,78 +313,91 @@
         });
         const data = await res.json();
 
-        // 1. Inbox Stats
-        document.getElementById("statReceived").innerText = data.stats.total_received || 0;
-        document.getElementById("statReplied").innerText = data.stats.total_replied || 0;
-        document.getElementById("statUnread").innerText = data.stats.unread_pending || 0;
-        document.getElementById("statReadNoReply").innerText = data.stats.read_without_reply || 0;
-        document.getElementById("statOrders").innerText = data.stats.total_confirmed_orders || 0;
-        document.getElementById("statPhones").innerText = data.stats.total_phone_numbers || 0;
+        // 1. Messenger Operations
+        document.getElementById("statReceived").innerText = (data.stats.total_received || 0).toLocaleString();
+        document.getElementById("statReplied").innerText = (data.stats.total_replied || 0).toLocaleString();
+        document.getElementById("statUnread").innerText = (data.stats.unread_pending || 0).toLocaleString();
+        document.getElementById("statReadNoReply").innerText = (data.stats.read_without_reply || 0).toLocaleString();
+        document.getElementById("statOrders").innerText = (data.stats.total_confirmed_orders || 0).toLocaleString();
+        document.getElementById("statPhones").innerText = (data.stats.total_phone_numbers || 0).toLocaleString();
 
         // 2. Ads Summary Cards
         if (data.ads && data.ads.summary) {
           const s = data.ads.summary;
           document.getElementById("totalSpend").innerText = `$${s.total_spend || "0.00"}`;
-          document.getElementById("totalMessages").innerText = s.total_messages || 0;
+          document.getElementById("totalMessages").innerText = (s.total_messages || 0).toLocaleString();
           document.getElementById("msgSpend").innerText = `$${s.msg_spend || "0.00"}`;
           document.getElementById("costPerMsg").innerText = `${s.avg_cost_per_msg_cents || "0.0"}¢`;
 
-          document.getElementById("totalOrders").innerText = s.total_orders || 0;
+          document.getElementById("totalOrders").innerText = (s.total_orders || 0).toLocaleString();
           document.getElementById("salesSpend").innerText = `$${s.sales_spend || "0.00"}`;
           document.getElementById("costPerOrder").innerText = `$${s.avg_cost_per_order_usd || "0.00"}`;
-          document.getElementById("activeAccounts").innerText = `${data.ads.accounts ? data.ads.accounts.length : 0}টি`;
+          document.getElementById("activeAccounts").innerText = `${data.ads.accounts ? data.ads.accounts.length : 0}`;
         }
 
-        // 3. Ads Breakdown Table
+        // 3. Ad Accounts Table
         const adsTable = document.getElementById("adsTableBody");
         if (data.ads && data.ads.accounts && data.ads.accounts.length > 0) {
           adsTable.innerHTML = data.ads.accounts.map(acc => `
-            <tr class="hover:bg-slate-800/40 transition">
-              <td class="py-3 px-4">
-                <div class="font-semibold text-white">${acc.name}</div>
-                <div class="text-xs text-slate-500 font-mono">${acc.id}</div>
+            <tr class="hover:bg-slate-800/40 transition-colors">
+              <td class="py-3.5 px-4 md:px-6">
+                <div class="font-semibold text-white tracking-wide">${acc.name}</div>
+                <div class="text-[11px] text-slate-500 font-mono mt-0.5">${acc.id}</div>
               </td>
-              <td class="py-3 px-4 font-semibold text-sky-400">$${acc.spend}</td>
-              <td class="py-3 px-4">
-                <span class="font-bold text-emerald-400">${acc.messages} SMS</span>
-                <span class="text-xs text-slate-400 ml-1">($${acc.msg_spend})</span>
+              <td class="py-3.5 px-4 font-mono font-bold text-sky-400">$${acc.spend}</td>
+              <td class="py-3.5 px-4">
+                <div class="font-mono font-bold text-emerald-400">${Number(acc.messages).toLocaleString()} msgs</div>
+                <div class="text-[11px] text-slate-400 font-mono mt-0.5">Spend: $${acc.msg_spend}</div>
               </td>
-              <td class="py-3 px-4">
-                <span class="bg-emerald-950/60 text-emerald-400 px-2 py-0.5 rounded font-bold">${acc.cost_per_msg_cents}¢</span>
+              <td class="py-3.5 px-4">
+                <span class="inline-block bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-mono font-bold px-2 py-0.5 rounded text-xs">
+                  ${acc.cost_per_msg_cents}¢
+                </span>
               </td>
-              <td class="py-3 px-4">
-                <span class="font-bold text-purple-400">${acc.orders} অর্ডার</span>
-                <span class="text-xs text-slate-400 ml-1">($${acc.sales_spend})</span>
+              <td class="py-3.5 px-4">
+                <div class="font-mono font-bold text-purple-400">${Number(acc.orders).toLocaleString()} orders</div>
+                <div class="text-[11px] text-slate-400 font-mono mt-0.5">Spend: $${acc.sales_spend}</div>
               </td>
-              <td class="py-3 px-4">
-                <span class="bg-purple-950/60 text-purple-400 px-2 py-0.5 rounded font-bold">$${acc.cost_per_order_usd}</span>
+              <td class="py-3.5 px-4">
+                <span class="inline-block bg-purple-500/10 border border-purple-500/20 text-purple-400 font-mono font-bold px-2 py-0.5 rounded text-xs">
+                  $${acc.cost_per_order_usd}
+                </span>
               </td>
             </tr>
           `).join("");
         } else {
-          adsTable.innerHTML = `<tr><td colspan="6" class="text-center py-6 text-slate-500">অ্যাড ডেটা পাওয়া যায়নি</td></tr>`;
+          adsTable.innerHTML = `<tr><td colspan="6" class="text-center py-8 text-slate-500 font-mono">No ad insights data found for selected date.</td></tr>`;
         }
 
-        // 4. Moderator Table
+        // 4. Moderator Team Table
         const modTable = document.getElementById("modTableBody");
         if (data.moderators && data.moderators.length > 0) {
           modTable.innerHTML = data.moderators.map(m => `
-            <tr class="hover:bg-slate-800/40 transition">
-              <td class="py-3 px-4 font-medium text-white">${m.name}</td>
-              <td class="py-3 px-4 font-bold text-emerald-400">${m.total_conversations}</td>
+            <tr class="hover:bg-slate-800/40 transition-colors">
+              <td class="py-3.5 px-4 md:px-6 font-medium text-slate-200">
+                <span class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-slate-800 text-slate-300 text-xs font-bold mr-2">
+                  ${m.name.charAt(0)}
+                </span>
+                ${m.name}
+              </td>
+              <td class="py-3.5 px-4 font-mono font-bold text-emerald-400">
+                ${m.total_conversations.toLocaleString()}
+              </td>
             </tr>
           `).join("");
         } else {
-          modTable.innerHTML = `<tr><td colspan="2" class="text-center py-6 text-slate-500">কোনো মডারেটর ডেটা পাওয়া যায়নি</td></tr>`;
+          modTable.innerHTML = `<tr><td colspan="2" class="text-center py-8 text-slate-500 font-mono">No conversations resolved by moderators today yet.</td></tr>`;
         }
 
       } catch (err) {
         console.error("Dashboard Load Error:", err);
+      } finally {
+        setTimeout(() => refreshIcon.classList.remove("animate-spin"), 400);
       }
     }
 
     loadDashboard();
-    setInterval(loadDashboard, 30000); // প্রতি ৩০ সেকেন্ড পর পর লাইভ আপডেট
+    setInterval(loadDashboard, 30000);
   </script>
 </body>
 </html>
