@@ -13,7 +13,7 @@ const DASHBOARD_USER = process.env.DASHBOARD_USER || "admin";
 const DASHBOARD_PASS = process.env.DASHBOARD_PASS || "swapons123";
 const META_ACCESS_TOKEN = process.env.META_ACCESS_TOKEN || "";
 
-// ৯টি অ্যাড অ্যাকাউন্টের সম্পূর্ণ নির্ভুল ম্যাপিং
+// ৯টি অ্যাড অ্যাকাউন্টের সম্পূর্ণ নির্ভুল তালিকা
 const AD_ACCOUNTS = [
   { id: "act_705111815068714", name: "ZXC19 (Stone rose)" },
   { id: "act_722336793300354", name: "ST-07 (Stone Rose)" },
@@ -53,6 +53,7 @@ const PAGES = {
   "250386238168336": "Stone Rose BD"
 };
 
+// মডারেটরদের তালিকা (আপন ও ফারজানা সহ)
 const MODERATOR_RULES = [
   { name: 'ফাহিম', keywords: ['আমি ফাহিম', 'ফাহিম'] },
   { name: 'আজাদ', keywords: ['আমি আজাদ', 'আজাদ'] },
@@ -70,9 +71,9 @@ const MODERATOR_RULES = [
   { name: 'ইরাম', keywords: ['আমি ইরাম', 'ইরাম'] },
   { name: 'শুভ্র', keywords: ['আমি শুভ্র', 'শুভ্র'] },
   { name: 'তানিয়া', keywords: ['আমি তানিয়া', 'তানিয়া'] },
-{ name: 'আপন', keywords: ['আমি আপন', 'আপন'] },
-{ name: 'ফারজানা', keywords: ['আমি ফারজানা', 'ফারজানা'] },
-  { name: 'আরিফ', keywords: ['আমি আরিফ', 'আরিফ'] }
+  { name: 'আরিফ', keywords: ['আমি আরিফ', 'আরিফ'] },
+  { name: 'আপন', keywords: ['আমি আপন', 'আপন'] },
+  { name: 'ফারজানা', keywords: ['আমি ফারজানা', 'ফারজানা'] }
 ];
 
 function detectModerator(text) {
@@ -205,7 +206,6 @@ app.post("/webhook", (req, res) => {
               VALUES (?, ?, ?, ?, ?, ?, ?)
             `).run(pageId, customerId, event.message.mid, replyText, replyTime, detectedMod, isConfirm);
 
-            // শুধুমাত্র আজকের নতুন মেসেজের ক্ষেত্রে মডারেটর লক হবে
             if (detectedMod) {
               db.prepare(`
                 UPDATE messages 
@@ -254,14 +254,20 @@ function httpsGet(url) {
   });
 }
 
-// মেটা এপিআই থেকে বিজ্ঞাপন পারফরম্যান্স (মেসেজিং ও ওয়েবসাইট পারচেজ আলাদা হিসাব)
+// মেটা অ্যাডস ম্যানেজারের ক্যাম্পেইন ডেটা ফেচ
 async function fetchMetaAdsMetrics(targetDate) {
   if (!META_ACCESS_TOKEN) return { accounts: [], summary: {} };
 
   const todayStr = new Date().toISOString().slice(0, 10);
   let dateQuery = "date_preset=today";
   if (targetDate && targetDate !== todayStr) {
-    dateQuery = `time_range=${encodeURIComponent(JSON.stringify({ since: targetDate, until: targetDate }))}`; }  const promises = AD_ACCOUNTS.map(async (acc) => { try { const cleanId = acc.id.replace(/\s+/g, ""); // ক্যাম্পেইন লেভেলে ডেটা টানা হচ্ছে const url = `https://graph.facebook.com/v19.0/${cleanId}/insights?access_token=${META_ACCESS_TOKEN}&${dateQuery}&level=campaign&fields=campaign_name,spend,actions`;
+    dateQuery = `time_range=${encodeURIComponent(JSON.stringify({ since: targetDate, until: targetDate }))}`;
+  }
+
+  const promises = AD_ACCOUNTS.map(async (acc) => {
+    try {
+      const cleanId = acc.id.replace(/\s+/g, "");
+      const url = `https://graph.facebook.com/v19.0/${cleanId}/insights?access_token=${META_ACCESS_TOKEN}&${dateQuery}&level=campaign&fields=campaign_name,spend,actions`;
       const response = await httpsGet(url);
 
       let totalSpend = 0;
@@ -279,7 +285,6 @@ async function fetchMetaAdsMetrics(targetDate) {
           let campOrders = 0;
 
           if (camp.actions) {
-            // ১. শুধু মেসেজিং রেজাল্ট (ডুপ্লিকেট ছাড়া)
             const msgAction = camp.actions.find(a => 
               a.action_type === "onsite_conversion.messaging_conversation_started_7d" ||
               a.action_type === "onsite_conversion.messaging_first_reply"
@@ -288,7 +293,6 @@ async function fetchMetaAdsMetrics(targetDate) {
               campMsgs = parseInt(msgAction.value || 0, 10);
             }
 
-            // ২. শুধু ওয়েবসাইট পারচেজ রেজাল্ট (ডুপ্লিকেট ছাড়া)
             const orderAction = camp.actions.find(a => 
               a.action_type === "purchase" ||
               a.action_type === "offsite_conversion.fb_pixel_purchase"
@@ -301,7 +305,6 @@ async function fetchMetaAdsMetrics(targetDate) {
           totalMessages += campMsgs;
           totalOrders += campOrders;
 
-          // স্পেন্ড আলাদা করা: যে ক্যাম্পেইনে মেসেজ আসছে তার খরচ এবং যেটাতে অর্ডার আসছে তার খরচ
           if (campMsgs > 0) {
             msgCampaignSpend += campSpend;
           }
@@ -311,16 +314,12 @@ async function fetchMetaAdsMetrics(targetDate) {
         });
       }
 
-      // ১. Cost per message (cents এ রূপান্তর)
-      // যদি মেসেজিং ক্যাম্পেইনের নির্দিষ্ট খরচ পাওয়া যায় তা দিয়ে ভাগ হবে, নয়তো মোট স্পেন্ড
       let costPerMsgCents = 0;
       if (totalMessages > 0) {
         const applicableMsgSpend = msgCampaignSpend > 0 ? msgCampaignSpend : totalSpend;
         costPerMsgCents = ((applicableMsgSpend / totalMessages) * 100).toFixed(1);
       }
 
-      // ২. Cost per purchase (ডলারে)
-      // ওয়েবসাইট সেলস ক্যাম্পেইনের নির্দিষ্ট খরচ দিয়ে পারচেজ ভাগ হবে
       let costPerOrderUsd = "0.00";
       if (totalOrders > 0) {
         const applicableSalesSpend = salesCampaignSpend > 0 ? salesCampaignSpend : totalSpend;
@@ -370,7 +369,7 @@ async function fetchMetaAdsMetrics(targetDate) {
   };
 }
 
-// প্রতিদিনের ইউনিক কাস্টমার ও মেসেজিং ড্যাশবোর্ড রিপোর্ট
+// ড্যাশবোর্ড রিপোর্ট API
 app.get("/api/daily-report", requireAuth, async (req, res) => {
   try {
     const targetDate = req.query.date || new Date().toISOString().slice(0, 10);
@@ -388,7 +387,7 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       }
     }
 
-    // ১. আজকের নতুন কাস্টমার (যাদের প্রথম মেসেজটি আজকের দিনেই এসেছে)
+    // ১. আজকের নতুন কাস্টমার
     const totalReceived = db.prepare(`
       SELECT COUNT(DISTINCT sender_id) as count 
       FROM messages m1
@@ -402,7 +401,7 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
         )
     `).get(targetDate, ...pageParam, targetDate).count;
 
-    // ২. উত্তর দেওয়া সম্পন্ন হয়েছে (আজকের কাস্টমার এবং পেজ থেকে রিপ্লাই চলে গেছে)
+    // ২. উত্তর সম্পন্ন হয়েছে
     const totalReplied = db.prepare(`
       SELECT COUNT(DISTINCT sender_id) as count 
       FROM messages m1
@@ -417,7 +416,7 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
         )
     `).get(targetDate, ...pageParam, targetDate).count;
 
-    // ৩. এখনো দেখা হয়নি (Unread - আজকের কাস্টমার কিন্তু সিনই হয়নি)
+    // ৩. এখনো দেখা হয়নি
     const unreadPending = db.prepare(`
       SELECT COUNT(DISTINCT sender_id) as count 
       FROM messages m1
@@ -432,7 +431,7 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
         )
     `).get(targetDate, ...pageParam, targetDate).count;
 
-    // ৪. সিন হয়েছে কিন্তু কোনো রিপ্লাই দেওয়া হয়নি ⚠️ (আজকের কাস্টমার, মডারেটর দেখেছে কিন্তু পেজ কোনো রিপ্লাই দেয়নি)
+    // ৪. সিন হয়েছে কিন্তু কোনো রিপ্লাই দেওয়া হয়নি ⚠️
     const readNoReply = db.prepare(`
       SELECT COUNT(DISTINCT sender_id) as count 
       FROM messages m1
@@ -453,7 +452,7 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
         )
     `).get(targetDate, ...pageParam, targetDate, targetDate).count;
 
-    // ৫. আজকের কনফার্ম অর্ডার
+    // ৫. কনফার্ম অর্ডার
     const orderConfirms = db.prepare(`
       SELECT COUNT(DISTINCT sender_id) as count 
       FROM replies 
@@ -462,7 +461,7 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
         ${pageCondition}
     `).get(targetDate, ...pageParam).count;
 
-    // ৬. আজকের ইউনিক ফোন নম্বর
+    // ৬. ইউনিক ফোন নম্বর
     const phoneCount = db.prepare(`
       SELECT COUNT(DISTINCT phone_number) as count 
       FROM messages m1
@@ -478,9 +477,49 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
         )
     `).get(targetDate, ...pageParam, targetDate).count;
 
-    // মডারেটর পারফরম্যান্স: শুধুমাত্র আজকের নতুন কাস্টমারদের প্রথম উত্তর দেওয়ার হিসাব
+    // মডারেটর পারফরম্যান্স
     const moderatorStats = db.prepare(`
       SELECT assigned_moderator AS name, COUNT(DISTINCT sender_id) AS total_conversations
       FROM messages m1
       WHERE assigned_moderator IS NOT NULL 
         AND date(created_at, 'localtime') = ?
+        ${pageCondition}
+        AND NOT EXISTS (
+          SELECT 1 FROM messages m2 
+          WHERE m2.sender_id = m1.sender_id 
+            AND m2.page_id = m1.page_id 
+            AND date(m2.created_at, 'localtime') < ?
+        )
+      GROUP BY assigned_moderator
+      ORDER BY total_conversations DESC
+    `).all(targetDate, ...pageParam, targetDate);
+
+    const adsData = await fetchMetaAdsMetrics(targetDate);
+
+    res.json({
+      date: targetDate,
+      page_id: targetPage || "all",
+      page_name: targetPage && PAGES[targetPage] ? PAGES[targetPage] : "All Pages",
+      stats: {
+        total_received: totalReceived,
+        total_replied: totalReplied,
+        unread_pending: unreadPending,
+        read_without_reply: readNoReply,
+        total_confirmed_orders: orderConfirms,
+        total_phone_numbers: phoneCount
+      },
+      moderators: moderatorStats,
+      ads: adsData
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/privacy-policy", (req, res) => {
+  res.send(`<h1>Privacy Policy</h1><p>Analytics application for connected Facebook pages.</p>`);
+});
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
