@@ -2,7 +2,7 @@ const express = require("express");
 const Database = require("better-sqlite3");
 const fs = require("fs");
 const path = require("path");
-const axios = require("axios");
+const https = require("https"); // নোড.জেএস বিল্ট-ইন মডিউল (কোনো ইনস্টলেশন লাগবে না)
 require("dotenv").config();
 
 const app = express();
@@ -227,25 +227,36 @@ app.post("/webhook", (req, res) => {
   res.sendStatus(404);
 });
 
-// মেটা এপিআই থেকে অ্যাডস পারফরম্যান্স আনা
+// সরাসরি নোড.জেএস বিল্ট-ইন HTTPS দিয়ে মেটা API কল
+function httpsGet(url) {
+  return new Promise((resolve) => {
+    https.get(url, (res) => {
+      let rawData = "";
+      res.on("data", (chunk) => { rawData += chunk; });
+      res.on("end", () => {
+        try {
+          resolve(JSON.parse(rawData));
+        } catch (e) {
+          resolve(null);
+        }
+      });
+    }).on("error", () => {
+      resolve(null);
+    });
+  });
+}
+
 async function fetchMetaAdsMetrics(targetDate) {
   if (!META_ACCESS_TOKEN) return { accounts: [], summary: {} };
 
-  const timeRange = JSON.stringify({ since: targetDate, until: targetDate });
+  const timeRange = encodeURIComponent(JSON.stringify({ since: targetDate, until: targetDate }));
 
   const promises = AD_ACCOUNTS.map(async (acc) => {
     try {
-      const url = `https://graph.facebook.com/v19.0/${acc.id}/insights`;
-      const response = await axios.get(url, {
-        params: {
-          access_token: META_ACCESS_TOKEN,
-          time_range: timeRange,
-          fields: "spend,actions,cost_per_action_type"
-        },
-        timeout: 7000
-      });
+      const url = `https://graph.facebook.com/v19.0/${acc.id}/insights?access_token=${META_ACCESS_TOKEN}&time_range=${timeRange}&fields=spend,actions`;
+      const response = await httpsGet(url);
 
-      const data = response.data.data && response.data.data[0] ? response.data.data[0] : null;
+      const data = response && response.data && response.data[0] ? response.data[0] : null;
       const spend = data ? parseFloat(data.spend || 0) : 0;
 
       let fbMessages = 0;
@@ -269,9 +280,8 @@ async function fetchMetaAdsMetrics(targetDate) {
         });
       }
 
-      // Cost per message (cents এ রূপান্তর: $1 = 100 cents)
       const costPerMsgCents = fbMessages > 0 ? ((spend / fbMessages) * 100).toFixed(1) : 0;
-      const costPerOrderUsd = websiteOrders > 0 ? (spend / websiteOrders).toFixed(2) : 0;
+      const costPerOrderUsd = websiteOrders > 0 ? (spend / websiteOrders).toFixed(2) : "0.00";
 
       return {
         id: acc.id,
@@ -290,8 +300,7 @@ async function fetchMetaAdsMetrics(targetDate) {
         messages: 0,
         cost_per_msg_cents: 0,
         orders: 0,
-        cost_per_order_usd: "0.00",
-        error: true
+        cost_per_order_usd: "0.00"
       };
     }
   });
@@ -317,7 +326,6 @@ async function fetchMetaAdsMetrics(targetDate) {
   };
 }
 
-// রিপোর্ট API
 app.get("/api/daily-report", requireAuth, async (req, res) => {
   try {
     const targetDate = req.query.date || new Date().toISOString().slice(0, 10);
@@ -377,7 +385,6 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       ORDER BY total_conversations DESC
     `).all(...params);
 
-    // ফেসবুক বিজ্ঞাপন অ্যানালিটিক্স ফেচ
     const adsData = await fetchMetaAdsMetrics(targetDate);
 
     res.json({
