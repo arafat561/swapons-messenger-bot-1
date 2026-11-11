@@ -165,7 +165,6 @@ app.post("/webhook", (req, res) => {
 
       if (entry.messaging) {
         entry.messaging.forEach((event) => {
-          // ১. কাস্টমার মেসেজ
           if (event.message && !event.message.is_echo) {
             const rawText = event.message.text || "";
             const phone = extractPhoneNumber(rawText);
@@ -178,7 +177,6 @@ app.post("/webhook", (req, res) => {
             stmt.run(pageId, event.sender.id, event.message.mid, rawText, event.timestamp, phone);
           }
 
-          // ২. সিন ইভেন্ট
           if (event.read) {
             const customerId = event.sender.id;
             const watermark = event.read.watermark;
@@ -191,7 +189,6 @@ app.post("/webhook", (req, res) => {
             `).run(readTime, pageId, customerId, watermark);
           }
 
-          // ৩. পেজ রিপ্লাই
           if (event.message && event.message.is_echo) {
             const customerId = event.recipient.id;
             const replyText = event.message.text || "";
@@ -206,7 +203,6 @@ app.post("/webhook", (req, res) => {
               VALUES (?, ?, ?, ?, ?, ?, ?)
             `).run(pageId, customerId, event.message.mid, replyText, replyTime, detectedMod, isConfirm);
 
-            // আজকের দিনের মেসেজের ক্ষেত্রে মডারেটর লক হবে (প্রথম উত্তরকারী)
             if (detectedMod) {
               db.prepare(`
                 UPDATE messages 
@@ -255,7 +251,7 @@ function httpsGet(url) {
   });
 }
 
-// মেটা অ্যাডস ম্যানেজারের ক্যাম্পেইন লেভেল নিখুঁত ডেটা ফেচ (মেসেজিং ও সেলস ক্যাম্পেইন আলাদা বাকেটে)
+// মেটা এপিআই থেকে বিজ্ঞাপন ডেটা নিখুঁতভাবে ফেচ
 async function fetchMetaAdsMetrics(targetDate) {
   if (!META_ACCESS_TOKEN) return { accounts: [], summary: {} };
 
@@ -268,7 +264,7 @@ async function fetchMetaAdsMetrics(targetDate) {
   const promises = AD_ACCOUNTS.map(async (acc) => {
     try {
       const cleanId = acc.id.replace(/\s+/g, "");
-      const url = `https://graph.facebook.com/v19.0/${cleanId}/insights?access_token=${META_ACCESS_TOKEN}&${dateQuery}&level=campaign&fields=campaign_name,spend,actions`;
+      const url = `https://graph.facebook.com/v19.0/${cleanId}/insights?access_token=${META_ACCESS_TOKEN}&${dateQuery}&level=campaign&fields=campaign_name,spend,actions,cost_per_action_type`;
       const response = await httpsGet(url);
 
       let totalSpend = 0;
@@ -286,16 +282,15 @@ async function fetchMetaAdsMetrics(targetDate) {
           let campOrders = 0;
 
           if (camp.actions) {
-            // মেটা থেকে আসা মেসেজিং অ্যাকশন
+            // মেটা থেকে আসা ইউনিক মেসেজ কনভারসেশন
             const msgAction = camp.actions.find(a => 
-              a.action_type === "onsite_conversion.messaging_conversation_started_7d" ||
-              a.action_type === "onsite_conversion.messaging_first_reply"
+              a.action_type === "onsite_conversion.messaging_conversation_started_7d"
             );
             if (msgAction) {
               campMsgs = parseInt(msgAction.value || 0, 10);
             }
 
-            // মেটা থেকে আসা ওয়েবসাইট পারচেজ অ্যাকশন
+            // মেটা থেকে আসা ইউনিক ওয়েবসাইট পারচেজ
             const orderAction = camp.actions.find(a => 
               a.action_type === "purchase" ||
               a.action_type === "offsite_conversion.fb_pixel_purchase"
@@ -308,28 +303,35 @@ async function fetchMetaAdsMetrics(targetDate) {
           totalMessages += campMsgs;
           totalOrders += campOrders;
 
-          // স্পেন্ড পৃথকীকরণ
-          if (campMsgs > 0) {
+          // যে ক্যাম্পেইনে মেসেজ আসছে সেই ক্যাম্পেইনের স্পেন্ড আলাদা যোগ হবে
+          if (campMsgs > 0 && campOrders === 0) {
             msgCampaignSpend += campSpend;
-          }
-          if (campOrders > 0) {
+          } else if (campOrders > 0 && campMsgs === 0) {
             salesCampaignSpend += campSpend;
+          } else if (campMsgs > 0 && campOrders > 0) {
+            // যদি একই ক্যাম্পেইনে দুটোই আসে তবে সমান অনুপাতে ভাগ
+            msgCampaignSpend += (campSpend / 2);
+            salesCampaignSpend += (campSpend / 2);
           }
         });
       }
 
-      // ১. Cost per message (শুধুমাত্র মেসেজিং ক্যাম্পেইনের খরচ দিয়ে ভাগ)
+      // ১. Cost per SMS (Cents এ) -> মেটা অ্যাড ম্যানেজারের মতো নিখুঁত সেন্ট হিসাব
       let costPerMsgCents = 0;
       if (totalMessages > 0) {
-        const applicableMsgSpend = msgCampaignSpend > 0 ? msgCampaignSpend : totalSpend;
-        costPerMsgCents = ((applicableMsgSpend / totalMessages) * 100).toFixed(1);
+        const applicableMsgSpend = msgCampaignSpend > 0 ? msgCampaignSpend : (totalOrders === 0 ? totalSpend : 0);
+        if (applicableMsgSpend > 0) {
+          costPerMsgCents = ((applicableMsgSpend / totalMessages) * 100).toFixed(1);
+        }
       }
 
-      // ২. Cost per purchase (শুধুমাত্র সেলস ক্যাম্পেইনের খরচ দিয়ে ভাগ)
+      // ২. Cost per Purchase (USD তে)
       let costPerOrderUsd = "0.00";
       if (totalOrders > 0) {
-        const applicableSalesSpend = salesCampaignSpend > 0 ? salesCampaignSpend : totalSpend;
-        costPerOrderUsd = (applicableSalesSpend / totalOrders).toFixed(2);
+        const applicableSalesSpend = salesCampaignSpend > 0 ? salesCampaignSpend : (totalMessages === 0 ? totalSpend : 0);
+        if (applicableSalesSpend > 0) {
+          costPerOrderUsd = (applicableSalesSpend / totalOrders).toFixed(2);
+        }
       }
 
       return {
@@ -340,8 +342,8 @@ async function fetchMetaAdsMetrics(targetDate) {
         cost_per_msg_cents: costPerMsgCents,
         orders: totalOrders,
         cost_per_order_usd: costPerOrderUsd,
-        msg_spend: msgCampaignSpend,
-        sales_spend: salesCampaignSpend
+        msg_spend: msgCampaignSpend > 0 ? msgCampaignSpend : (totalOrders === 0 ? totalSpend : 0),
+        sales_spend: salesCampaignSpend > 0 ? salesCampaignSpend : (totalMessages === 0 ? totalSpend : 0)
       };
     } catch (err) {
       return {
@@ -367,13 +369,14 @@ async function fetchMetaAdsMetrics(targetDate) {
   const totalMsgSpendSum = results.reduce((acc, curr) => acc + curr.msg_spend, 0);
   const totalSalesSpendSum = results.reduce((acc, curr) => acc + curr.sales_spend, 0);
 
-  // সামারি কার্ডের জন্য সঠিক গড় কস্ট ক্যালকুলেশন
-  const avgCostPerMsgCents = totalMsgsSum > 0 
-    ? (((totalMsgSpendSum > 0 ? totalMsgSpendSum : totalSpendSum) / totalMsgsSum) * 100).toFixed(1) 
+  // সামারি কার্ডের জন্য মেসেজিং ক্যাম্পেইনের নিখুঁত সেন্ট (¢) গড়
+  const avgCostPerMsgCents = totalMsgsSum > 0 && totalMsgSpendSum > 0
+    ? ((totalMsgSpendSum / totalMsgsSum) * 100).toFixed(1)
     : 0;
 
-  const avgCostPerOrderUsd = totalOrdersSum > 0 
-    ? (((totalSalesSpendSum > 0 ? totalSalesSpendSum : totalSpendSum) / totalOrdersSum)).toFixed(2) 
+  // সামারি কার্ডের জন্য ওয়েবসাইট পারচেজ ক্যাম্পেইনের নিখুঁত ডলার ($) গড়
+  const avgCostPerOrderUsd = totalOrdersSum > 0 && totalSalesSpendSum > 0
+    ? (totalSalesSpendSum / totalOrdersSum).toFixed(2)
     : "0.00";
 
   return {
@@ -406,14 +409,14 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       }
     }
 
-    // ১. মোট সক্রিয় কাস্টমার: ২ দিন আগের বা আজকের যেই হোক—আজকে নক দিলে ১ জনই ইউনিক কাস্টমার হিসেবে কাউন্ট হবে
+    // ১. মোট সক্রিয় ইউনিক কাস্টমার
     const totalReceived = db.prepare(`
       SELECT COUNT(DISTINCT sender_id) as count 
       FROM messages 
       WHERE date(created_at, 'localtime') = ? ${pageCondition}
     `).get(targetDate, ...pageParam).count;
 
-    // ২. উত্তর দেওয়া সম্পন্ন কাস্টমার: আজকের মেসেজ রিপ্লাই হয়েছে
+    // ২. উত্তর দেওয়া সম্পন্ন কাস্টমার
     const totalReplied = db.prepare(`
       SELECT COUNT(DISTINCT sender_id) as count 
       FROM messages 
@@ -429,7 +432,7 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
         AND date(created_at, 'localtime') = ? ${pageCondition}
     `).get(targetDate, ...pageParam).count;
 
-    // ৪. সিন হয়েছে কিন্তু কোনো রিপ্লাই দেওয়া হয়নি (মডারেটর সিন করে রেখেছে কিন্তু রিপ্লাই দেয়নি)
+    // ৪. সিন হয়েছে কিন্তু কোনো রিপ্লাই দেওয়া হয়নি
     const readNoReply = db.prepare(`
       SELECT COUNT(DISTINCT sender_id) as count 
       FROM messages m
@@ -444,7 +447,7 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
         )
     `).get(targetDate, ...pageParam, targetDate).count;
 
-    // ৫. আজকের কনফার্ম অর্ডার
+    // ৫. কনফার্ম অর্ডার
     const orderConfirms = db.prepare(`
       SELECT COUNT(DISTINCT sender_id) as count 
       FROM replies 
@@ -453,7 +456,7 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
         ${pageCondition}
     `).get(targetDate, ...pageParam).count;
 
-    // ৬. আজকের ইউনিক ফোন নম্বর
+    // ৬. ইউনিক ফোন নম্বর
     const phoneCount = db.prepare(`
       SELECT COUNT(DISTINCT phone_number) as count 
       FROM messages 
@@ -462,7 +465,7 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
         AND date(created_at, 'localtime') = ? ${pageCondition}
     `).get(targetDate, ...pageParam).count;
 
-    // মডারেটর পারফরম্যান্স: আজকের ইউনিক কাস্টমারদের মধ্যে কে কয়টি সফল হ্যান্ডেল করেছে
+    // মডারেটর পারফরম্যান্স
     const moderatorStats = db.prepare(`
       SELECT assigned_moderator AS name, COUNT(DISTINCT sender_id) AS total_conversations
       FROM messages
@@ -473,7 +476,6 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       ORDER BY total_conversations DESC
     `).all(targetDate, ...pageParam);
 
-    // মেটা বিজ্ঞাপন পারফরম্যান্স ফেচ
     const adsData = await fetchMetaAdsMetrics(targetDate);
 
     res.json({
