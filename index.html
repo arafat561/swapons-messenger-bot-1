@@ -15,9 +15,6 @@
       min-height: 100vh;
     }
 
-    /* ===================================================
-       ১ম ছবি: হুবহু লগইন ফর্ম ডিজাইন
-       =================================================== */
     #loginOverlay {
       position: fixed;
       inset: 0;
@@ -38,35 +35,11 @@
       box-shadow: 0 25px 60px rgba(0, 0, 0, 0.7);
       text-align: center;
     }
-    .auth-icon {
-      font-size: 46px;
-      margin-bottom: 24px;
-      display: inline-block;
-      line-height: 1;
-    }
-    .auth-title {
-      font-size: 26px;
-      font-weight: 800;
-      color: #ffffff;
-      margin-bottom: 8px;
-      letter-spacing: -0.5px;
-    }
-    .auth-subtitle {
-      font-size: 14px;
-      color: #94a3b8;
-      margin-bottom: 34px;
-    }
-    .form-group {
-      text-align: left;
-      margin-bottom: 20px;
-    }
-    .form-group label {
-      display: block;
-      font-size: 13.5px;
-      font-weight: 700;
-      color: #cbd5e1;
-      margin-bottom: 10px;
-    }
+    .auth-icon { font-size: 46px; margin-bottom: 24px; display: inline-block; line-height: 1; }
+    .auth-title { font-size: 26px; font-weight: 800; color: #ffffff; margin-bottom: 8px; letter-spacing: -0.5px; }
+    .auth-subtitle { font-size: 14px; color: #94a3b8; margin-bottom: 34px; }
+    .form-group { text-align: left; margin-bottom: 20px; }
+    .form-group label { display: block; font-size: 13.5px; font-weight: 700; color: #cbd5e1; margin-bottom: 10px; }
     .form-group input {
       width: 100%;
       padding: 15px 18px;
@@ -79,13 +52,7 @@
       transition: all 0.2s ease;
       font-family: inherit;
     }
-    .form-group input::placeholder {
-      color: #475569;
-    }
-    .form-group input:focus {
-      border-color: #3b82f6;
-      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
-    }
+    .form-group input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15); }
     .auth-submit-btn {
       width: 100%;
       padding: 15px;
@@ -101,11 +68,7 @@
       transition: all 0.2s ease;
       font-family: inherit;
     }
-    .auth-submit-btn:hover {
-      background: #008558;
-      transform: translateY(-1px);
-      box-shadow: 0 10px 28px rgba(0, 153, 102, 0.35);
-    }
+    .auth-submit-btn:hover { background: #008558; transform: translateY(-1px); }
     .auth-error {
       color: #f87171;
       font-size: 13px;
@@ -117,9 +80,6 @@
       border-radius: 10px;
     }
 
-    /* ===================================================
-       ২য় ছবি: হুবহু ড্যাশবোর্ড লেআউট ডিজাইন
-       =================================================== */
     #dashboardScreen {
       display: none;
       padding: 30px 20px;
@@ -127,7 +87,6 @@
       margin: 0 auto;
     }
 
-    /* হেডার সেকশন */
     .top-navbar {
       background: #141a24;
       border: 1px solid #1f2737;
@@ -156,13 +115,7 @@
       align-items: center;
       gap: 5px;
     }
-    .live-badge::before {
-      content: "";
-      width: 5px;
-      height: 5px;
-      background: #ffffff;
-      border-radius: 50%;
-    }
+    .live-badge::before { content: ""; width: 5px; height: 5px; background: #ffffff; border-radius: 50%; }
     .page-subtitle { font-size: 13px; color: #8292a6; }
 
     .navbar-right { display: flex; align-items: center; gap: 12px; }
@@ -188,11 +141,8 @@
       cursor: pointer;
       transition: all 0.2s;
     }
-    .logout-button:hover {
-      background: rgba(239, 68, 68, 0.22);
-    }
+    .logout-button:hover { background: rgba(239, 68, 68, 0.22); }
 
-    /* ৬টি কার্ড গ্রিড */
     .dashboard-grid {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
@@ -213,7 +163,6 @@
       border: 1.5px solid transparent;
       box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
     }
-
     .card-head { display: flex; gap: 14px; align-items: center; }
     .symbol-box {
       width: 44px;
@@ -228,70 +177,46 @@
     .card-labels { display: flex; flex-direction: column; }
     .txt-bn { font-size: 15px; font-weight: 700; color: #ffffff; }
     .txt-en { font-size: 12px; color: #7f8e9d; font-weight: 500; margin-top: 2px; }
-
-    .card-number {
-      font-size: 44px;
-      font-weight: 800;
-      letter-spacing: -1px;
-      margin: 14px 0 8px 0;
-      line-height: 1;
-    }
-
-    .card-foot {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-top: auto;
-    }
+    .card-number { font-size: 44px; font-weight: 800; letter-spacing: -1px; margin: 14px 0 8px 0; line-height: 1; }
+    .card-foot { display: flex; justify-content: space-between; align-items: center; margin-top: auto; }
     .ratio-caption { font-size: 12px; color: #7a889b; font-weight: 600; }
-    .status-pill {
-      font-size: 11px;
-      font-weight: 700;
-      padding: 4px 10px;
-      border-radius: 6px;
-    }
+    .status-pill { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 6px; }
 
-    /* ১. নীল কার্ড */
     .c-blue { border-color: #1e3a8a; }
     .c-blue .symbol-box { background: #1e293b; color: #38bdf8; border: 1px solid #334155; }
     .c-blue .card-number { color: #38bdf8; }
 
-    /* ২. সবুজ কার্ড */
     .c-green { border-color: #064e3b; }
     .c-green .symbol-box { background: #064e3b; color: #34d399; }
     .c-green .card-number { color: #34d399; }
     .fill-track { width: 100%; height: 8px; background: #152425; border-radius: 99px; overflow: hidden; }
     .fill-thumb { height: 100%; background: #10b981; border-radius: 99px; width: 0%; transition: width 0.4s ease; }
 
-    /* ৩. লাল কার্ড */
     .c-red { border-color: #7f1d1d; }
     .c-red .symbol-box { background: #451a1a; color: #f87171; }
     .c-red .card-number { color: #f87171; }
     .c-red .status-pill { background: #451a1a; color: #f87171; border: 1px solid #7f1d1d; }
 
-    /* ৪. হলুদ / অরেঞ্জ কার্ড */
     .c-orange { border-color: #78350f; }
     .c-orange .symbol-box { background: #45240f; color: #fbbf24; }
     .c-orange .card-number { color: #fbbf24; }
     .c-orange .status-pill { background: #45240f; color: #fbbf24; border: 1px solid #78350f; }
 
-    /* ৫. বেগুনি কার্ড */
     .c-purple { border-color: #581c87; }
     .c-purple .symbol-box { background: #3b1464; color: #c084fc; }
     .c-purple .card-number { color: #c084fc; }
 
-    /* ৬. টিয়াল কার্ড */
     .c-teal { border-color: #134e4a; }
     .c-teal .symbol-box { background: #0f3736; color: #2dd4bf; }
     .c-teal .card-number { color: #2dd4bf; }
 
-    /* মডারেটর টেবিল */
     .mod-card-container {
       background: #141a24;
       border: 1px solid #1f2737;
       border-radius: 18px;
       padding: 26px 30px;
       box-shadow: 0 8px 25px rgba(0, 0, 0, 0.35);
+      margin-bottom: 24px;
     }
     .mod-title-head {
       display: flex;
@@ -331,28 +256,34 @@
       border: 1px solid #334155;
     }
     .count-bold { font-weight: 700; color: #ffffff; font-size: 15px; }
-    .track-bg {
-      width: 80%;
-      height: 8px;
-      background: #1a2232;
-      border-radius: 99px;
-      overflow: hidden;
+    .track-bg { width: 80%; height: 8px; background: #1a2232; border-radius: 99px; overflow: hidden; }
+    .track-line { height: 100%; border-radius: 99px; background: #38bdf8; }
+
+    .badge-cents {
+      background: rgba(56, 189, 248, 0.15);
+      color: #38bdf8;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-weight: 700;
+      border: 1px solid rgba(56, 189, 248, 0.3);
     }
-    .track-line {
-      height: 100%;
-      border-radius: 99px;
-      background: #38bdf8;
+    .badge-order {
+      background: rgba(52, 211, 153, 0.15);
+      color: #34d399;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-weight: 700;
+      border: 1px solid rgba(52, 211, 153, 0.3);
     }
   </style>
 </head>
 <body>
 
-  <!-- ১ম ছবি: লগইন ফর্ম স্ক্রিন -->
   <div id="loginOverlay">
     <div class="auth-card">
       <div class="auth-icon">🔐</div>
       <h2 class="auth-title">ড্যাশবোর্ড লগইন</h2>
-      <p class="auth-subtitle">অ্যাক্সেস করতে আপনার পরিচয় দিন</p>
+      <p class="auth-subtitle">অ্যাক্সেস করতে আপনার পরিচয় দিন</p>
       
       <form onsubmit="handleUserLogin(event)">
         <div class="form-group">
@@ -369,10 +300,8 @@
     </div>
   </div>
 
-  <!-- ২য় ছবি: ড্যাশবোর্ড স্ক্রিন -->
   <div id="dashboardScreen">
     
-    <!-- টপ হেডার বার -->
     <div class="top-navbar">
       <div class="navbar-left">
         <div class="heading-inline">
@@ -380,7 +309,7 @@
           <h1 class="page-title">Swapons World & Stone Rose BD - Daily Analytics Dashboard</h1>
           <span class="live-badge">LIVE</span>
         </div>
-        <div class="page-subtitle">Facebook Messenger and Sales analytics platform</div>
+        <div class="page-subtitle">Facebook Messenger, Ads & Sales analytics platform</div>
       </div>
       <div class="navbar-right">
         <select id="pagePickerSelect" class="dropdown-box" onchange="fetchAnalyticsData()">
@@ -393,10 +322,61 @@
       </div>
     </div>
 
-    <!-- ৬টি কার্ড -->
+    <!-- ফেসবুক বিজ্ঞাপন ওভারভিউ (Ads Summary 4 Cards) -->
+    <div class="dashboard-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 24px;">
+      <div class="dash-card c-blue" style="min-height: 140px; padding: 18px 20px;">
+        <div class="card-head">
+          <div class="symbol-box">💵</div>
+          <div class="card-labels">
+            <span class="txt-bn">মোট Ads খরচ</span>
+            <span class="txt-en">Total Spend (USD)</span>
+          </div>
+        </div>
+        <div class="card-number" id="ads_total_spend" style="font-size: 32px; margin: 10px 0 0 0;">$0.00</div>
+      </div>
+
+      <div class="dash-card c-green" style="min-height: 140px; padding: 18px 20px;">
+        <div class="card-head">
+          <div class="symbol-box">📩</div>
+          <div class="card-labels">
+            <span class="txt-bn">অ্যাডস থেকে মেসেজ</span>
+            <span class="txt-en">Ads Messaging</span>
+          </div>
+        </div>
+        <div class="card-number" id="ads_total_msgs" style="font-size: 32px; margin: 10px 0 0 0;">0</div>
+        <div class="card-foot" style="margin-top: 6px;">
+          <span class="ratio-caption">গড় খরচ: <strong id="ads_avg_cpm" class="badge-cents">0¢</strong></span>
+        </div>
+      </div>
+
+      <div class="dash-card c-purple" style="min-height: 140px; padding: 18px 20px;">
+        <div class="card-head">
+          <div class="symbol-box">🛒</div>
+          <div class="card-labels">
+            <span class="txt-bn">ওয়েবসাইট মোট অর্ডার</span>
+            <span class="txt-en">Website Purchases</span>
+          </div>
+        </div>
+        <div class="card-number" id="ads_total_orders" style="font-size: 32px; margin: 10px 0 0 0;">0</div>
+        <div class="card-foot" style="margin-top: 6px;">
+          <span class="ratio-caption">প্রতি অর্ডার: <strong id="ads_avg_cpo" class="badge-order">$0.00</strong></span>
+        </div>
+      </div>
+
+      <div class="dash-card c-orange" style="min-height: 140px; padding: 18px 20px;">
+        <div class="card-head">
+          <div class="symbol-box">📊</div>
+          <div class="card-labels">
+            <span class="txt-bn">সক্রিয় অ্যাড একাউন্ট</span>
+            <span class="txt-en">Connected Accounts</span>
+          </div>
+        </div>
+        <div class="card-number" id="ads_acc_count" style="font-size: 32px; margin: 10px 0 0 0;">9টি</div>
+      </div>
+    </div>
+
+    <!-- মূল ৬টি পেজ মেসেঞ্জার কার্ড -->
     <div class="dashboard-grid">
-      
-      <!-- ১ নম্বর কার্ড: নীল -->
       <div class="dash-card c-blue">
         <div class="card-head">
           <div class="symbol-box">💬</div>
@@ -413,12 +393,11 @@
         </div>
       </div>
 
-      <!-- ২ নম্বর কার্ড: সবুজ -->
       <div class="dash-card c-green">
         <div class="card-head">
           <div class="symbol-box">✓</div>
           <div class="card-labels">
-            <span class="txt-bn">২. উত্তর দেওয়া সম্পন্ন হয়েছে</span>
+            <span class="txt-bn">২. উত্তর দেওয়া সম্পন্ন হয়েছে</span>
             <span class="txt-en">Replies Done</span>
           </div>
         </div>
@@ -430,12 +409,11 @@
         </div>
       </div>
 
-      <!-- ৩ নম্বর কার্ড: লাল -->
       <div class="dash-card c-red">
         <div class="card-head">
           <div class="symbol-box">⌛</div>
           <div class="card-labels">
-            <span class="txt-bn">৩. দেখা হয়নি (Unread / বাকি)</span>
+            <span class="txt-bn">৩. দেখা হয়নি (Unread / বাকি)</span>
             <span class="txt-en">Unread / বাকি</span>
           </div>
         </div>
@@ -446,13 +424,12 @@
         </div>
       </div>
 
-      <!-- ৪ নম্বর কার্ড: হলুদ / অরেঞ্জ -->
       <div class="dash-card c-orange">
         <div class="card-head">
           <div class="symbol-box">👁️</div>
           <div class="card-labels">
-            <span class="txt-bn">৪. সিন হয়েছে কিন্তু রিপ্লাই দেওয়া হয়নি ⚠️</span>
-            <span class="txt-en">Status status</span>
+            <span class="txt-bn">৪. সিন হয়েছে কিন্তু রিপ্লাই দেওয়া হয়নি ⚠️</span>
+            <span class="txt-en">Seen Without Reply</span>
           </div>
         </div>
         <div class="card-number" id="val_seen_no_reply">0</div>
@@ -462,7 +439,6 @@
         </div>
       </div>
 
-      <!-- ৫ নম্বর কার্ড: বেগুনি -->
       <div class="dash-card c-purple">
         <div class="card-head">
           <div class="symbol-box">📦</div>
@@ -477,13 +453,12 @@
         </div>
       </div>
 
-      <!-- ৬ নম্বর কার্ড: টিয়াল -->
       <div class="dash-card c-teal">
         <div class="card-head">
           <div class="symbol-box">📞</div>
           <div class="card-labels">
             <span class="txt-bn">৬. ফোন নম্বর এসেছে (ইউনিক কাস্টমার)</span>
-            <span class="txt-en">Collan sanneiers</span>
+            <span class="txt-en">Unique Phone Leads</span>
           </div>
         </div>
         <div class="card-number" id="val_phone_numbers">0</div>
@@ -491,7 +466,29 @@
           <span class="ratio-caption">ইউনিক লিড</span>
         </div>
       </div>
+    </div>
 
+    <!-- নতুন সেকশন: ৯টি অ্যাড অ্যাকাউন্টের লাইভ ব্রেকডাউন টেবিল -->
+    <div class="mod-card-container">
+      <div class="mod-title-head">
+        <span>📢</span>
+        <span>অ্যাড অ্যাকাউন্ট ভিত্তিক লাইভ পারফরম্যান্স (Ads Breakdown)</span>
+      </div>
+      <table class="tbl-table">
+        <thead>
+          <tr>
+            <th style="width: 25%;">অ্যাকাউন্ট নাম ও আইডি</th>
+            <th style="width: 15%;">মোট খরচ (Spend)</th>
+            <th style="width: 15%;">মেসেজ (SMS)</th>
+            <th style="width: 15%;">প্রতি মেসেজ খরচ</th>
+            <th style="width: 15%;">ওয়েবসাইট অর্ডার</th>
+            <th style="width: 15%;">প্রতি অর্ডার খরচ</th>
+          </tr>
+        </thead>
+        <tbody id="adsReportList">
+          <tr><td colspan="6" style="text-align: center; color: #64748b; padding: 25px;">বিজ্ঞাপন ডেটা লোড হচ্ছে...</td></tr>
+        </tbody>
+      </table>
     </div>
 
     <!-- মডারেটর টেবিল সেকশন -->
@@ -521,7 +518,6 @@
     const todayDate = new Date().toISOString().slice(0, 10);
     document.getElementById('datePickerInput').value = todayDate;
 
-    // টোকেন সেভ থাকলে সরাসরি ড্যাশবোর্ড লোড হবে
     if (activeToken) {
       showDashboardView();
     }
@@ -599,13 +595,45 @@
         document.getElementById('val_confirmed_orders').innerText = orders;
         document.getElementById('val_phone_numbers').innerText = phones;
 
-        // রেসপন্স এবং কনভার্শন রেশিও আপডেট
         const replyRatio = total > 0 ? Math.round((replied / total) * 100) : 0;
         document.getElementById('val_replied_bar').style.width = Math.min(replyRatio, 100) + '%';
         document.getElementById('val_unread_ratio').innerText = 'Conversion % of ' + total;
 
         const orderRatio = total > 0 ? ((orders / total) * 100).toFixed(2) : '00.00';
         document.getElementById('val_orders_ratio').innerText = 'Conversion % ' + orderRatio + '%';
+
+        // Ads Summary কার্ড আপডেট
+        if (data.ads && data.ads.summary) {
+          document.getElementById('ads_total_spend').innerText = '$' + (data.ads.summary.total_spend || '0.00');
+          document.getElementById('ads_total_msgs').innerText = data.ads.summary.total_messages || 0;
+          document.getElementById('ads_avg_cpm').innerText = (data.ads.summary.avg_cost_per_msg_cents || 0) + '¢';
+          document.getElementById('ads_total_orders').innerText = data.ads.summary.total_orders || 0;
+          document.getElementById('ads_avg_cpo').innerText = '$' + (data.ads.summary.avg_cost_per_order_usd || '0.00');
+        }
+
+        // Ads Breakdown টেবিল আপডেট
+        const adsTableBody = document.getElementById('adsReportList');
+        if (data.ads && data.ads.accounts && data.ads.accounts.length > 0) {
+          let adsRows = '';
+          data.ads.accounts.forEach((acc) => {
+            adsRows += `
+              <tr>
+                <td>
+                  <div style="font-weight: 700; color: #ffffff;">${acc.name}</div>
+                  <div style="font-size: 11px; color: #64748b;">${acc.id}</div>
+                </td>
+                <td style="font-weight: 700; color: #38bdf8;">$${acc.spend}</td>
+                <td style="font-weight: 700; color: #ffffff;">${acc.messages}</td>
+                <td><span class="badge-cents">${acc.cost_per_msg_cents}¢</span></td>
+                <td style="font-weight: 700; color: #34d399;">${acc.orders}</td>
+                <td><span class="badge-order">$${acc.cost_per_order_usd}</span></td>
+              </tr>
+            `;
+          });
+          adsTableBody.innerHTML = adsRows;
+        } else {
+          adsTableBody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #64748b; padding: 20px;">অ্যাড ডেটা পাওয়া যায়নি</td></tr>';
+        }
 
         // মডারেটর টেবিল আপডেট
         const tableBody = document.getElementById('moderatorReportList');
@@ -638,14 +666,14 @@
           });
           tableBody.innerHTML = rowsHtml;
         } else {
-          tableBody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: #64748b; padding: 24px;">আজকে এখনো কোনো মডারেটরের রেকর্ড পাওয়া যায়নি</td></tr>';
+          tableBody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: #64748b; padding: 24px;">আজকে এখনো কোনো মডারেটরের রেকর্ড পাওয়া যায়নি</td></tr>';
         }
       } catch (err) {
         console.error('Error fetching analytics:', err);
       }
     }
 
-    setInterval(fetchAnalyticsData, 5000);
+    setInterval(fetchAnalyticsData, 10000);
   </script>
 </body>
 </html>
