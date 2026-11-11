@@ -2,6 +2,7 @@ const express = require("express");
 const Database = require("better-sqlite3");
 const fs = require("fs");
 const path = require("path");
+const axios = require("axios");
 require("dotenv").config();
 
 const app = express();
@@ -10,8 +11,21 @@ const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "my_verify_token";
 
 const DASHBOARD_USER = process.env.DASHBOARD_USER || "admin";
 const DASHBOARD_PASS = process.env.DASHBOARD_PASS || "swapons123";
+const META_ACCESS_TOKEN = process.env.META_ACCESS_TOKEN || "";
 
-// API সুরক্ষার জন্য অথেন্টিকেশন মিডলওয়্যার
+// ৯টি অ্যাড অ্যাকাউন্ট তালিকা
+const AD_ACCOUNTS = [
+  { id: "act_722336793300354", name: "SW - BM" },
+  { id: "act_770104971706610", name: "Swapon's World - 2" },
+  { id: "act_3681717408727534", name: "Swapon's World - 3" },
+  { id: "act_412119051932043", name: "ST-07 (Stone Rose)" },
+  { id: "act_2788254531383177", name: "ST-10 (Stone Rose)" },
+  { id: "act_414594386485433", name: "ST-09 (Stone Rose)" },
+  { id: "act_846240430355170", name: "ZXC20 (Stone Rose)" },
+  { id: "act_705111815068714", name: "Account 8" },
+  { id: "act_7707351539304206", name: "Account 9" }
+];
+
 function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader) {
@@ -123,26 +137,22 @@ function extractPhoneNumber(text) {
   return match ? match[0] : null;
 }
 
-// সরাসরি লগইন পেজ সহ index.html সার্ভ করা (ব্রাউজার অ্যালার্ট ছাড়াই)
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "index.html"));
 });
 
-// মেটা ভেরিফিকেশন
 app.get("/webhook", (req, res) => {
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
 
   if (mode && token === VERIFY_TOKEN) {
-    console.log("[Meta] Webhook Verified successfully!");
     res.status(200).send(challenge);
   } else {
     res.sendStatus(403);
   }
 });
 
-// মেটা ইভেন্ট হ্যান্ডলার
 app.post("/webhook", (req, res) => {
   const body = req.body;
 
@@ -152,7 +162,6 @@ app.post("/webhook", (req, res) => {
 
       if (entry.messaging) {
         entry.messaging.forEach((event) => {
-          // ১. কাস্টমার মেসেজ
           if (event.message && !event.message.is_echo) {
             const rawText = event.message.text || "";
             const phone = extractPhoneNumber(rawText);
@@ -162,17 +171,9 @@ app.post("/webhook", (req, res) => {
               (page_id, sender_id, message_id, message_text, message_time, phone_number, status)
               VALUES (?, ?, ?, ?, ?, ?, 'unread')
             `);
-            stmt.run(
-              pageId,
-              event.sender.id,
-              event.message.mid,
-              rawText,
-              event.timestamp,
-              phone
-            );
+            stmt.run(pageId, event.sender.id, event.message.mid, rawText, event.timestamp, phone);
           }
 
-          // ২. সিন ইভেন্ট
           if (event.read) {
             const customerId = event.sender.id;
             const watermark = event.read.watermark;
@@ -185,7 +186,6 @@ app.post("/webhook", (req, res) => {
             `).run(readTime, pageId, customerId, watermark);
           }
 
-          // ৩. পেজ রিপ্লাই
           if (event.message && event.message.is_echo) {
             const customerId = event.recipient.id;
             const replyText = event.message.text || "";
@@ -198,17 +198,8 @@ app.post("/webhook", (req, res) => {
               INSERT INTO replies 
               (page_id, sender_id, message_id, reply_text, reply_time, moderator, is_order_confirm)
               VALUES (?, ?, ?, ?, ?, ?, ?)
-            `).run(
-              pageId,
-              customerId,
-              event.message.mid,
-              replyText,
-              replyTime,
-              detectedMod,
-              isConfirm
-            );
+            `).run(pageId, customerId, event.message.mid, replyText, replyTime, detectedMod, isConfirm);
 
-            // প্রথম রেসপন্স লকিং রুল
             if (detectedMod) {
               db.prepare(`
                 UPDATE messages 
@@ -236,8 +227,98 @@ app.post("/webhook", (req, res) => {
   res.sendStatus(404);
 });
 
-// ড্যাশবোর্ড ডেটা API
-app.get("/api/daily-report", requireAuth, (req, res) => {
+// মেটা এপিআই থেকে অ্যাডস পারফরম্যান্স আনা
+async function fetchMetaAdsMetrics(targetDate) {
+  if (!META_ACCESS_TOKEN) return { accounts: [], summary: {} };
+
+  const timeRange = JSON.stringify({ since: targetDate, until: targetDate });
+
+  const promises = AD_ACCOUNTS.map(async (acc) => {
+    try {
+      const url = `https://graph.facebook.com/v19.0/${acc.id}/insights`;
+      const response = await axios.get(url, {
+        params: {
+          access_token: META_ACCESS_TOKEN,
+          time_range: timeRange,
+          fields: "spend,actions,cost_per_action_type"
+        },
+        timeout: 7000
+      });
+
+      const data = response.data.data && response.data.data[0] ? response.data.data[0] : null;
+      const spend = data ? parseFloat(data.spend || 0) : 0;
+
+      let fbMessages = 0;
+      let websiteOrders = 0;
+
+      if (data && data.actions) {
+        data.actions.forEach((act) => {
+          if (
+            act.action_type === "onsite_conversion.messaging_conversation_started_7d" ||
+            act.action_type === "onsite_conversion.total_messaging_connection"
+          ) {
+            fbMessages += parseInt(act.value || 0, 10);
+          }
+          if (
+            act.action_type === "purchase" ||
+            act.action_type === "omni_purchase" ||
+            act.action_type === "offsite_conversion.fb_pixel_purchase"
+          ) {
+            websiteOrders += parseInt(act.value || 0, 10);
+          }
+        });
+      }
+
+      // Cost per message (cents এ রূপান্তর: $1 = 100 cents)
+      const costPerMsgCents = fbMessages > 0 ? ((spend / fbMessages) * 100).toFixed(1) : 0;
+      const costPerOrderUsd = websiteOrders > 0 ? (spend / websiteOrders).toFixed(2) : 0;
+
+      return {
+        id: acc.id,
+        name: acc.name,
+        spend: spend.toFixed(2),
+        messages: fbMessages,
+        cost_per_msg_cents: costPerMsgCents,
+        orders: websiteOrders,
+        cost_per_order_usd: costPerOrderUsd
+      };
+    } catch (err) {
+      return {
+        id: acc.id,
+        name: acc.name,
+        spend: "0.00",
+        messages: 0,
+        cost_per_msg_cents: 0,
+        orders: 0,
+        cost_per_order_usd: "0.00",
+        error: true
+      };
+    }
+  });
+
+  const results = await Promise.all(promises);
+
+  const totalSpend = results.reduce((acc, curr) => acc + parseFloat(curr.spend || 0), 0);
+  const totalMsgs = results.reduce((acc, curr) => acc + curr.messages, 0);
+  const totalOrders = results.reduce((acc, curr) => acc + curr.orders, 0);
+
+  const avgCostPerMsgCents = totalMsgs > 0 ? ((totalSpend / totalMsgs) * 100).toFixed(1) : 0;
+  const avgCostPerOrderUsd = totalOrders > 0 ? (totalSpend / totalOrders).toFixed(2) : "0.00";
+
+  return {
+    accounts: results,
+    summary: {
+      total_spend: totalSpend.toFixed(2),
+      total_messages: totalMsgs,
+      avg_cost_per_msg_cents: avgCostPerMsgCents,
+      total_orders: totalOrders,
+      avg_cost_per_order_usd: avgCostPerOrderUsd
+    }
+  };
+}
+
+// রিপোর্ট API
+app.get("/api/daily-report", requireAuth, async (req, res) => {
   try {
     const targetDate = req.query.date || new Date().toISOString().slice(0, 10);
     const targetPage = req.query.page_id;
@@ -269,7 +350,6 @@ app.get("/api/daily-report", requireAuth, (req, res) => {
       WHERE status = 'unread' AND date(created_at, 'localtime') = ? ${pageFilter}
     `).get(...params).count;
 
-    // ৪ নম্বর: সিন হয়েছে কিন্তু কোনো রিপ্লাই নেই
     const readNoReply = db.prepare(`
       SELECT COUNT(*) as count FROM messages 
       WHERE status = 'read' 
@@ -297,6 +377,9 @@ app.get("/api/daily-report", requireAuth, (req, res) => {
       ORDER BY total_conversations DESC
     `).all(...params);
 
+    // ফেসবুক বিজ্ঞাপন অ্যানালিটিক্স ফেচ
+    const adsData = await fetchMetaAdsMetrics(targetDate);
+
     res.json({
       date: targetDate,
       page_id: targetPage || "all",
@@ -309,7 +392,8 @@ app.get("/api/daily-report", requireAuth, (req, res) => {
         total_confirmed_orders: orderConfirms,
         total_phone_numbers: phoneCount
       },
-      moderators: moderatorStats
+      moderators: moderatorStats,
+      ads: adsData
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
