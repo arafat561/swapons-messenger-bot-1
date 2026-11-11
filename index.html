@@ -80,9 +80,43 @@
   </style>
 </head>
 <body class="text-slate-100 min-h-screen p-4 md:p-8 antialiased">
+
+  <!-- Gorgeous Glassmorphism Security Login Modal -->
+  <div id="loginModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-xl p-4">
+    <div class="glass-card max-w-md w-full p-8 rounded-3xl border border-slate-700/80 shadow-2xl space-y-6">
+      <div class="text-center space-y-2">
+        <div class="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/30 text-3xl mx-auto">
+          🔐
+        </div>
+        <h2 class="text-2xl font-extrabold text-white tracking-tight">System Login</h2>
+        <p class="text-xs text-slate-400">Enter authenticated credentials to access live operations</p>
+      </div>
+
+      <form id="authForm" onsubmit="event.preventDefault(); submitLogin();" class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">Username</label>
+          <input type="text" id="loginUser" required placeholder="admin" class="w-full bg-slate-900/90 text-white text-sm px-4 py-3 rounded-xl border border-slate-700 outline-none focus:border-blue-500 transition-colors">
+        </div>
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">Password</label>
+          <input type="password" id="loginPass" required placeholder="••••••••" class="w-full bg-slate-900/90 text-white text-sm px-4 py-3 rounded-xl border border-slate-700 outline-none focus:border-blue-500 transition-colors">
+        </div>
+
+        <div id="loginError" class="text-xs text-rose-400 font-medium hidden text-center">
+          Invalid username or password! Please try again.
+        </div>
+
+        <button type="submit" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95 text-white font-semibold py-3 rounded-xl transition-all shadow-lg shadow-blue-600/30 cursor-pointer">
+          Authorize & Enter
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Main Dashboard Container -->
   <div class="max-w-7xl mx-auto space-y-6">
 
-    <!-- Top Navigation Header (Fully English & Modern Glass Form) -->
+    <!-- Top Navigation Header -->
     <header class="glass-card hover-lift rounded-2xl p-5 shadow-2xl flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5 border border-slate-800">
       <div class="flex items-center gap-4">
         <div class="w-12 h-12 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center shadow-lg shadow-blue-500/25 text-2xl animate-pulse">
@@ -101,13 +135,11 @@
 
       <!-- Real-time Filter Form Controls -->
       <form id="filterForm" onsubmit="event.preventDefault(); loadDashboard();" class="w-full lg:w-auto flex flex-wrap items-center gap-3 bg-slate-950/70 p-2.5 rounded-xl border border-slate-800/80">
-        <!-- Date Selector -->
         <div class="form-control-hover flex items-center gap-2 bg-slate-900/90 px-3.5 py-2 rounded-lg border border-slate-800 focus-within:border-blue-500">
           <label for="datePicker" class="text-slate-400 text-xs font-semibold cursor-pointer">Date:</label>
           <input type="date" id="datePicker" class="bg-transparent text-white text-xs md:text-sm font-medium outline-none cursor-pointer">
         </div>
 
-        <!-- Channel / Page Selector -->
         <div class="form-control-hover flex items-center gap-2 bg-slate-900/90 px-3.5 py-2 rounded-lg border border-slate-800 focus-within:border-blue-500">
           <label for="pageFilter" class="text-slate-400 text-xs font-semibold cursor-pointer">Channel:</label>
           <select id="pageFilter" class="bg-transparent text-white text-xs md:text-sm font-medium outline-none cursor-pointer pr-1">
@@ -117,7 +149,6 @@
           </select>
         </div>
 
-        <!-- Refresh Button (English & Dynamic Interactive) -->
         <button type="submit" class="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95 text-white text-xs md:text-sm font-semibold px-5 py-2.5 rounded-lg transition-all duration-200 shadow-lg shadow-blue-600/30 cursor-pointer">
           <svg id="refreshIcon" class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
@@ -127,10 +158,9 @@
       </form>
     </header>
 
-    <!-- Meta Ads Core Summary Cards (Interactive Lift & Glow on Hover) -->
+    <!-- Meta Ads Core Summary Cards -->
     <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
       
-      <!-- Total Spend Card -->
       <div class="glass-card hover-lift rounded-2xl p-5 relative overflow-hidden">
         <div class="flex justify-between items-start">
           <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Ads Spend</span>
@@ -142,7 +172,6 @@
         </div>
       </div>
 
-      <!-- Messaging Campaign Card -->
       <div class="glass-card hover-lift rounded-2xl p-5 relative overflow-hidden">
         <div class="flex justify-between items-start">
           <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Messaging Campaigns</span>
@@ -156,7 +185,6 @@
         </div>
       </div>
 
-      <!-- Website Sales Campaign Card -->
       <div class="glass-card hover-lift rounded-2xl p-5 relative overflow-hidden">
         <div class="flex justify-between items-start">
           <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Website Purchases</span>
@@ -170,7 +198,6 @@
         </div>
       </div>
 
-      <!-- Active Connected Accounts Card -->
       <div class="glass-card hover-lift rounded-2xl p-5 relative overflow-hidden">
         <div class="flex justify-between items-start">
           <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Connected Accounts</span>
@@ -184,10 +211,9 @@
 
     </section>
 
-    <!-- Operational Inbox Stats (Interactive 3D Hover & Glow Highlights) -->
+    <!-- Operational Inbox Stats -->
     <section class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
       
-      <!-- Interactive Main Total Customers Card -->
       <div class="glass-card customer-hero-card rounded-xl p-4 border border-blue-500/40 cursor-pointer">
         <div class="flex items-center justify-between">
           <div class="text-[11px] uppercase tracking-wider text-blue-300 font-bold">Active Customers</div>
@@ -197,35 +223,30 @@
         <div class="text-[10px] text-slate-400 mt-1">Unique (Ads + Direct)[cite: 2]</div>
       </div>
 
-      <!-- Replied Done Card -->
       <div class="glass-card hover-lift rounded-xl p-4 border border-emerald-500/20 hover:border-emerald-500/60">
         <div class="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Replied Done</div>
         <div id="statReplied" class="text-2xl font-extrabold text-emerald-400 mt-1 font-mono">0</div>
         <div class="text-[10px] text-slate-500 mt-1">Response dispatched</div>
       </div>
 
-      <!-- Unread Pending Card -->
       <div class="glass-card hover-lift rounded-xl p-4 border border-amber-500/20 hover:border-amber-500/60">
         <div class="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Unread Pending</div>
         <div id="statUnread" class="text-2xl font-extrabold text-amber-400 mt-1 font-mono">0</div>
         <div class="text-[10px] text-slate-500 mt-1">Awaiting attention</div>
       </div>
 
-      <!-- Seen No Reply Card -->
       <div class="glass-card hover-lift rounded-xl p-4 border border-rose-500/30 hover:border-rose-500 bg-rose-950/10">
         <div class="text-[11px] uppercase tracking-wider text-rose-400 font-semibold">Seen No Reply ⚠️</div>
         <div id="statReadNoReply" class="text-2xl font-extrabold text-rose-400 mt-1 font-mono">0</div>
         <div class="text-[10px] text-rose-300/60 mt-1">Urgent follow-up</div>
       </div>
 
-      <!-- Confirmed Orders Card -->
       <div class="glass-card hover-lift rounded-xl p-4 border border-purple-500/20 hover:border-purple-500/60">
         <div class="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Confirmed Orders</div>
         <div id="statOrders" class="text-2xl font-extrabold text-purple-400 mt-1 font-mono">0</div>
         <div class="text-[10px] text-slate-500 mt-1">Verified in Chat</div>
       </div>
 
-      <!-- Collected Phone Numbers Card -->
       <div class="glass-card hover-lift rounded-xl p-4 border border-teal-500/20 hover:border-teal-500/60">
         <div class="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Collected Leads</div>
         <div id="statPhones" class="text-2xl font-extrabold text-teal-400 mt-1 font-mono">0</div>
@@ -263,7 +284,7 @@
       </div>
     </div>
 
-    <!-- Moderator Team Performance Table -->
+    <!-- Moderator Team Performance Table (No messy side circles) -->
     <div class="glass-card hover-lift rounded-2xl overflow-hidden shadow-2xl border border-slate-800">
       <div class="p-4 md:px-6 border-b border-slate-800/80 flex items-center justify-between">
         <div class="flex items-center gap-2.5">
@@ -295,108 +316,160 @@
   </div>
 
   <script>
-    // Set default date to today
     document.getElementById("datePicker").value = new Date().toISOString().slice(0, 10);
 
-    const AUTH_HEADER = "Basic " + btoa("admin:swapons123");
+    // Authentication session handler
+    let authHeader = sessionStorage.getItem("dashboard_auth") || "";
+
+    function checkAuth() {
+      if (!authHeader) {
+        document.getElementById("loginModal").classList.remove("hidden");
+      } else {
+        document.getElementById("loginModal").classList.add("hidden");
+        loadDashboard();
+      }
+    }
+
+    async function submitLogin() {
+      const u = document.getElementById("loginUser").value.trim();
+      const p = document.getElementById("loginPass").value.trim();
+      const testHeader = "Basic " + btoa(u + ":" + p);
+
+      const errEl = document.getElementById("loginError");
+      errEl.classList.add("hidden");
+
+      try {
+        const res = await fetch(`/api/daily-report?date=${document.getElementById("datePicker").value}`, {
+          headers: { "Authorization": testHeader }
+        });
+
+        if (res.status === 401 || res.status === 403) {
+          errEl.classList.remove("hidden");
+          return;
+        }
+
+        authHeader = testHeader;
+        sessionStorage.setItem("dashboard_auth", authHeader);
+        document.getElementById("loginModal").classList.add("hidden");
+        const data = await res.json();
+        renderData(data);
+      } catch (e) {
+        errEl.innerText = "Network or server connection failed.";
+        errEl.classList.remove("hidden");
+      }
+    }
 
     async function loadDashboard() {
+      if (!authHeader) {
+        checkAuth();
+        return;
+      }
+
       const date = document.getElementById("datePicker").value;
       const pageId = document.getElementById("pageFilter").value;
       const refreshIcon = document.getElementById("refreshIcon");
 
-      refreshIcon.classList.add("animate-spin");
+      if (refreshIcon) refreshIcon.classList.add("animate-spin");
 
       try {
         const res = await fetch(`/api/daily-report?date=${date}&page_id=${pageId}`, {
-          headers: { "Authorization": AUTH_HEADER }
+          headers: { "Authorization": authHeader }
         });
+
+        if (res.status === 401 || res.status === 403) {
+          sessionStorage.removeItem("dashboard_auth");
+          authHeader = "";
+          checkAuth();
+          return;
+        }
+
         const data = await res.json();
-
-        // 1. Messenger Operations
-        document.getElementById("statReceived").innerText = (data.stats.total_received || 0).toLocaleString();
-        document.getElementById("statReplied").innerText = (data.stats.total_replied || 0).toLocaleString();
-        document.getElementById("statUnread").innerText = (data.stats.unread_pending || 0).toLocaleString();
-        document.getElementById("statReadNoReply").innerText = (data.stats.read_without_reply || 0).toLocaleString();
-        document.getElementById("statOrders").innerText = (data.stats.total_confirmed_orders || 0).toLocaleString();
-        document.getElementById("statPhones").innerText = (data.stats.total_phone_numbers || 0).toLocaleString();
-
-        // 2. Ads Summary Cards
-        if (data.ads && data.ads.summary) {
-          const s = data.ads.summary;
-          document.getElementById("totalSpend").innerText = `$${s.total_spend || "0.00"}`;
-          document.getElementById("totalMessages").innerText = (s.total_messages || 0).toLocaleString();
-          document.getElementById("msgSpend").innerText = `$${s.msg_spend || "0.00"}`;
-          document.getElementById("costPerMsg").innerText = `${s.avg_cost_per_msg_cents || "0.0"}¢`;
-
-          document.getElementById("totalOrders").innerText = (s.total_orders || 0).toLocaleString();
-          document.getElementById("salesSpend").innerText = `$${s.sales_spend || "0.00"}`;
-          document.getElementById("costPerOrder").innerText = `$${s.avg_cost_per_order_usd || "0.00"}`;
-          document.getElementById("activeAccounts").innerText = `${data.ads.accounts ? data.ads.accounts.length : 0}`;
-        }
-
-        // 3. Ad Accounts Table
-        const adsTable = document.getElementById("adsTableBody");
-        if (data.ads && data.ads.accounts && data.ads.accounts.length > 0) {
-          adsTable.innerHTML = data.ads.accounts.map(acc => `
-            <tr class="hover:bg-slate-800/40 transition-colors">
-              <td class="py-3.5 px-4 md:px-6">
-                <div class="font-semibold text-white tracking-wide">${acc.name}</div>
-                <div class="text-[11px] text-slate-500 font-mono mt-0.5">${acc.id}</div>
-              </td>
-              <td class="py-3.5 px-4 font-mono font-bold text-sky-400">$${acc.spend}</td>
-              <td class="py-3.5 px-4">
-                <div class="font-mono font-bold text-emerald-400">${Number(acc.messages).toLocaleString()} msgs</div>
-                <div class="text-[11px] text-slate-400 font-mono mt-0.5">Spend: $${acc.msg_spend}</div>
-              </td>
-              <td class="py-3.5 px-4">
-                <span class="inline-block bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-mono font-bold px-2 py-0.5 rounded text-xs">
-                  ${acc.cost_per_msg_cents}¢
-                </span>
-              </td>
-              <td class="py-3.5 px-4">
-                <div class="font-mono font-bold text-purple-400">${Number(acc.orders).toLocaleString()} orders</div>
-                <div class="text-[11px] text-slate-400 font-mono mt-0.5">Spend: $${acc.sales_spend}</div>
-              </td>
-              <td class="py-3.5 px-4">
-                <span class="inline-block bg-purple-500/10 border border-purple-500/20 text-purple-400 font-mono font-bold px-2 py-0.5 rounded text-xs">
-                  $${acc.cost_per_order_usd}
-                </span>
-              </td>
-            </tr>
-          `).join("");
-        } else {
-          adsTable.innerHTML = `<tr><td colspan="6" class="text-center py-8 text-slate-500 font-mono">No ad insights data found for selected date.</td></tr>`;
-        }
-
-        // 4. Moderator Team Table
-        const modTable = document.getElementById("modTableBody");
-        if (data.moderators && data.moderators.length > 0) {
-          modTable.innerHTML = data.moderators.map(m => `
-            <tr class="hover:bg-slate-800/40 transition-colors">
-              <td class="py-3.5 px-4 md:px-6 font-medium text-slate-200">
-                <span class="inline-flex items-center justify-center w-7 h-7 rounded-full bg-slate-800 text-slate-300 text-xs font-bold mr-2">
-                  ${m.name.charAt(0)}
-                </span>
-                ${m.name}
-              </td>
-              <td class="py-3.5 px-4 font-mono font-bold text-emerald-400">
-                ${m.total_conversations.toLocaleString()}
-              </td>
-            </tr>
-          `).join("");
-        } else {
-          modTable.innerHTML = `<tr><td colspan="2" class="text-center py-8 text-slate-500 font-mono">No conversations resolved by moderators today yet.</td></tr>`;
-        }
-
+        renderData(data);
       } catch (err) {
         console.error("Dashboard Load Error:", err);
       } finally {
-        setTimeout(() => refreshIcon.classList.remove("animate-spin"), 400);
+        if (refreshIcon) {
+          setTimeout(() => refreshIcon.classList.remove("animate-spin"), 400);
+        }
       }
     }
 
-    loadDashboard();
+    function renderData(data) {
+      // 1. Messenger Operations
+      document.getElementById("statReceived").innerText = (data.stats.total_received || 0).toLocaleString();
+      document.getElementById("statReplied").innerText = (data.stats.total_replied || 0).toLocaleString();
+      document.getElementById("statUnread").innerText = (data.stats.unread_pending || 0).toLocaleString();
+      document.getElementById("statReadNoReply").innerText = (data.stats.read_without_reply || 0).toLocaleString();
+      document.getElementById("statOrders").innerText = (data.stats.total_confirmed_orders || 0).toLocaleString();
+      document.getElementById("statPhones").innerText = (data.stats.total_phone_numbers || 0).toLocaleString();
+
+      // 2. Ads Summary Cards
+      if (data.ads && data.ads.summary) {
+        const s = data.ads.summary;
+        document.getElementById("totalSpend").innerText = `$${s.total_spend || "0.00"}`;
+        document.getElementById("totalMessages").innerText = (s.total_messages || 0).toLocaleString();
+        document.getElementById("msgSpend").innerText = `$${s.msg_spend || "0.00"}`;
+        document.getElementById("costPerMsg").innerText = `${s.avg_cost_per_msg_cents || "0.0"}¢`;
+
+        document.getElementById("totalOrders").innerText = (s.total_orders || 0).toLocaleString();
+        document.getElementById("salesSpend").innerText = `$${s.sales_spend || "0.00"}`;
+        document.getElementById("costPerOrder").innerText = `$${s.avg_cost_per_order_usd || "0.00"}`;
+        document.getElementById("activeAccounts").innerText = `${data.ads.accounts ? data.ads.accounts.length : 0}`;
+      }
+
+      // 3. Ad Accounts Table
+      const adsTable = document.getElementById("adsTableBody");
+      if (data.ads && data.ads.accounts && data.ads.accounts.length > 0) {
+        adsTable.innerHTML = data.ads.accounts.map(acc => `
+          <tr class="hover:bg-slate-800/40 transition-colors">
+            <td class="py-3.5 px-4 md:px-6">
+              <div class="font-semibold text-white tracking-wide">${acc.name}</div>
+              <div class="text-[11px] text-slate-500 font-mono mt-0.5">${acc.id}</div>
+            </td>
+            <td class="py-3.5 px-4 font-mono font-bold text-sky-400">$${acc.spend}</td>
+            <td class="py-3.5 px-4">
+              <div class="font-mono font-bold text-emerald-400">${Number(acc.messages).toLocaleString()} msgs</div>
+              <div class="text-[11px] text-slate-400 font-mono mt-0.5">Spend: $${acc.msg_spend}</div>
+            </td>
+            <td class="py-3.5 px-4">
+              <span class="inline-block bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-mono font-bold px-2 py-0.5 rounded text-xs">
+                ${acc.cost_per_msg_cents}¢
+              </span>
+            </td>
+            <td class="py-3.5 px-4">
+              <div class="font-mono font-bold text-purple-400">${Number(acc.orders).toLocaleString()} orders</div>
+              <div class="text-[11px] text-slate-400 font-mono mt-0.5">Spend: $${acc.sales_spend}</div>
+            </td>
+            <td class="py-3.5 px-4">
+              <span class="inline-block bg-purple-500/10 border border-purple-500/20 text-purple-400 font-mono font-bold px-2 py-0.5 rounded text-xs">
+                $${acc.cost_per_order_usd}
+              </span>
+            </td>
+          </tr>
+        `).join("");
+      } else {
+        adsTable.innerHTML = `<tr><td colspan="6" class="text-center py-8 text-slate-500 font-mono">No ad insights data found for selected date.</td></tr>`;
+      }
+
+      // 4. Moderator Table (Clean name and count, no messy badges)
+      const modTable = document.getElementById("modTableBody");
+      if (data.moderators && data.moderators.length > 0) {
+        modTable.innerHTML = data.moderators.map(m => `
+          <tr class="hover:bg-slate-800/40 transition-colors">
+            <td class="py-3.5 px-4 md:px-6 font-semibold text-slate-200">
+              ${m.name}
+            </td>
+            <td class="py-3.5 px-4 font-mono font-bold text-emerald-400 text-base">
+              ${m.total_conversations.toLocaleString()}
+            </td>
+          </tr>
+        `).join("");
+      } else {
+        modTable.innerHTML = `<tr><td colspan="2" class="text-center py-8 text-slate-500 font-mono">No conversations resolved by moderators today yet.</td></tr>`;
+      }
+    }
+
+    checkAuth();
     setInterval(loadDashboard, 30000);
   </script>
 </body>
