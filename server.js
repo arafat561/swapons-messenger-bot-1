@@ -8,19 +8,21 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "my_verify_token";
 
-// ড্যাশবোর্ড লগইন তথ্য (প্রয়োজনে পরিবর্তন করতে পারেন)
 const DASHBOARD_USER = process.env.DASHBOARD_USER || "admin";
 const DASHBOARD_PASS = process.env.DASHBOARD_PASS || "swapons123";
 
-// অথেন্টিকেশন মিডলওয়্যার (ড্যাশবোর্ড ও API লক করার জন্য)
+// API সুরক্ষার জন্য অথেন্টিকেশন মিডলওয়্যার
 function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization;
   if (!authHeader) {
-    res.setHeader("WWW-Authenticate", 'Basic realm="Swapons Dashboard"');
-    return res.status(401).send("অ্যাক্সেস ডিনাইড! ইউজারনেম ও পাসওয়ার্ড প্রয়োজন।");
+    return res.status(401).json({ error: "অনুমতি নেই! ইউজারনেম ও পাসওয়ার্ড প্রয়োজন।" });
   }
 
   const base64Credentials = authHeader.split(" ")[1];
+  if (!base64Credentials) {
+    return res.status(401).json({ error: "ভুল ফরমেট!" });
+  }
+
   const credentials = Buffer.from(base64Credentials, "base64").toString("ascii");
   const [username, password] = credentials.split(":");
 
@@ -28,8 +30,7 @@ function requireAuth(req, res, next) {
     return next();
   }
 
-  res.setHeader("WWW-Authenticate", 'Basic realm="Swapons Dashboard"');
-  return res.status(401).send("ভুল ইউজারনেম অথবা পাসওয়ার্ড!");
+  return res.status(401).json({ error: "ভুল ইউজারনেম অথবা পাসওয়ার্ড!" });
 }
 
 const PAGES = {
@@ -122,12 +123,12 @@ function extractPhoneNumber(text) {
   return match ? match[0] : null;
 }
 
-// মূল ড্যাশবোর্ড পেজ (ইউজারনেম ও পাসওয়ার্ড দিয়ে সুরক্ষিত)
-app.get("/", requireAuth, (req, res) => {
+// সরাসরি লগইন পেজ সহ index.html সার্ভ করা (ব্রাউজার অ্যালার্ট ছাড়াই)
+app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "index.html"));
 });
 
-// মেটা ভেরিফিকেশন (Webhook ভেরিফিকেশনে পাসওয়ার্ড লাগবে না)
+// মেটা ভেরিফিকেশন
 app.get("/webhook", (req, res) => {
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
@@ -207,7 +208,7 @@ app.post("/webhook", (req, res) => {
               isConfirm
             );
 
-            // প্রথম স্বাগতম মেসেজ লকিং রুল
+            // প্রথম রেসপন্স লকিং রুল
             if (detectedMod) {
               db.prepare(`
                 UPDATE messages 
@@ -235,7 +236,7 @@ app.post("/webhook", (req, res) => {
   res.sendStatus(404);
 });
 
-// ড্যাশবোর্ড ডেটা API (ইউজারনেম ও পাসওয়ার্ড দিয়ে সুরক্ষিত)
+// ড্যাশবোর্ড ডেটা API
 app.get("/api/daily-report", requireAuth, (req, res) => {
   try {
     const targetDate = req.query.date || new Date().toISOString().slice(0, 10);
@@ -253,25 +254,22 @@ app.get("/api/daily-report", requireAuth, (req, res) => {
       }
     }
 
-    // ১. মোট কাস্টমার মেসেজ
     const totalReceived = db.prepare(`
       SELECT COUNT(*) as count FROM messages 
       WHERE date(created_at, 'localtime') = ? ${pageFilter}
     `).get(...params).count;
 
-    // ২. উত্তর দেওয়া সম্পন্ন
     const totalReplied = db.prepare(`
       SELECT COUNT(*) as count FROM messages 
       WHERE status = 'replied' AND date(created_at, 'localtime') = ? ${pageFilter}
     `).get(...params).count;
 
-    // ৩. আনরিড পেন্ডিং
     const unreadPending = db.prepare(`
       SELECT COUNT(*) as count FROM messages 
       WHERE status = 'unread' AND date(created_at, 'localtime') = ? ${pageFilter}
     `).get(...params).count;
 
-    // ৪. সিন হয়েছে কিন্তু কোনো রিপ্লাই দেওয়া হয়নি (কাস্টমার মেসেজ সিন কিন্তু স্ট্যাটাস 'read')
+    // ৪ নম্বর: সিন হয়েছে কিন্তু কোনো রিপ্লাই নেই
     const readNoReply = db.prepare(`
       SELECT COUNT(*) as count FROM messages 
       WHERE status = 'read' 
@@ -279,19 +277,16 @@ app.get("/api/daily-report", requireAuth, (req, res) => {
         ${pageFilter}
     `).get(...params).count;
 
-    // ৫. অর্ডার কনফার্ম
     const orderConfirms = db.prepare(`
       SELECT COUNT(*) as count FROM replies 
       WHERE is_order_confirm = 1 AND date(created_at, 'localtime') = ? ${pageFilter}
     `).get(...params).count;
 
-    // ৬. ফোন নম্বর
     const phoneCount = db.prepare(`
       SELECT COUNT(DISTINCT phone_number) as count FROM messages 
       WHERE phone_number IS NOT NULL AND phone_number != '' AND date(created_at, 'localtime') = ? ${pageFilter}
     `).get(...params).count;
 
-    // মডারেটরদের টেবিল পারফরম্যান্স
     const moderatorStats = db.prepare(`
       SELECT assigned_moderator AS name, COUNT(DISTINCT sender_id) AS total_conversations
       FROM messages
