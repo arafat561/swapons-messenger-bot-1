@@ -37,39 +37,6 @@ const DAY_M = "date(m.created_at, '+6 hours')";
 const DAY_R = "date(r.created_at, '+6 hours')";
 
 /* ------------------------------------------------------------------ */
-/* শিফট: সকাল ৯টা–বিকাল ৫টা (৪৮০ মিনিট), বিকাল ৫টা–রাত ১২টা (৪২০ মিনিট) */
-/* সময় বদলাতে চাইলে শুধু startH / endH বদলান (ঘণ্টা, বাংলাদেশ সময়)।       */
-/* ------------------------------------------------------------------ */
-const SHIFTS = {
-  all: { label: "Full day", startH: 0, endH: 24 },
-  morning: { label: "Morning (9am–5pm)", startH: 9, endH: 17 },
-  evening: { label: "Evening (5pm–12am)", startH: 17, endH: 24 }
-};
-
-function sqlTime(ms) {
-  return new Date(ms).toISOString().slice(0, 19).replace("T", " ");
-}
-
-function shiftWindow(dateStr, shiftKey) {
-  const key = SHIFTS[shiftKey] ? shiftKey : "all";
-  const s = SHIFTS[key];
-  const dayStartMs = Date.parse(dateStr + "T00:00:00Z") - DHAKA_OFFSET_MS;
-  const startMs = dayStartMs + s.startH * 3600000;
-  const endMs = dayStartMs + s.endH * 3600000;
-  const full = key === "all" ? null : (s.endH - s.startH) * 60;
-  // শিফট চলতে থাকলে এখন পর্যন্ত যত মিনিট গেছে সেটাই ধরা হয়
-  const elapsed = key === "all" ? null : Math.max(0, Math.min(endMs, Date.now()) - startMs) / 60000;
-  return {
-    key,
-    label: s.label,
-    start: sqlTime(startMs),
-    end: sqlTime(endMs),
-    minutes: full,
-    elapsed_minutes: elapsed === null ? null : Math.round(elapsed * 10) / 10
-  };
-}
-
-/* ------------------------------------------------------------------ */
 /* পেজ ও অ্যাড অ্যাকাউন্ট                                              */
 /* ------------------------------------------------------------------ */
 const PAGE_GROUPS = {
@@ -245,7 +212,6 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_messages_status ON messages(status);
   CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(page_id, sender_id);
   CREATE INDEX IF NOT EXISTS idx_replies_sender ON replies(page_id, sender_id);
-  CREATE INDEX IF NOT EXISTS idx_replies_created_at ON replies(created_at);
   CREATE INDEX IF NOT EXISTS idx_assign_day ON moderator_assignments(day);
 `);
 
@@ -602,11 +568,9 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
     const rawDate = String(req.query.date || "");
     const targetDate = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : dhakaDate();
     const scope = resolveScope(req.query.page_id || req.query.scope);
-    const win = shiftWindow(targetDate, String(req.query.shift || "all"));
 
     const pc = pageClause(scope.ids);
     const pcM = pageClause(scope.ids, "m.page_id");
-    const pcR = pageClause(scope.ids, "r.page_id");
 
     const CUST = "page_id || ':' || sender_id";
     const CUST_M = "m.page_id || ':' || m.sender_id";
@@ -672,37 +636,16 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       [targetDate, ...pc.params]
     );
 
-    // মডারেটর: যে কাস্টমার যার নামে লক (প্রথম ওয়েলকাম), তাকে পাঠানো সব রিপ্লাই তার।
-    //  - Customers = কতজন আলাদা কাস্টমারকে মেসেজ দিয়েছে (১০টা মেসেজ দিলেও ১ জন)
-    //  - Messages  = মোট কতটা মেসেজ পাঠিয়েছে
-    // শিফট বাছলে শুধু ওই সময়ের মধ্যে পাঠানো মেসেজ গোনা হয়।
-    const modRows = db
+    // মডারেটর: কার ওয়েলকাম মেসেজ আগে গেছে, সেই কাস্টমার তার।
+    const moderatorStats = db
       .prepare(
-        `SELECT a.moderator AS name,
-                COUNT(DISTINCT r.page_id || ':' || r.sender_id) AS total_conversations,
-                COUNT(*) AS total_messages
-         FROM replies r
-         JOIN moderator_assignments a
-           ON a.page_id = r.page_id AND a.sender_id = r.sender_id AND a.day = ?
-         WHERE r.created_at >= ? AND r.created_at < ?${pcR.sql}
-         GROUP BY a.moderator
-         ORDER BY total_conversations DESC, total_messages DESC, a.moderator ASC`
+        `SELECT moderator AS name, COUNT(*) AS total_conversations
+         FROM moderator_assignments
+         WHERE day = ?${pc.sql}
+         GROUP BY moderator
+         ORDER BY total_conversations DESC, moderator ASC`
       )
-      .all(targetDate, win.start, win.end, ...pcR.params);
-
-    const moderatorStats = modRows.map((m) => ({
-      name: m.name,
-      total_conversations: m.total_conversations,
-      total_messages: m.total_messages,
-      msgs_per_customer: m.total_conversations
-        ? Math.round((m.total_messages / m.total_conversations) * 10) / 10
-        : 0,
-      // ডিউটির মিনিট ÷ পাঠানো মেসেজ। "Full day" এ ডিউটি সময় ঠিক করা যায় না, তাই null।
-      avg_minutes_per_message:
-        win.elapsed_minutes && m.total_messages
-          ? Math.round((win.elapsed_minutes / m.total_messages) * 10) / 10
-          : null
-    }));
+      .all(targetDate, ...pc.params);
 
     const adsData = await getAdsMetrics(targetDate, scope.key);
 
@@ -710,12 +653,6 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       date: targetDate,
       generated_at: Date.now(),
       scope: { key: scope.key, label: scope.label },
-      shift: {
-        key: win.key,
-        label: win.label,
-        minutes: win.minutes,
-        elapsed_minutes: win.elapsed_minutes
-      },
       page_id: req.query.page_id || "all",
       page_name: scope.label,
       stats: {
