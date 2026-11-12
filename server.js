@@ -19,8 +19,10 @@ const META_ACCESS_TOKEN = process.env.META_ACCESS_TOKEN || "";
 // Marketing API version: আগের v19.0 মেয়াদোত্তীর্ণ। চাইলে .env এ META_API_VERSION দিয়ে বদলানো যাবে।
 const META_API_VERSION = process.env.META_API_VERSION || "v25.0";
 
-// একবার লগইন করলে ৫ মিনিট ড্যাশবোর্ড খোলা থাকবে, তারপর আবার সাইন-ইন লাগবে।
-const SESSION_MS = 5 * 60 * 1000;
+// একবার সাইন-ইন করলে আর মেয়াদ শেষ হয় না — Sign out চাপা পর্যন্ত (বা পাসওয়ার্ড বদলানো পর্যন্ত) ড্যাশবোর্ড খোলা থাকে।
+// আবার সময়-সীমা চাইলে .env এ SESSION_MINUTES=5 দিন। (০ বা ফাঁকা = মেয়াদ নেই)
+const SESSION_MINUTES = Number(process.env.SESSION_MINUTES || 0);
+const SESSION_MS = SESSION_MINUTES > 0 ? SESSION_MINUTES * 60 * 1000 : 0;
 
 if (!process.env.DASHBOARD_PASS) {
   console.warn("⚠️  DASHBOARD_PASS সেট করা নেই — ডিফল্ট পাসওয়ার্ড চলছে। চাইলে .env এ নতুন পাসওয়ার্ড দিন।");
@@ -94,12 +96,12 @@ const AD_ACCOUNTS = [
   { id: "act_846240430355170", name: "Swapons World-3", brand: "swapons" },
   { id: "act_414594386485433", name: "Swapons World-2", brand: "swapons" },
   { id: "act_705111815068714", name: "ZXC19 (Stone rose)", brand: "swapons" },
-  { id: "act_722336793300354", name: "ST-07 (Stone Rose)", brand: "swapons" },
   { id: "act_412119051932043", name: "ST-18 (Stone Rose)", brand: "swapons" },
   { id: "act_7707351539304206", name: "ZXC20 (Stone Rose)", brand: "swapons" },
+  { id: "act_770104971706610", name: "ST-09 (Stone Rose)", brand: "swapons" },
 
-  // Stone Rose এর অ্যাড (শুধু ২টি অ্যাকাউন্ট)
-  { id: "act_770104971706610", name: "ST-09 (Stone Rose)", brand: "stone" },
+  // Stone Rose এর অ্যাড (শুধু ২টি অ্যাকাউন্ট: ST-07 ও ST-10)
+  { id: "act_722336793300354", name: "ST-07 (Stone Rose)", brand: "stone" },
   { id: "act_3681717408727534", name: "ST-10 (Stone Rose)", brand: "stone" }
 
   // SW-BM (act_2788254531383177) বাদ দেওয়া হয়েছে — ওতে কোনো অ্যাড চলে না।
@@ -116,97 +118,6 @@ function pageClause(ids, col) {
   const column = col || "page_id";
   if (!ids.length) return { sql: "", params: [] };
   return { sql: ` AND ${column} IN (${ids.map(() => "?").join(",")})`, params: ids };
-}
-
-/* ------------------------------------------------------------------ */
-/* লগইন ও সেশন                                                         */
-/* সাইন-ইন করলে একটি টোকেন তৈরি হয়, যা ঠিক ৫ মিনিট কাজ করে।              */
-/* ৫ মিনিট পর টোকেন মেয়াদোত্তীর্ণ হয় — আবার সাইন-ইন করতে হয়।              */
-/* ------------------------------------------------------------------ */
-function safeEqual(a, b) {
-  const ha = crypto.createHash("sha256").update(String(a)).digest();
-  const hb = crypto.createHash("sha256").update(String(b)).digest();
-  return crypto.timingSafeEqual(ha, hb);
-}
-
-const sessions = new Map(); // token -> মেয়াদ শেষের সময় (ms)
-
-function createSession() {
-  const token = crypto.randomBytes(32).toString("hex");
-  const expiresAt = Date.now() + SESSION_MS;
-  sessions.set(token, expiresAt);
-  return { token, expiresAt };
-}
-
-function sessionValid(token) {
-  if (!token) return false;
-  const exp = sessions.get(token);
-  if (!exp) return false;
-  if (Date.now() >= exp) {
-    sessions.delete(token);
-    return false;
-  }
-  return true;
-}
-
-setInterval(() => {
-  const now = Date.now();
-  for (const [t, exp] of sessions) if (now >= exp) sessions.delete(t);
-}, 60 * 1000).unref();
-
-// ভুল পাসওয়ার্ড বারবার দিলে সাময়িক ব্লক (ব্রুট-ফোর্স ঠেকাতে)
-const failedLogins = new Map(); // ip -> { count, until }
-const MAX_FAILS = 5;
-const BLOCK_MS = 60 * 1000;
-
-function clientIp(req) {
-  return String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim();
-}
-
-app.use(express.json());
-
-app.post("/api/login", (req, res) => {
-  const ip = clientIp(req);
-  const rec = failedLogins.get(ip);
-  if (rec && rec.until && Date.now() < rec.until) {
-    const wait = Math.ceil((rec.until - Date.now()) / 1000);
-    return res.status(429).json({ error: `Too many attempts. Try again in ${wait}s.` });
-  }
-
-  const body = req.body || {};
-  const username = String(body.username || "").trim();
-  const password = String(body.password || "");
-
-  if (safeEqual(username, DASHBOARD_USER) && safeEqual(password, DASHBOARD_PASS)) {
-    failedLogins.delete(ip);
-    const s = createSession();
-    return res.json({ token: s.token, expires_at: s.expiresAt, session_ms: SESSION_MS });
-  }
-
-  const count = (rec && !rec.until ? rec.count : 0) + 1;
-  if (count >= MAX_FAILS) {
-    failedLogins.set(ip, { count: 0, until: Date.now() + BLOCK_MS });
-  } else {
-    failedLogins.set(ip, { count });
-  }
-  return res.status(401).json({ error: "Wrong username or password." });
-});
-
-app.post("/api/logout", (req, res) => {
-  const header = req.headers.authorization || "";
-  const [scheme, token] = header.split(" ");
-  if (scheme === "Bearer" && token) sessions.delete(token);
-  res.json({ ok: true });
-});
-
-function requireAuth(req, res, next) {
-  const header = req.headers.authorization || "";
-  const [scheme, token] = header.split(" ");
-
-  if (scheme === "Bearer" && sessionValid(token)) {
-    return next();
-  }
-  return res.status(401).json({ error: "Session expired. Please sign in again." });
 }
 
 /* ------------------------------------------------------------------ */
@@ -268,6 +179,8 @@ function detectModerator(text) {
 /* ------------------------------------------------------------------ */
 /* ডাটাবেস                                                             */
 /* ------------------------------------------------------------------ */
+app.use(express.json());
+
 const dbDir = process.env.DATA_DIR || (fs.existsSync("/data") ? "/data" : ".");
 const dbPath = path.join(dbDir, "messenger.db");
 const db = new Database(dbPath);
@@ -301,6 +214,7 @@ db.exec(`
   );
 
   -- একজন কাস্টমার, একটি দিন, একজন মডারেটর। প্রথম ওয়েলকাম মেসেজই লক হয়ে যায়।
+  -- ওই কাস্টমারের পাঠানো ফোন নম্বরও এই মডারেটরের নামেই গোনা হয়।
   CREATE TABLE IF NOT EXISTS moderator_assignments (
     page_id TEXT NOT NULL,
     sender_id TEXT NOT NULL,
@@ -308,6 +222,12 @@ db.exec(`
     moderator TEXT NOT NULL,
     assigned_at INTEGER,
     PRIMARY KEY (page_id, sender_id, day)
+  );
+
+  -- ড্যাশবোর্ড লগইন সেশন (টোকেনের হ্যাশ রাখা হয়, আসল টোকেন নয়)
+  CREATE TABLE IF NOT EXISTS sessions (
+    token_hash TEXT PRIMARY KEY,
+    created_at INTEGER NOT NULL
   );
 
   CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
@@ -381,13 +301,116 @@ const stmts = {
     SET status = 'replied'
     WHERE page_id = ? AND sender_id = ? AND status != 'replied'
       AND ${DAY} = ?
-  `)
+  `),
+  insertSession: db.prepare(`INSERT INTO sessions (token_hash, created_at) VALUES (?, ?)`),
+  getSession: db.prepare(`SELECT created_at FROM sessions WHERE token_hash = ?`),
+  deleteSession: db.prepare(`DELETE FROM sessions WHERE token_hash = ?`),
+  purgeSessions: db.prepare(`DELETE FROM sessions WHERE created_at < ?`)
 };
 
 function extractPhoneNumber(text) {
   if (!text) return null;
   const match = text.match(/(?:\+?88)?01[3-9]\d{8}\b/);
   return match ? match[0] : null;
+}
+
+/* ------------------------------------------------------------------ */
+/* লগইন ও সেশন                                                         */
+/* সাইন-ইন করলে একটি টোকেন তৈরি হয় এবং ডাটাবেসে (হ্যাশ করে) জমা থাকে।      */
+/* তাই সার্ভার রিস্টার্ট দিলেও লগইন থাকে। পাসওয়ার্ড বদলালে সব সেশন বাতিল।   */
+/* ------------------------------------------------------------------ */
+function safeEqual(a, b) {
+  const ha = crypto.createHash("sha256").update(String(a)).digest();
+  const hb = crypto.createHash("sha256").update(String(b)).digest();
+  return crypto.timingSafeEqual(ha, hb);
+}
+
+// ইউজারনেম/পাসওয়ার্ড বদলালে এটাও বদলে যায়, ফলে পুরোনো টোকেন আর মিলবে না।
+const AUTH_FINGERPRINT = crypto
+  .createHash("sha256")
+  .update(`${DASHBOARD_USER}:${DASHBOARD_PASS}`)
+  .digest("hex");
+
+function hashToken(token) {
+  return crypto.createHash("sha256").update(`${AUTH_FINGERPRINT}:${token}`).digest("hex");
+}
+
+function createSession() {
+  const token = crypto.randomBytes(32).toString("hex");
+  const now = Date.now();
+  stmts.insertSession.run(hashToken(token), now);
+  return { token, expiresAt: SESSION_MS ? now + SESSION_MS : null };
+}
+
+function sessionValid(token) {
+  if (!token) return false;
+  const h = hashToken(token);
+  const row = stmts.getSession.get(h);
+  if (!row) return false;
+  if (SESSION_MS && Date.now() - row.created_at >= SESSION_MS) {
+    stmts.deleteSession.run(h);
+    return false;
+  }
+  return true;
+}
+
+if (SESSION_MS) {
+  setInterval(() => {
+    try { stmts.purgeSessions.run(Date.now() - SESSION_MS); } catch (e) {}
+  }, 60 * 1000).unref();
+}
+
+// ভুল পাসওয়ার্ড বারবার দিলে সাময়িক ব্লক (ব্রুট-ফোর্স ঠেকাতে)
+const failedLogins = new Map(); // ip -> { count, until }
+const MAX_FAILS = 5;
+const BLOCK_MS = 60 * 1000;
+
+function clientIp(req) {
+  return String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim();
+}
+
+app.post("/api/login", (req, res) => {
+  const ip = clientIp(req);
+  const rec = failedLogins.get(ip);
+  if (rec && rec.until && Date.now() < rec.until) {
+    const wait = Math.ceil((rec.until - Date.now()) / 1000);
+    return res.status(429).json({ error: `Too many attempts. Try again in ${wait}s.` });
+  }
+
+  const body = req.body || {};
+  const username = String(body.username || "").trim();
+  const password = String(body.password || "");
+
+  if (safeEqual(username, DASHBOARD_USER) && safeEqual(password, DASHBOARD_PASS)) {
+    failedLogins.delete(ip);
+    const s = createSession();
+    return res.json({ token: s.token, expires_at: s.expiresAt, session_ms: SESSION_MS || null });
+  }
+
+  const count = (rec && !rec.until ? rec.count : 0) + 1;
+  if (count >= MAX_FAILS) {
+    failedLogins.set(ip, { count: 0, until: Date.now() + BLOCK_MS });
+  } else {
+    failedLogins.set(ip, { count });
+  }
+  return res.status(401).json({ error: "Wrong username or password." });
+});
+
+app.post("/api/logout", (req, res) => {
+  const header = req.headers.authorization || "";
+  const [scheme, token] = header.split(" ");
+  if (scheme === "Bearer" && token) stmts.deleteSession.run(hashToken(token));
+  res.json({ ok: true });
+});
+
+function requireAuth(req, res, next) {
+  const header = req.headers.authorization || "";
+  const [scheme, token] = header.split(" ");
+
+  if (scheme === "Bearer" && sessionValid(token)) {
+    return next();
+  }
+  return res.status(401).json({ error: "Session ended. Please sign in again." });
 }
 
 /* ------------------------------------------------------------------ */
@@ -744,7 +767,8 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
     // মডারেটর: যে কাস্টমার যার নামে লক (প্রথম ওয়েলকাম), তাকে পাঠানো সব রিপ্লাই তার।
     //  - Customers = কতজন আলাদা কাস্টমারকে মেসেজ দিয়েছে (১০টা মেসেজ দিলেও ১ জন)
     //  - Messages  = মোট কতটা মেসেজ পাঠিয়েছে
-    // শিফট বাছলে শুধু ওই সময়ের মধ্যে পাঠানো মেসেজ গোনা হয়।
+    //  - Phones    = ওই মডারেটরের লক করা কাস্টমারদের পাঠানো আলাদা ফোন নম্বর
+    // শিফট বাছলে শুধু ওই সময়ের মধ্যে পাঠানো মেসেজ / আসা ফোন নম্বর গোনা হয়।
     const modRows = db
       .prepare(
         `SELECT a.moderator AS name,
@@ -754,15 +778,49 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
          JOIN moderator_assignments a
            ON a.page_id = r.page_id AND a.sender_id = r.sender_id AND a.day = ?
          WHERE r.created_at >= ? AND r.created_at < ?${pcR.sql}
-         GROUP BY a.moderator
-         ORDER BY total_conversations DESC, total_messages DESC, a.moderator ASC`
+         GROUP BY a.moderator`
       )
       .all(targetDate, win.start, win.end, ...pcR.params);
 
-    const moderatorStats = modRows.map((m) => ({
+    // কাস্টমার আগে ফোন নম্বর দিক বা পরে — যে মডারেটর ওই কথোপকথনের প্রথম ওয়েলকাম দিয়েছে, নম্বর তার।
+    const phoneRows = db
+      .prepare(
+        `SELECT a.moderator AS name,
+                COUNT(DISTINCT m.phone_number) AS phones
+         FROM messages m
+         JOIN moderator_assignments a
+           ON a.page_id = m.page_id AND a.sender_id = m.sender_id AND a.day = ?
+         WHERE m.phone_number IS NOT NULL AND m.phone_number != ''
+           AND m.created_at >= ? AND m.created_at < ?${pcM.sql}
+         GROUP BY a.moderator`
+      )
+      .all(targetDate, win.start, win.end, ...pcM.params);
+
+    const phoneByMod = new Map(phoneRows.map((p) => [p.name, p.phones]));
+    const board = modRows.map((m) => ({
+      name: m.name,
+      total_conversations: m.total_conversations,
+      total_messages: m.total_messages
+    }));
+    // শিফটে যার শুধু ফোন নম্বর এসেছে (রিপ্লাই নেই) তাকেও তালিকায় রাখা হয়।
+    for (const p of phoneRows) {
+      if (!board.some((b) => b.name === p.name)) {
+        board.push({ name: p.name, total_conversations: 0, total_messages: 0 });
+      }
+    }
+    board.sort(
+      (a, b) =>
+        b.total_conversations - a.total_conversations ||
+        b.total_messages - a.total_messages ||
+        (phoneByMod.get(b.name) || 0) - (phoneByMod.get(a.name) || 0) ||
+        (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
+    );
+
+    const moderatorStats = board.map((m) => ({
       name: m.name,
       total_conversations: m.total_conversations,
       total_messages: m.total_messages,
+      phone_numbers: phoneByMod.get(m.name) || 0,
       msgs_per_customer: m.total_conversations
         ? Math.round((m.total_messages / m.total_conversations) * 10) / 10
         : 0,
@@ -814,3 +872,4 @@ app.get("/privacy-policy", (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+s
