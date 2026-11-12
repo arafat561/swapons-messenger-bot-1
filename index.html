@@ -94,7 +94,6 @@
     .seg button { border: 0; background: transparent; padding: 8px 16px; border-radius: 10px; font-weight: 600; font-size: .92rem; color: var(--muted); transition: background .18s, color .18s; }
     .seg button:hover { color: var(--text); }
     .seg button[aria-pressed="true"] { background: var(--invert); color: var(--on-invert); }
-    .seg.sm button { padding: 6px 12px; font-size: .86rem; }
 
     .stepper { display: inline-flex; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
     .stepper button { border: 0; background: transparent; width: 38px; height: 40px; font-size: 1.15rem; color: var(--muted); }
@@ -175,10 +174,9 @@
     .bar-row b { color: var(--text); font-size: 1.05rem; min-width: 5ch; text-align: right; }
 
     /* ---------- tables ---------- */
-    .block-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 20px 24px 14px; flex-wrap: wrap; }
+    .block-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 20px 24px 14px; flex-wrap: wrap; }
     .block-head h2 { font-size: 1.1rem; font-weight: 700; }
     .block-head span { color: var(--muted); font-size: .86rem; }
-    .hint { color: var(--muted); font-size: .86rem; padding: 0 24px 14px; max-width: 90ch; }
     .scroll { overflow-x: auto; }
     table { width: 100%; border-collapse: collapse; min-width: 820px; }
     th { text-align: left; font-weight: 600; font-size: .82rem; color: var(--faint); padding: 10px 16px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--raised); white-space: nowrap; }
@@ -201,24 +199,17 @@
     .empty { padding: 36px 24px; text-align: center; color: var(--muted); }
     .empty b { display: block; color: var(--text); margin-bottom: 4px; }
 
-    /* ---------- moderator board ---------- */
-    .mrow { display: grid; grid-template-columns: 38px minmax(110px, 1.1fr) minmax(70px, 1.3fr) 84px 96px 104px 104px; gap: 14px; align-items: center; padding: 12px 24px; }
-    .mhead { background: var(--raised); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: .8rem; font-weight: 600; color: var(--faint); padding-top: 10px; padding-bottom: 10px; }
-    .mhead span:nth-child(n+4), .board .mrow > span:nth-child(n+4) { text-align: right; }
     .board { list-style: none; padding: 0 0 8px; }
-    .board li.mrow { border-bottom: 1px solid var(--line); }
-    .board li.mrow:last-child { border-bottom: 0; }
+    .board li { display: grid; grid-template-columns: 38px minmax(120px, 190px) 1fr 70px 56px; gap: 14px; align-items: center; padding: 12px 24px; border-top: 1px solid var(--line); }
+    .board li:first-child { border-top: 1px solid var(--line); }
     .board .rank { font-weight: 700; color: var(--faint); font-size: 1.05rem; }
     .board li:nth-child(1) .rank { color: var(--sale); }
     .board .who { font-weight: 600; font-size: 1.05rem; }
     .board .track { height: 10px; }
     .board .fill { background: var(--ok); }
     .board li:nth-child(n+2) .fill { background: var(--msg); }
-    .board .n { font-size: 1.2rem; font-weight: 700; }
-    .board .msgs { font-size: 1.1rem; font-weight: 700; color: var(--msg); }
-    .board .per { color: var(--muted); font-weight: 600; }
-    .board .avg { font-weight: 700; }
-    .board .avg.na { color: var(--faint); font-weight: 500; }
+    .board .n { font-size: 1.2rem; font-weight: 700; text-align: right; }
+    .board .pc { color: var(--faint); font-size: .86rem; text-align: right; }
 
     footer { color: var(--faint); font-size: .82rem; }
 
@@ -248,22 +239,16 @@
       .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
       .reconcile { grid-template-columns: 1fr; }
     }
-    @media (max-width: 720px) {
-      .mrow { grid-template-columns: 28px minmax(80px, 1fr) 62px 66px 66px; gap: 10px; padding: 12px 16px; }
-      .mrow .hide-sm { display: none; }
-      .mhead span:nth-child(n+4), .board .mrow > span:nth-child(n+4) { text-align: right; }
-      .hint { padding: 0 16px 14px; }
-      .block-head { padding: 18px 16px 12px; }
-    }
     @media (max-width: 640px) {
       .wrap { padding: 18px 14px 48px; }
       .hero-main { padding: 22px 20px; }
       .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .seg { width: 100%; }
       .seg button { flex: 1; padding: 8px 6px; font-size: .84rem; }
-      .seg.sm button { padding: 6px 4px; font-size: .78rem; }
       .bar-row { grid-template-columns: 1fr auto; }
       .bar-row .track { grid-column: 1 / -1; order: 3; }
+      .board li { grid-template-columns: 28px 1fr 56px; padding: 12px 16px; }
+      .board .track, .board .pc { display: none; }
     }
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { animation: none !important; transition: none !important; }
@@ -452,22 +437,7 @@
       <section class="panel" style="padding:0;overflow:hidden" aria-label="Moderator workload">
         <div class="block-head">
           <h2 class="display">Moderators</h2>
-          <div class="seg sm" id="shiftSeg" role="group" aria-label="Shift">
-            <button type="button" data-shift="all" aria-pressed="true">Full day</button>
-            <button type="button" data-shift="morning" aria-pressed="false">Morning 9am–5pm</button>
-            <button type="button" data-shift="evening" aria-pressed="false">Evening 5pm–12am</button>
-          </div>
-        </div>
-        <p class="hint" id="modHint">Loading…</p>
-
-        <div class="mrow mhead" aria-hidden="true">
-          <span>#</span>
-          <span>Moderator</span>
-          <span class="hide-sm"></span>
-          <span>Customers</span>
-          <span>Messages</span>
-          <span class="hide-sm">Msgs / customer</span>
-          <span>Min / message</span>
+          <span id="modMeta">Credited to whoever sends the first welcome message</span>
         </div>
         <ol class="board" id="modBoard">
           <li style="display:block"><div class="empty">Loading moderators…</div></li>
@@ -476,7 +446,7 @@
 
     </main>
 
-    <footer>Times follow Bangladesh time (UTC+6). Page, date and shift changes load instantly; the dashboard also refreshes every 30 seconds.</footer>
+    <footer>Times follow Bangladesh time (UTC+6). Page and date changes load instantly; the dashboard also refreshes every 30 seconds.</footer>
   </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -504,13 +474,11 @@
       var state = {
         auth: sessionStorage.getItem("dashboard_auth") || "",
         scope: safeGet("dash_scope") || "all",
-        shift: safeGet("dash_shift") || "all",
         reqId: 0,
         countdown: REFRESH_SECONDS,
         lastOk: 0
       };
       if (["all", "swapons", "stone"].indexOf(state.scope) === -1) state.scope = "all";
-      if (["all", "morning", "evening"].indexOf(state.shift) === -1) state.shift = "all";
 
       /* ---------- helpers ---------- */
       function esc(v) {
@@ -558,17 +526,11 @@
         safeSet("dash_theme", next);
       });
 
-      /* ---------- scope + shift + date controls ---------- */
+      /* ---------- scope + date controls ---------- */
       function paintScope() {
         var buttons = document.querySelectorAll("#scopeSeg button");
         for (var i = 0; i < buttons.length; i++) {
           buttons[i].setAttribute("aria-pressed", buttons[i].getAttribute("data-scope") === state.scope ? "true" : "false");
-        }
-      }
-      function paintShift() {
-        var buttons = document.querySelectorAll("#shiftSeg button");
-        for (var i = 0; i < buttons.length; i++) {
-          buttons[i].setAttribute("aria-pressed", buttons[i].getAttribute("data-shift") === state.shift ? "true" : "false");
         }
       }
       function paintDateButtons() {
@@ -582,14 +544,6 @@
         safeSet("dash_scope", state.scope);
         paintScope();
         loadDashboard();                 // পেজ বদলালেই সাথে সাথে লোড — Refresh চাপতে হবে না
-      });
-      $("shiftSeg").addEventListener("click", function (e) {
-        var btn = e.target.closest("button[data-shift]");
-        if (!btn) return;
-        state.shift = btn.getAttribute("data-shift");
-        safeSet("dash_shift", state.shift);
-        paintShift();
-        loadDashboard();
       });
       $("datePicker").addEventListener("change", function () {
         if (!$("datePicker").value) $("datePicker").value = dhakaToday();
@@ -638,9 +592,7 @@
       });
 
       function fetchReport(header) {
-        var qs = "date=" + encodeURIComponent($("datePicker").value) +
-          "&page_id=" + encodeURIComponent(state.scope) +
-          "&shift=" + encodeURIComponent(state.shift);
+        var qs = "date=" + encodeURIComponent($("datePicker").value) + "&page_id=" + encodeURIComponent(state.scope);
         return fetch("/api/daily-report?" + qs, { headers: { Authorization: header } });
       }
 
@@ -755,7 +707,7 @@
 
         renderReconcile(sum.total_messages || 0, total);
         renderAccounts(accounts, sum, scopeLabel);
-        renderModerators(data.moderators || [], data.shift || null);
+        renderModerators(data.moderators || []);
 
         $("datePicker").value = data.date || $("datePicker").value;
         paintDateButtons();
@@ -822,31 +774,15 @@
         '</tr>';
       }
 
-      function renderModerators(mods, shift) {
+      function renderModerators(mods) {
         var board = $("modBoard");
-        var totalC = 0, totalM = 0;
-        mods.forEach(function (m) {
-          totalC += m.total_conversations || 0;
-          totalM += m.total_messages || 0;
-        });
-
-        // হিন্ট টেক্সট
-        var hint;
-        var common = "A customer counts once, however many messages were sent.";
-        if (shift && shift.minutes) {
-          var done = shift.elapsed_minutes || 0;
-          var dur = done < shift.minutes
-            ? Math.round(done) + " of " + shift.minutes + " minutes so far"
-            : shift.minutes + " minutes";
-          hint = shift.label + " · " + dur + ". Min / message = duty minutes ÷ messages sent. " + common;
-        } else {
-          hint = "Whole day. Pick Morning or Evening to see minutes per message. " + common;
-        }
-        if (totalM) hint = fmt(totalC) + " customers · " + fmt(totalM) + " messages sent. " + hint;
-        $("modHint").textContent = hint;
+        var total = mods.reduce(function (acc, m) { return acc + (m.total_conversations || 0); }, 0);
+        $("modMeta").textContent = total
+          ? fmt(total) + " conversations credited · first welcome message wins"
+          : "Credited to whoever sends the first welcome message";
 
         if (!mods.length) {
-          board.innerHTML = '<li style="display:block"><div class="empty"><b>No moderator messages in this period</b>' +
+          board.innerHTML = '<li style="display:block"><div class="empty"><b>No moderator conversations yet</b>' +
             'A customer is credited to the moderator whose welcome message says “আমি &lt;name&gt;” first.</div></li>';
           return;
         }
@@ -854,15 +790,12 @@
         var max = mods[0].total_conversations || 1;
         board.innerHTML = mods.map(function (m, i) {
           var w = Math.round((m.total_conversations / max) * 100);
-          var hasAvg = m.avg_minutes_per_message !== null && m.avg_minutes_per_message !== undefined;
-          return '<li class="mrow">' +
+          return '<li>' +
             '<span class="rank num">' + (i + 1) + '</span>' +
             '<span class="who">' + esc(m.name) + '</span>' +
-            '<div class="track hide-sm"><div class="fill" style="width:' + w + '%"></div></div>' +
+            '<div class="track"><div class="fill" style="width:' + w + '%"></div></div>' +
             '<span class="n num">' + fmt(m.total_conversations) + '</span>' +
-            '<span class="msgs num">' + fmt(m.total_messages) + '</span>' +
-            '<span class="per num hide-sm">' + (m.msgs_per_customer || 0) + '</span>' +
-            '<span class="avg num' + (hasAvg ? '' : ' na') + '">' + (hasAvg ? m.avg_minutes_per_message : '—') + '</span>' +
+            '<span class="pc num">' + pct(m.total_conversations, total) + '%</span>' +
           '</li>';
         }).join("");
       }
@@ -883,7 +816,6 @@
       /* ---------- start ---------- */
       $("datePicker").value = dhakaToday();
       paintScope();
-      paintShift();
       paintDateButtons();
       if (state.auth) { loadDashboard(); } else { showLogin(); }
     })();
