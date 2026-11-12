@@ -12,14 +12,18 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "my_verify_token";
 
-const DASHBOARD_USER = process.env.DASHBOARD_USER || "admin";
-const DASHBOARD_PASS = process.env.DASHBOARD_PASS || "swapons123";
+// লগইন: ইউজারনেম swapon, পাসওয়ার্ড swapon@1234 (চাইলে .env এ DASHBOARD_USER / DASHBOARD_PASS দিয়ে বদলানো যাবে)
+const DASHBOARD_USER = process.env.DASHBOARD_USER || "swapon";
+const DASHBOARD_PASS = process.env.DASHBOARD_PASS || "swapon@1234";
 const META_ACCESS_TOKEN = process.env.META_ACCESS_TOKEN || "";
 // Marketing API version: আগের v19.0 মেয়াদোত্তীর্ণ। চাইলে .env এ META_API_VERSION দিয়ে বদলানো যাবে।
 const META_API_VERSION = process.env.META_API_VERSION || "v25.0";
 
+// একবার লগইন করলে ৫ মিনিট ড্যাশবোর্ড খোলা থাকবে, তারপর আবার সাইন-ইন লাগবে।
+const SESSION_MS = 5 * 60 * 1000;
+
 if (!process.env.DASHBOARD_PASS) {
-  console.warn("⚠️  DASHBOARD_PASS সেট করা নেই — ডিফল্ট পাসওয়ার্ড চলছে। .env এ নতুন পাসওয়ার্ড দিন।");
+  console.warn("⚠️  DASHBOARD_PASS সেট করা নেই — ডিফল্ট পাসওয়ার্ড চলছে। চাইলে .env এ নতুন পাসওয়ার্ড দিন।");
 }
 
 /* ------------------------------------------------------------------ */
@@ -37,6 +41,39 @@ const DAY_M = "date(m.created_at, '+6 hours')";
 const DAY_R = "date(r.created_at, '+6 hours')";
 
 /* ------------------------------------------------------------------ */
+/* শিফট: সকাল ৯টা–বিকাল ৫টা (৪৮০ মিনিট), বিকাল ৫টা–রাত ১২টা (৪২০ মিনিট) */
+/* সময় বদলাতে চাইলে শুধু startH / endH বদলান (ঘণ্টা, বাংলাদেশ সময়)।       */
+/* ------------------------------------------------------------------ */
+const SHIFTS = {
+  all: { label: "Full day", startH: 0, endH: 24 },
+  morning: { label: "Morning (9am–5pm)", startH: 9, endH: 17 },
+  evening: { label: "Evening (5pm–12am)", startH: 17, endH: 24 }
+};
+
+function sqlTime(ms) {
+  return new Date(ms).toISOString().slice(0, 19).replace("T", " ");
+}
+
+function shiftWindow(dateStr, shiftKey) {
+  const key = SHIFTS[shiftKey] ? shiftKey : "all";
+  const s = SHIFTS[key];
+  const dayStartMs = Date.parse(dateStr + "T00:00:00Z") - DHAKA_OFFSET_MS;
+  const startMs = dayStartMs + s.startH * 3600000;
+  const endMs = dayStartMs + s.endH * 3600000;
+  const full = key === "all" ? null : (s.endH - s.startH) * 60;
+  // শিফট চলতে থাকলে এখন পর্যন্ত যত মিনিট গেছে সেটাই ধরা হয়
+  const elapsed = key === "all" ? null : Math.max(0, Math.min(endMs, Date.now()) - startMs) / 60000;
+  return {
+    key,
+    label: s.label,
+    start: sqlTime(startMs),
+    end: sqlTime(endMs),
+    minutes: full,
+    elapsed_minutes: elapsed === null ? null : Math.round(elapsed * 10) / 10
+  };
+}
+
+/* ------------------------------------------------------------------ */
 /* পেজ ও অ্যাড অ্যাকাউন্ট                                              */
 /* ------------------------------------------------------------------ */
 const PAGE_GROUPS = {
@@ -50,18 +87,22 @@ const PAGE_TO_GROUP = {
   "250386238168336": "stone"
 };
 
-// brand দিয়ে ঠিক হয় কোন অ্যাড অ্যাকাউন্ট কোন পেজের।
-// কোনোটা ভুল গ্রুপে পড়লে শুধু এখানে brand বদলে দিন।
+// ৮টি অ্যাড অ্যাকাউন্ট। brand দিয়ে ঠিক হয় কোন অ্যাকাউন্ট কোন পেজের হিসাবে দেখাবে।
+// কোনোটা ভুল গ্রুপে পড়লে শুধু ওই লাইনের brand বদলে দিন ("swapons" অথবা "stone")।
 const AD_ACCOUNTS = [
-  { id: "act_705111815068714", name: "ZXC19 (Stone rose)", brand: "stone" },
-  { id: "act_722336793300354", name: "ST-07 (Stone Rose)", brand: "stone" },
-  { id: "act_3681717408727534", name: "ST-10 (Stone Rose)", brand: "stone" },
-  { id: "act_770104971706610", name: "ST-09 (Stone Rose)", brand: "stone" },
-  { id: "act_412119051932043", name: "ST-18 (Stone Rose)", brand: "stone" },
-  { id: "act_7707351539304206", name: "ZXC20 (Stone Rose)", brand: "stone" },
+  // Swapons World এর অ্যাড (৬টি অ্যাকাউন্ট)
   { id: "act_846240430355170", name: "Swapons World-3", brand: "swapons" },
   { id: "act_414594386485433", name: "Swapons World-2", brand: "swapons" },
-  { id: "act_2788254531383177", name: "SW-BM", brand: "swapons" }
+  { id: "act_705111815068714", name: "ZXC19 (Stone rose)", brand: "swapons" },
+  { id: "act_722336793300354", name: "ST-07 (Stone Rose)", brand: "swapons" },
+  { id: "act_412119051932043", name: "ST-18 (Stone Rose)", brand: "swapons" },
+  { id: "act_7707351539304206", name: "ZXC20 (Stone Rose)", brand: "swapons" },
+
+  // Stone Rose এর অ্যাড (শুধু ২টি অ্যাকাউন্ট)
+  { id: "act_770104971706610", name: "ST-09 (Stone Rose)", brand: "stone" },
+  { id: "act_3681717408727534", name: "ST-10 (Stone Rose)", brand: "stone" }
+
+  // SW-BM (act_2788254531383177) বাদ দেওয়া হয়েছে — ওতে কোনো অ্যাড চলে না।
 ];
 
 function resolveScope(raw) {
@@ -78,7 +119,9 @@ function pageClause(ids, col) {
 }
 
 /* ------------------------------------------------------------------ */
-/* লগইন                                                                */
+/* লগইন ও সেশন                                                         */
+/* সাইন-ইন করলে একটি টোকেন তৈরি হয়, যা ঠিক ৫ মিনিট কাজ করে।              */
+/* ৫ মিনিট পর টোকেন মেয়াদোত্তীর্ণ হয় — আবার সাইন-ইন করতে হয়।              */
 /* ------------------------------------------------------------------ */
 function safeEqual(a, b) {
   const ha = crypto.createHash("sha256").update(String(a)).digest();
@@ -86,23 +129,84 @@ function safeEqual(a, b) {
   return crypto.timingSafeEqual(ha, hb);
 }
 
-function requireAuth(req, res, next) {
-  const header = req.headers.authorization || "";
-  const [scheme, encoded] = header.split(" ");
+const sessions = new Map(); // token -> মেয়াদ শেষের সময় (ms)
 
-  if (scheme !== "Basic" || !encoded) {
-    return res.status(401).json({ error: "অনুমতি নেই! ইউজারনেম ও পাসওয়ার্ড প্রয়োজন।" });
+function createSession() {
+  const token = crypto.randomBytes(32).toString("hex");
+  const expiresAt = Date.now() + SESSION_MS;
+  sessions.set(token, expiresAt);
+  return { token, expiresAt };
+}
+
+function sessionValid(token) {
+  if (!token) return false;
+  const exp = sessions.get(token);
+  if (!exp) return false;
+  if (Date.now() >= exp) {
+    sessions.delete(token);
+    return false;
+  }
+  return true;
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [t, exp] of sessions) if (now >= exp) sessions.delete(t);
+}, 60 * 1000).unref();
+
+// ভুল পাসওয়ার্ড বারবার দিলে সাময়িক ব্লক (ব্রুট-ফোর্স ঠেকাতে)
+const failedLogins = new Map(); // ip -> { count, until }
+const MAX_FAILS = 5;
+const BLOCK_MS = 60 * 1000;
+
+function clientIp(req) {
+  return String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim();
+}
+
+app.use(express.json());
+
+app.post("/api/login", (req, res) => {
+  const ip = clientIp(req);
+  const rec = failedLogins.get(ip);
+  if (rec && rec.until && Date.now() < rec.until) {
+    const wait = Math.ceil((rec.until - Date.now()) / 1000);
+    return res.status(429).json({ error: `Too many attempts. Try again in ${wait}s.` });
   }
 
-  const decoded = Buffer.from(encoded, "base64").toString("utf8");
-  const idx = decoded.indexOf(":");
-  const username = idx >= 0 ? decoded.slice(0, idx) : decoded;
-  const password = idx >= 0 ? decoded.slice(idx + 1) : "";
+  const body = req.body || {};
+  const username = String(body.username || "").trim();
+  const password = String(body.password || "");
 
   if (safeEqual(username, DASHBOARD_USER) && safeEqual(password, DASHBOARD_PASS)) {
+    failedLogins.delete(ip);
+    const s = createSession();
+    return res.json({ token: s.token, expires_at: s.expiresAt, session_ms: SESSION_MS });
+  }
+
+  const count = (rec && !rec.until ? rec.count : 0) + 1;
+  if (count >= MAX_FAILS) {
+    failedLogins.set(ip, { count: 0, until: Date.now() + BLOCK_MS });
+  } else {
+    failedLogins.set(ip, { count });
+  }
+  return res.status(401).json({ error: "Wrong username or password." });
+});
+
+app.post("/api/logout", (req, res) => {
+  const header = req.headers.authorization || "";
+  const [scheme, token] = header.split(" ");
+  if (scheme === "Bearer" && token) sessions.delete(token);
+  res.json({ ok: true });
+});
+
+function requireAuth(req, res, next) {
+  const header = req.headers.authorization || "";
+  const [scheme, token] = header.split(" ");
+
+  if (scheme === "Bearer" && sessionValid(token)) {
     return next();
   }
-  return res.status(401).json({ error: "ভুল ইউজারনেম অথবা পাসওয়ার্ড!" });
+  return res.status(401).json({ error: "Session expired. Please sign in again." });
 }
 
 /* ------------------------------------------------------------------ */
@@ -164,8 +268,6 @@ function detectModerator(text) {
 /* ------------------------------------------------------------------ */
 /* ডাটাবেস                                                             */
 /* ------------------------------------------------------------------ */
-app.use(express.json());
-
 const dbDir = process.env.DATA_DIR || (fs.existsSync("/data") ? "/data" : ".");
 const dbPath = path.join(dbDir, "messenger.db");
 const db = new Database(dbPath);
@@ -212,6 +314,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_messages_status ON messages(status);
   CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(page_id, sender_id);
   CREATE INDEX IF NOT EXISTS idx_replies_sender ON replies(page_id, sender_id);
+  CREATE INDEX IF NOT EXISTS idx_replies_created_at ON replies(created_at);
   CREATE INDEX IF NOT EXISTS idx_assign_day ON moderator_assignments(day);
 `);
 
@@ -568,9 +671,11 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
     const rawDate = String(req.query.date || "");
     const targetDate = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : dhakaDate();
     const scope = resolveScope(req.query.page_id || req.query.scope);
+    const win = shiftWindow(targetDate, String(req.query.shift || "all"));
 
     const pc = pageClause(scope.ids);
     const pcM = pageClause(scope.ids, "m.page_id");
+    const pcR = pageClause(scope.ids, "r.page_id");
 
     const CUST = "page_id || ':' || sender_id";
     const CUST_M = "m.page_id || ':' || m.sender_id";
@@ -636,16 +741,37 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       [targetDate, ...pc.params]
     );
 
-    // মডারেটর: কার ওয়েলকাম মেসেজ আগে গেছে, সেই কাস্টমার তার।
-    const moderatorStats = db
+    // মডারেটর: যে কাস্টমার যার নামে লক (প্রথম ওয়েলকাম), তাকে পাঠানো সব রিপ্লাই তার।
+    //  - Customers = কতজন আলাদা কাস্টমারকে মেসেজ দিয়েছে (১০টা মেসেজ দিলেও ১ জন)
+    //  - Messages  = মোট কতটা মেসেজ পাঠিয়েছে
+    // শিফট বাছলে শুধু ওই সময়ের মধ্যে পাঠানো মেসেজ গোনা হয়।
+    const modRows = db
       .prepare(
-        `SELECT moderator AS name, COUNT(*) AS total_conversations
-         FROM moderator_assignments
-         WHERE day = ?${pc.sql}
-         GROUP BY moderator
-         ORDER BY total_conversations DESC, moderator ASC`
+        `SELECT a.moderator AS name,
+                COUNT(DISTINCT r.page_id || ':' || r.sender_id) AS total_conversations,
+                COUNT(*) AS total_messages
+         FROM replies r
+         JOIN moderator_assignments a
+           ON a.page_id = r.page_id AND a.sender_id = r.sender_id AND a.day = ?
+         WHERE r.created_at >= ? AND r.created_at < ?${pcR.sql}
+         GROUP BY a.moderator
+         ORDER BY total_conversations DESC, total_messages DESC, a.moderator ASC`
       )
-      .all(targetDate, ...pc.params);
+      .all(targetDate, win.start, win.end, ...pcR.params);
+
+    const moderatorStats = modRows.map((m) => ({
+      name: m.name,
+      total_conversations: m.total_conversations,
+      total_messages: m.total_messages,
+      msgs_per_customer: m.total_conversations
+        ? Math.round((m.total_messages / m.total_conversations) * 10) / 10
+        : 0,
+      // ডিউটির মিনিট ÷ পাঠানো মেসেজ। "Full day" এ ডিউটি সময় ঠিক করা যায় না, তাই null।
+      avg_minutes_per_message:
+        win.elapsed_minutes && m.total_messages
+          ? Math.round((win.elapsed_minutes / m.total_messages) * 10) / 10
+          : null
+    }));
 
     const adsData = await getAdsMetrics(targetDate, scope.key);
 
@@ -653,6 +779,12 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       date: targetDate,
       generated_at: Date.now(),
       scope: { key: scope.key, label: scope.label },
+      shift: {
+        key: win.key,
+        label: win.label,
+        minutes: win.minutes,
+        elapsed_minutes: win.elapsed_minutes
+      },
       page_id: req.query.page_id || "all",
       page_name: scope.label,
       stats: {
