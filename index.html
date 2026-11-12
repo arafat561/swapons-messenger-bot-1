@@ -94,6 +94,7 @@
     .seg button { border: 0; background: transparent; padding: 8px 16px; border-radius: 10px; font-weight: 600; font-size: .92rem; color: var(--muted); transition: background .18s, color .18s; }
     .seg button:hover { color: var(--text); }
     .seg button[aria-pressed="true"] { background: var(--invert); color: var(--on-invert); }
+    .seg.sm button { padding: 6px 12px; font-size: .86rem; }
 
     .stepper { display: inline-flex; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
     .stepper button { border: 0; background: transparent; width: 38px; height: 40px; font-size: 1.15rem; color: var(--muted); }
@@ -174,9 +175,10 @@
     .bar-row b { color: var(--text); font-size: 1.05rem; min-width: 5ch; text-align: right; }
 
     /* ---------- tables ---------- */
-    .block-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 20px 24px 14px; flex-wrap: wrap; }
+    .block-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 20px 24px 14px; flex-wrap: wrap; }
     .block-head h2 { font-size: 1.1rem; font-weight: 700; }
     .block-head span { color: var(--muted); font-size: .86rem; }
+    .hint { color: var(--muted); font-size: .86rem; padding: 0 24px 14px; max-width: 90ch; }
     .scroll { overflow-x: auto; }
     table { width: 100%; border-collapse: collapse; min-width: 820px; }
     th { text-align: left; font-weight: 600; font-size: .82rem; color: var(--faint); padding: 10px 16px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--raised); white-space: nowrap; }
@@ -199,17 +201,24 @@
     .empty { padding: 36px 24px; text-align: center; color: var(--muted); }
     .empty b { display: block; color: var(--text); margin-bottom: 4px; }
 
+    /* ---------- moderator board ---------- */
+    .mrow { display: grid; grid-template-columns: 38px minmax(110px, 1.1fr) minmax(70px, 1.3fr) 84px 96px 104px 104px; gap: 14px; align-items: center; padding: 12px 24px; }
+    .mhead { background: var(--raised); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: .8rem; font-weight: 600; color: var(--faint); padding-top: 10px; padding-bottom: 10px; }
+    .mhead span:nth-child(n+4), .board .mrow > span:nth-child(n+4) { text-align: right; }
     .board { list-style: none; padding: 0 0 8px; }
-    .board li { display: grid; grid-template-columns: 38px minmax(120px, 190px) 1fr 70px 56px; gap: 14px; align-items: center; padding: 12px 24px; border-top: 1px solid var(--line); }
-    .board li:first-child { border-top: 1px solid var(--line); }
+    .board li.mrow { border-bottom: 1px solid var(--line); }
+    .board li.mrow:last-child { border-bottom: 0; }
     .board .rank { font-weight: 700; color: var(--faint); font-size: 1.05rem; }
     .board li:nth-child(1) .rank { color: var(--sale); }
     .board .who { font-weight: 600; font-size: 1.05rem; }
     .board .track { height: 10px; }
     .board .fill { background: var(--ok); }
     .board li:nth-child(n+2) .fill { background: var(--msg); }
-    .board .n { font-size: 1.2rem; font-weight: 700; text-align: right; }
-    .board .pc { color: var(--faint); font-size: .86rem; text-align: right; }
+    .board .n { font-size: 1.2rem; font-weight: 700; }
+    .board .msgs { font-size: 1.1rem; font-weight: 700; color: var(--msg); }
+    .board .per { color: var(--muted); font-weight: 600; }
+    .board .avg { font-weight: 700; }
+    .board .avg.na { color: var(--faint); font-weight: 500; }
 
     footer { color: var(--faint); font-size: .82rem; }
 
@@ -222,16 +231,40 @@
     .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
     /* ---------- login ---------- */
-    .gate { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 20px; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(10px); }
-    .gate form { width: min(400px, 100%); padding: 30px; border-radius: 20px; display: grid; gap: 16px; }
-    .gate h2 { font-size: 1.5rem; font-weight: 700; }
-    .gate p { color: var(--muted); font-size: .92rem; margin-top: -8px; }
-    .field { display: grid; gap: 6px; font-weight: 600; font-size: .88rem; }
-    .field input { height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--raised); padding: 0 14px; font-weight: 500; }
-    .field input:focus-visible { outline-offset: 0; border-color: var(--msg); }
-    .gate .err { color: var(--bad); font-size: .88rem; }
-    .primary { height: 46px; border: 0; border-radius: 12px; background: var(--invert); color: var(--on-invert); font-weight: 700; }
-    .primary:hover { opacity: .9; }
+    .gate {
+      position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 20px; overflow: auto;
+      background:
+        radial-gradient(55% 65% at 14% 62%, #2512b5 0%, rgba(37,18,181,0) 62%),
+        radial-gradient(45% 55% at 88% 10%, #3b49dc 0%, rgba(59,73,220,0) 66%),
+        radial-gradient(50% 60% at 72% 88%, #9171d8 0%, rgba(145,113,216,0) 66%),
+        radial-gradient(60% 55% at 32% 8%, #a08be0 0%, rgba(160,139,224,0) 66%),
+        radial-gradient(40% 50% at 96% 62%, #5b43d2 0%, rgba(91,67,210,0) 70%),
+        #5f43cf;
+      background-size: 140% 140%;
+      animation: drift 22s ease-in-out infinite alternate;
+    }
+    @keyframes drift { from { background-position: 0% 0%; } to { background-position: 100% 100%; } }
+    .gate form { width: min(330px, 100%); display: grid; gap: 14px; color: #fff; }
+    .gate h2 { text-align: center; font-size: 1.3rem; font-weight: 500; letter-spacing: .01em; margin-bottom: 8px; }
+    .pill-field { display: flex; align-items: center; gap: 12px; height: 46px; padding: 0 18px; border-radius: 999px; background: rgba(255,255,255,.28); transition: background .18s, box-shadow .18s; }
+    .pill-field:focus-within { background: rgba(255,255,255,.38); box-shadow: 0 0 0 2px rgba(255,255,255,.75); }
+    .pill-field svg { width: 18px; height: 18px; flex: none; stroke: #fff; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .pill-field input { flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; background: transparent; color: #fff; font-size: .95rem; }
+    .pill-field input::placeholder { color: rgba(255,255,255,.78); }
+    .pill-field input:-webkit-autofill { -webkit-text-fill-color: #fff; transition: background-color 99999s ease-in-out 0s; caret-color: #fff; }
+    .login-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 4px; font-size: .8rem; }
+    .remember { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+    .remember input { width: 14px; height: 14px; accent-color: #fff; cursor: pointer; }
+    .login-row a { color: #fff; text-decoration: none; opacity: .95; }
+    .login-row a:hover { text-decoration: underline; }
+    .gate .err { text-align: center; color: #ffe1dd; background: rgba(120, 20, 40, .35); padding: 8px 12px; border-radius: 12px; font-size: .86rem; }
+    .signin-btn { height: 48px; border: 0; border-radius: 999px; background: rgba(255,255,255,.55); color: #3a2a9c; font-weight: 600; font-size: 1rem; margin-top: 6px; transition: background .18s, transform .18s; }
+    .signin-btn:hover:not(:disabled) { background: rgba(255,255,255,.78); }
+    .signin-btn:active:not(:disabled) { transform: scale(.985); }
+    .signin-btn:disabled { opacity: .65; cursor: wait; }
+    .gate :focus-visible { outline-color: #fff; }
+    body.locked .wrap, body.locked .toast { visibility: hidden; }
+    #sessionLeft { font-variant-numeric: tabular-nums; }
 
     /* ---------- responsive ---------- */
     @media (max-width: 1060px) {
@@ -239,16 +272,22 @@
       .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
       .reconcile { grid-template-columns: 1fr; }
     }
+    @media (max-width: 720px) {
+      .mrow { grid-template-columns: 28px minmax(80px, 1fr) 62px 66px 66px; gap: 10px; padding: 12px 16px; }
+      .mrow .hide-sm { display: none; }
+      .mhead span:nth-child(n+4), .board .mrow > span:nth-child(n+4) { text-align: right; }
+      .hint { padding: 0 16px 14px; }
+      .block-head { padding: 18px 16px 12px; }
+    }
     @media (max-width: 640px) {
       .wrap { padding: 18px 14px 48px; }
       .hero-main { padding: 22px 20px; }
       .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .seg { width: 100%; }
       .seg button { flex: 1; padding: 8px 6px; font-size: .84rem; }
+      .seg.sm button { padding: 6px 4px; font-size: .78rem; }
       .bar-row { grid-template-columns: 1fr auto; }
       .bar-row .track { grid-column: 1 / -1; order: 3; }
-      .board li { grid-template-columns: 28px 1fr 56px; padding: 12px 16px; }
-      .board .track, .board .pc { display: none; }
     }
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { animation: none !important; transition: none !important; }
@@ -260,17 +299,26 @@
 
   <!-- Login -->
   <div id="loginModal" class="gate" hidden>
-    <form id="authForm" class="panel" autocomplete="on">
+    <form id="authForm" autocomplete="on">
       <h2 class="display">Sign in</h2>
-      <p>Enter your dashboard username and password.</p>
-      <label class="field">Username
-        <input type="text" id="loginUser" name="username" autocomplete="username" required>
+
+      <label class="pill-field">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.2 3.6-7 8-7s8 2.8 8 7"/></svg>
+        <input type="text" id="loginUser" name="username" placeholder="Username" autocomplete="username" autocapitalize="off" spellcheck="false" required>
       </label>
-      <label class="field">Password
-        <input type="password" id="loginPass" name="password" autocomplete="current-password" required>
+
+      <label class="pill-field">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="12" r="4"/><path d="M12 12h9M18 12v3M15 12v2"/></svg>
+        <input type="password" id="loginPass" name="password" placeholder="Password" autocomplete="current-password" required>
       </label>
-      <div id="loginError" class="err" role="alert" hidden>Wrong username or password.</div>
-      <button type="submit" class="primary">Sign in</button>
+
+      <div class="login-row">
+        <label class="remember"><input type="checkbox" id="loginRemember" checked> Remember Me</label>
+        <a href="#" id="forgotLink">Forgot Password?</a>
+      </div>
+
+      <div id="loginError" class="err" role="alert" hidden></div>
+      <button type="submit" class="signin-btn" id="loginBtn">Sign in</button>
     </form>
   </div>
 
@@ -280,7 +328,7 @@
       <div class="brand">
         <h1 class="display">Live Analytics &amp; Operations Dashboard</h1>
         <p>Messenger inbox, Meta ad spend and moderator workload in one view.</p>
-        <div class="live" id="liveBadge"><i></i><span id="liveText">Connecting…</span></div>
+        <div class="live" id="liveBadge"><i></i><span id="liveText">Connecting…</span><span id="sessionLeft" title="Time left before you must sign in again"></span></div>
       </div>
 
       <div class="controls">
@@ -437,7 +485,22 @@
       <section class="panel" style="padding:0;overflow:hidden" aria-label="Moderator workload">
         <div class="block-head">
           <h2 class="display">Moderators</h2>
-          <span id="modMeta">Credited to whoever sends the first welcome message</span>
+          <div class="seg sm" id="shiftSeg" role="group" aria-label="Shift">
+            <button type="button" data-shift="all" aria-pressed="true">Full day</button>
+            <button type="button" data-shift="morning" aria-pressed="false">Morning 9am–5pm</button>
+            <button type="button" data-shift="evening" aria-pressed="false">Evening 5pm–12am</button>
+          </div>
+        </div>
+        <p class="hint" id="modHint">Loading…</p>
+
+        <div class="mrow mhead" aria-hidden="true">
+          <span>#</span>
+          <span>Moderator</span>
+          <span class="hide-sm"></span>
+          <span>Customers</span>
+          <span>Messages</span>
+          <span class="hide-sm">Msgs / customer</span>
+          <span>Min / message</span>
         </div>
         <ol class="board" id="modBoard">
           <li style="display:block"><div class="empty">Loading moderators…</div></li>
@@ -446,7 +509,7 @@
 
     </main>
 
-    <footer>Times follow Bangladesh time (UTC+6). Page and date changes load instantly; the dashboard also refreshes every 30 seconds.</footer>
+    <footer>Times follow Bangladesh time (UTC+6). Page, date and shift changes load instantly; the dashboard also refreshes every 30 seconds. Each sign-in stays open for 5 minutes.</footer>
   </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -472,13 +535,16 @@
       }
 
       var state = {
-        auth: sessionStorage.getItem("dashboard_auth") || "",
+        auth: "",
+        expiresAt: 0,
         scope: safeGet("dash_scope") || "all",
+        shift: safeGet("dash_shift") || "all",
         reqId: 0,
         countdown: REFRESH_SECONDS,
         lastOk: 0
       };
       if (["all", "swapons", "stone"].indexOf(state.scope) === -1) state.scope = "all";
+      if (["all", "morning", "evening"].indexOf(state.shift) === -1) state.shift = "all";
 
       /* ---------- helpers ---------- */
       function esc(v) {
@@ -526,11 +592,17 @@
         safeSet("dash_theme", next);
       });
 
-      /* ---------- scope + date controls ---------- */
+      /* ---------- scope + shift + date controls ---------- */
       function paintScope() {
         var buttons = document.querySelectorAll("#scopeSeg button");
         for (var i = 0; i < buttons.length; i++) {
           buttons[i].setAttribute("aria-pressed", buttons[i].getAttribute("data-scope") === state.scope ? "true" : "false");
+        }
+      }
+      function paintShift() {
+        var buttons = document.querySelectorAll("#shiftSeg button");
+        for (var i = 0; i < buttons.length; i++) {
+          buttons[i].setAttribute("aria-pressed", buttons[i].getAttribute("data-shift") === state.shift ? "true" : "false");
         }
       }
       function paintDateButtons() {
@@ -544,6 +616,14 @@
         safeSet("dash_scope", state.scope);
         paintScope();
         loadDashboard();                 // পেজ বদলালেই সাথে সাথে লোড — Refresh চাপতে হবে না
+      });
+      $("shiftSeg").addEventListener("click", function (e) {
+        var btn = e.target.closest("button[data-shift]");
+        if (!btn) return;
+        state.shift = btn.getAttribute("data-shift");
+        safeSet("dash_shift", state.shift);
+        paintShift();
+        loadDashboard();
       });
       $("datePicker").addEventListener("change", function () {
         if (!$("datePicker").value) $("datePicker").value = dhakaToday();
@@ -569,30 +649,122 @@
       });
       $("refreshBtn").addEventListener("click", function () { loadDashboard(); });
 
-      /* ---------- auth ---------- */
-      function showLogin() { $("loginModal").hidden = false; setTimeout(function () { $("loginUser").focus(); }, 30); }
+      /* ---------- auth (একবার লগইন = ৫ মিনিটের সেশন) ---------- */
+      var TOKEN_KEY = "dashboard_token";
+      var EXP_KEY = "dashboard_exp";
+      var expiryTimer = null;
+
+      function fmtLeft(ms) {
+        var s = Math.max(0, Math.ceil(ms / 1000));
+        var m = Math.floor(s / 60), r = s % 60;
+        return m + ":" + (r < 10 ? "0" : "") + r;
+      }
+      function paintSession() {
+        var el = $("sessionLeft");
+        el.textContent = state.auth ? " · session " + fmtLeft(state.expiresAt - Date.now()) : "";
+      }
+      function startSession(token, expiresAt) {
+        state.auth = "Bearer " + token;
+        state.expiresAt = expiresAt;
+        try {
+          sessionStorage.setItem(TOKEN_KEY, token);
+          sessionStorage.setItem(EXP_KEY, String(expiresAt));
+        } catch (e) {}
+        clearTimeout(expiryTimer);
+        expiryTimer = setTimeout(function () {
+          expireSession("Your 5 minutes are over. Please sign in again.");
+        }, Math.max(0, expiresAt - Date.now()));
+        paintSession();
+      }
+      function restoreSession() {
+        try {
+          sessionStorage.removeItem("dashboard_auth");
+          var t = sessionStorage.getItem(TOKEN_KEY);
+          var e = Number(sessionStorage.getItem(EXP_KEY));
+          if (t && e > Date.now()) { startSession(t, e); return true; }
+          sessionStorage.removeItem(TOKEN_KEY);
+          sessionStorage.removeItem(EXP_KEY);
+        } catch (err) {}
+        return false;
+      }
+      function expireSession(message) {
+        var had = !!state.auth;
+        clearTimeout(expiryTimer);
+        state.auth = "";
+        state.expiresAt = 0;
+        state.reqId++;                       // চলমান রিকোয়েস্টের রেসপন্স বাদ
+        try {
+          sessionStorage.removeItem(TOKEN_KEY);
+          sessionStorage.removeItem(EXP_KEY);
+        } catch (e) {}
+        paintSession();
+        showLogin(had ? message : "");
+      }
+
+      function showLoginError(msg) {
+        var err = $("loginError");
+        if (msg) { err.textContent = msg; err.hidden = false; } else { err.hidden = true; }
+      }
+      function showLogin(message) {
+        document.body.classList.add("locked");
+        $("loginModal").hidden = false;
+        var saved = safeGet("dash_user");
+        if (saved && !$("loginUser").value) $("loginUser").value = saved;
+        $("loginRemember").checked = saved !== null ? true : $("loginRemember").checked;
+        $("loginPass").value = "";
+        showLoginError(message || "");
+        setTimeout(function () { ($("loginUser").value ? $("loginPass") : $("loginUser")).focus(); }, 30);
+      }
+
+      $("forgotLink").addEventListener("click", function (e) {
+        e.preventDefault();
+        showLoginError("Please ask the admin to reset the password.");
+      });
 
       $("authForm").addEventListener("submit", function (e) {
         e.preventDefault();
-        var header = "Basic " + btoa($("loginUser").value.trim() + ":" + $("loginPass").value.trim());
-        var err = $("loginError");
-        err.hidden = true;
+        var btn = $("loginBtn");
+        var username = $("loginUser").value.trim();
+        var password = $("loginPass").value;
+        showLoginError("");
+        btn.disabled = true;
 
-        fetchReport(header).then(function (res) {
-          if (res.status === 401 || res.status === 403) { err.textContent = "Wrong username or password."; err.hidden = false; return; }
-          if (!res.ok) { err.textContent = "The server returned an error. Try again in a moment."; err.hidden = false; return; }
-          state.auth = header;
-          sessionStorage.setItem("dashboard_auth", header);
+        fetch("/api/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: username, password: password })
+        }).then(function (res) {
+          return res.json().catch(function () { return {}; }).then(function (data) {
+            return { res: res, data: data };
+          });
+        }).then(function (r) {
+          if (!r.res.ok) {
+            var fallback = r.res.status === 401 ? "Wrong username or password." : "The server returned an error. Try again in a moment.";
+            showLoginError(r.data.error || fallback);
+            $("loginPass").value = "";
+            $("loginPass").focus();
+            return;
+          }
+          if ($("loginRemember").checked) safeSet("dash_user", username);
+          else { try { localStorage.removeItem("dash_user"); } catch (x) {} }
+
+          startSession(r.data.token, r.data.expires_at);
+          $("loginPass").value = "";
+          showLoginError("");
           $("loginModal").hidden = true;
-          return res.json().then(function (data) { renderData(data); markLive(true); });
+          document.body.classList.remove("locked");
+          loadDashboard();
         }).catch(function () {
-          err.textContent = "Could not reach the server. Check your connection.";
-          err.hidden = false;
+          showLoginError("Could not reach the server. Check your connection.");
+        }).then(function () {
+          btn.disabled = false;
         });
       });
 
       function fetchReport(header) {
-        var qs = "date=" + encodeURIComponent($("datePicker").value) + "&page_id=" + encodeURIComponent(state.scope);
+        var qs = "date=" + encodeURIComponent($("datePicker").value) +
+          "&page_id=" + encodeURIComponent(state.scope) +
+          "&shift=" + encodeURIComponent(state.shift);
         return fetch("/api/daily-report?" + qs, { headers: { Authorization: header } });
       }
 
@@ -620,9 +792,7 @@
 
         return fetchReport(state.auth).then(function (res) {
           if (res.status === 401 || res.status === 403) {
-            sessionStorage.removeItem("dashboard_auth");
-            state.auth = "";
-            showLogin();
+            expireSession("Your session ended. Please sign in again.");
             return null;
           }
           if (!res.ok) throw new Error("HTTP " + res.status);
@@ -707,7 +877,7 @@
 
         renderReconcile(sum.total_messages || 0, total);
         renderAccounts(accounts, sum, scopeLabel);
-        renderModerators(data.moderators || []);
+        renderModerators(data.moderators || [], data.shift || null);
 
         $("datePicker").value = data.date || $("datePicker").value;
         paintDateButtons();
@@ -774,15 +944,31 @@
         '</tr>';
       }
 
-      function renderModerators(mods) {
+      function renderModerators(mods, shift) {
         var board = $("modBoard");
-        var total = mods.reduce(function (acc, m) { return acc + (m.total_conversations || 0); }, 0);
-        $("modMeta").textContent = total
-          ? fmt(total) + " conversations credited · first welcome message wins"
-          : "Credited to whoever sends the first welcome message";
+        var totalC = 0, totalM = 0;
+        mods.forEach(function (m) {
+          totalC += m.total_conversations || 0;
+          totalM += m.total_messages || 0;
+        });
+
+        // হিন্ট টেক্সট
+        var hint;
+        var common = "A customer counts once, however many messages were sent.";
+        if (shift && shift.minutes) {
+          var done = shift.elapsed_minutes || 0;
+          var dur = done < shift.minutes
+            ? Math.round(done) + " of " + shift.minutes + " minutes so far"
+            : shift.minutes + " minutes";
+          hint = shift.label + " · " + dur + ". Min / message = duty minutes ÷ messages sent. " + common;
+        } else {
+          hint = "Whole day. Pick Morning or Evening to see minutes per message. " + common;
+        }
+        if (totalM) hint = fmt(totalC) + " customers · " + fmt(totalM) + " messages sent. " + hint;
+        $("modHint").textContent = hint;
 
         if (!mods.length) {
-          board.innerHTML = '<li style="display:block"><div class="empty"><b>No moderator conversations yet</b>' +
+          board.innerHTML = '<li style="display:block"><div class="empty"><b>No moderator messages in this period</b>' +
             'A customer is credited to the moderator whose welcome message says “আমি &lt;name&gt;” first.</div></li>';
           return;
         }
@@ -790,18 +976,26 @@
         var max = mods[0].total_conversations || 1;
         board.innerHTML = mods.map(function (m, i) {
           var w = Math.round((m.total_conversations / max) * 100);
-          return '<li>' +
+          var hasAvg = m.avg_minutes_per_message !== null && m.avg_minutes_per_message !== undefined;
+          return '<li class="mrow">' +
             '<span class="rank num">' + (i + 1) + '</span>' +
             '<span class="who">' + esc(m.name) + '</span>' +
-            '<div class="track"><div class="fill" style="width:' + w + '%"></div></div>' +
+            '<div class="track hide-sm"><div class="fill" style="width:' + w + '%"></div></div>' +
             '<span class="n num">' + fmt(m.total_conversations) + '</span>' +
-            '<span class="pc num">' + pct(m.total_conversations, total) + '%</span>' +
+            '<span class="msgs num">' + fmt(m.total_messages) + '</span>' +
+            '<span class="per num hide-sm">' + (m.msgs_per_customer || 0) + '</span>' +
+            '<span class="avg num' + (hasAvg ? '' : ' na') + '">' + (hasAvg ? m.avg_minutes_per_message : '—') + '</span>' +
           '</li>';
         }).join("");
       }
 
       /* ---------- auto refresh ---------- */
       setInterval(function () {
+        if (state.auth && Date.now() >= state.expiresAt) {
+          expireSession("Your 5 minutes are over. Please sign in again.");
+          return;
+        }
+        paintSession();
         if (document.hidden || !state.auth) return;
         state.countdown -= 1;
         if (state.countdown <= 0) { loadDashboard(); state.countdown = REFRESH_SECONDS; }
@@ -810,14 +1004,20 @@
       }, 1000);
 
       document.addEventListener("visibilitychange", function () {
-        if (!document.hidden && state.auth && Date.now() - state.lastOk > 15000) loadDashboard();
+        if (document.hidden) return;
+        if (state.auth && Date.now() >= state.expiresAt) {
+          expireSession("Your 5 minutes are over. Please sign in again.");
+          return;
+        }
+        if (state.auth && Date.now() - state.lastOk > 15000) loadDashboard();
       });
 
       /* ---------- start ---------- */
       $("datePicker").value = dhakaToday();
       paintScope();
+      paintShift();
       paintDateButtons();
-      if (state.auth) { loadDashboard(); } else { showLogin(); }
+      if (restoreSession()) { loadDashboard(); } else { showLogin(""); }
     })();
   </script>
 </body>
