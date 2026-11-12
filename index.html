@@ -202,7 +202,7 @@
     .empty b { display: block; color: var(--text); margin-bottom: 4px; }
 
     /* ---------- moderator board ---------- */
-    .mrow { display: grid; grid-template-columns: 38px minmax(110px, 1.1fr) minmax(70px, 1.3fr) 84px 96px 104px 104px; gap: 14px; align-items: center; padding: 12px 24px; }
+    .mrow { display: grid; grid-template-columns: 38px minmax(100px, 1.1fr) minmax(60px, 1.3fr) 80px 88px 76px 100px 100px; gap: 12px; align-items: center; padding: 12px 24px; }
     .mhead { background: var(--raised); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: .8rem; font-weight: 600; color: var(--faint); padding-top: 10px; padding-bottom: 10px; }
     .mhead span:nth-child(n+4), .board .mrow > span:nth-child(n+4) { text-align: right; }
     .board { list-style: none; padding: 0 0 8px; }
@@ -216,6 +216,7 @@
     .board li:nth-child(n+2) .fill { background: var(--msg); }
     .board .n { font-size: 1.2rem; font-weight: 700; }
     .board .msgs { font-size: 1.1rem; font-weight: 700; color: var(--msg); }
+    .board .ph { font-size: 1.1rem; font-weight: 700; color: var(--sale); }
     .board .per { color: var(--muted); font-weight: 600; }
     .board .avg { font-weight: 700; }
     .board .avg.na { color: var(--faint); font-weight: 500; }
@@ -272,9 +273,11 @@
       .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
       .reconcile { grid-template-columns: 1fr; }
     }
-    @media (max-width: 720px) {
-      .mrow { grid-template-columns: 28px minmax(80px, 1fr) 62px 66px 66px; gap: 10px; padding: 12px 16px; }
+    @media (max-width: 860px) {
+      .mrow { grid-template-columns: 28px minmax(70px, 1fr) 56px 62px 52px 60px; gap: 10px; padding: 12px 16px; }
       .mrow .hide-sm { display: none; }
+    }
+    @media (max-width: 720px) {
       .mhead span:nth-child(n+4), .board .mrow > span:nth-child(n+4) { text-align: right; }
       .hint { padding: 0 16px 14px; }
       .block-head { padding: 18px 16px 12px; }
@@ -353,6 +356,10 @@
 
         <button type="button" class="btn icon" id="themeBtn" aria-label="Switch light or dark theme">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        </button>
+
+        <button type="button" class="btn icon" id="logoutBtn" aria-label="Sign out" title="Sign out">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
         </button>
       </div>
     </header>
@@ -499,6 +506,7 @@
           <span class="hide-sm"></span>
           <span>Customers</span>
           <span>Messages</span>
+          <span>Phones</span>
           <span class="hide-sm">Msgs / customer</span>
           <span>Min / message</span>
         </div>
@@ -509,7 +517,7 @@
 
     </main>
 
-    <footer>Times follow Bangladesh time (UTC+6). Page, date and shift changes load instantly; the dashboard also refreshes every 30 seconds. Each sign-in stays open for 5 minutes.</footer>
+    <footer>Times follow Bangladesh time (UTC+6). Page, date and shift changes load instantly; the dashboard also refreshes every 30 seconds.</footer>
   </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -649,41 +657,62 @@
       });
       $("refreshBtn").addEventListener("click", function () { loadDashboard(); });
 
-      /* ---------- auth (একবার লগইন = ৫ মিনিটের সেশন) ---------- */
+      /* ---------- auth (একবার সাইন-ইন করলে মেয়াদ নেই — Sign out চাপা পর্যন্ত খোলা থাকে) ---------- */
       var TOKEN_KEY = "dashboard_token";
       var EXP_KEY = "dashboard_exp";
       var expiryTimer = null;
 
+      function clearStored() {
+        try {
+          localStorage.removeItem(TOKEN_KEY);
+          localStorage.removeItem(EXP_KEY);
+          sessionStorage.removeItem(TOKEN_KEY);
+          sessionStorage.removeItem(EXP_KEY);
+          sessionStorage.removeItem("dashboard_auth");
+        } catch (e) {}
+      }
       function fmtLeft(ms) {
         var s = Math.max(0, Math.ceil(ms / 1000));
         var m = Math.floor(s / 60), r = s % 60;
         return m + ":" + (r < 10 ? "0" : "") + r;
       }
+      // সার্ভারে SESSION_MINUTES দেওয়া থাকলেই শুধু কাউন্টডাউন দেখায়
       function paintSession() {
         var el = $("sessionLeft");
-        el.textContent = state.auth ? " · session " + fmtLeft(state.expiresAt - Date.now()) : "";
+        el.textContent = state.auth && state.expiresAt ? " · session " + fmtLeft(state.expiresAt - Date.now()) : "";
       }
-      function startSession(token, expiresAt) {
+      // remember = true  → এই ডিভাইসে লগইন থেকে যাবে (ব্রাউজার বন্ধ করলেও)
+      // remember = false → ট্যাব বন্ধ করলে সাইন-আউট
+      function startSession(token, expiresAt, remember) {
         state.auth = "Bearer " + token;
-        state.expiresAt = expiresAt;
-        try {
-          sessionStorage.setItem(TOKEN_KEY, token);
-          sessionStorage.setItem(EXP_KEY, String(expiresAt));
-        } catch (e) {}
+        state.expiresAt = Number(expiresAt) || 0;
+        if (remember !== undefined) {
+          clearStored();
+          try {
+            var box = remember ? localStorage : sessionStorage;
+            box.setItem(TOKEN_KEY, token);
+            if (state.expiresAt) box.setItem(EXP_KEY, String(state.expiresAt));
+          } catch (e) {}
+        }
         clearTimeout(expiryTimer);
-        expiryTimer = setTimeout(function () {
-          expireSession("Your 5 minutes are over. Please sign in again.");
-        }, Math.max(0, expiresAt - Date.now()));
+        if (state.expiresAt) {
+          expiryTimer = setTimeout(function () {
+            expireSession("Your session is over. Please sign in again.");
+          }, Math.max(0, state.expiresAt - Date.now()));
+        }
         paintSession();
       }
       function restoreSession() {
         try {
-          sessionStorage.removeItem("dashboard_auth");
-          var t = sessionStorage.getItem(TOKEN_KEY);
-          var e = Number(sessionStorage.getItem(EXP_KEY));
-          if (t && e > Date.now()) { startSession(t, e); return true; }
-          sessionStorage.removeItem(TOKEN_KEY);
-          sessionStorage.removeItem(EXP_KEY);
+          var box = null;
+          var t = localStorage.getItem(TOKEN_KEY);
+          if (t) { box = localStorage; }
+          else { t = sessionStorage.getItem(TOKEN_KEY); if (t) box = sessionStorage; }
+          if (t) {
+            var e = Number(box.getItem(EXP_KEY)) || 0;
+            if (!e || e > Date.now()) { startSession(t, e); return true; }
+          }
+          clearStored();
         } catch (err) {}
         return false;
       }
@@ -693,10 +722,7 @@
         state.auth = "";
         state.expiresAt = 0;
         state.reqId++;                       // চলমান রিকোয়েস্টের রেসপন্স বাদ
-        try {
-          sessionStorage.removeItem(TOKEN_KEY);
-          sessionStorage.removeItem(EXP_KEY);
-        } catch (e) {}
+        clearStored();
         paintSession();
         showLogin(had ? message : "");
       }
@@ -710,7 +736,6 @@
         $("loginModal").hidden = false;
         var saved = safeGet("dash_user");
         if (saved && !$("loginUser").value) $("loginUser").value = saved;
-        $("loginRemember").checked = saved !== null ? true : $("loginRemember").checked;
         $("loginPass").value = "";
         showLoginError(message || "");
         setTimeout(function () { ($("loginUser").value ? $("loginPass") : $("loginUser")).focus(); }, 30);
@@ -721,11 +746,20 @@
         showLoginError("Please ask the admin to reset the password.");
       });
 
+      $("logoutBtn").addEventListener("click", function () {
+        var header = state.auth;
+        expireSession("");
+        if (header) {
+          fetch("/api/logout", { method: "POST", headers: { Authorization: header } }).catch(function () {});
+        }
+      });
+
       $("authForm").addEventListener("submit", function (e) {
         e.preventDefault();
         var btn = $("loginBtn");
         var username = $("loginUser").value.trim();
         var password = $("loginPass").value;
+        var remember = $("loginRemember").checked;
         showLoginError("");
         btn.disabled = true;
 
@@ -745,10 +779,10 @@
             $("loginPass").focus();
             return;
           }
-          if ($("loginRemember").checked) safeSet("dash_user", username);
+          if (remember) safeSet("dash_user", username);
           else { try { localStorage.removeItem("dash_user"); } catch (x) {} }
 
-          startSession(r.data.token, r.data.expires_at);
+          startSession(r.data.token, r.data.expires_at, remember);
           $("loginPass").value = "";
           showLoginError("");
           $("loginModal").hidden = true;
@@ -946,15 +980,16 @@
 
       function renderModerators(mods, shift) {
         var board = $("modBoard");
-        var totalC = 0, totalM = 0;
+        var totalC = 0, totalM = 0, totalP = 0;
         mods.forEach(function (m) {
           totalC += m.total_conversations || 0;
           totalM += m.total_messages || 0;
+          totalP += m.phone_numbers || 0;
         });
 
         // হিন্ট টেক্সট
         var hint;
-        var common = "A customer counts once, however many messages were sent.";
+        var common = "A customer counts once, however many messages were sent. A phone number goes to the moderator who sent that customer's first welcome message.";
         if (shift && shift.minutes) {
           var done = shift.elapsed_minutes || 0;
           var dur = done < shift.minutes
@@ -964,7 +999,7 @@
         } else {
           hint = "Whole day. Pick Morning or Evening to see minutes per message. " + common;
         }
-        if (totalM) hint = fmt(totalC) + " customers · " + fmt(totalM) + " messages sent. " + hint;
+        if (totalM || totalP) hint = fmt(totalC) + " customers · " + fmt(totalM) + " messages sent · " + fmt(totalP) + " phone numbers. " + hint;
         $("modHint").textContent = hint;
 
         if (!mods.length) {
@@ -983,6 +1018,7 @@
             '<div class="track hide-sm"><div class="fill" style="width:' + w + '%"></div></div>' +
             '<span class="n num">' + fmt(m.total_conversations) + '</span>' +
             '<span class="msgs num">' + fmt(m.total_messages) + '</span>' +
+            '<span class="ph num">' + fmt(m.phone_numbers) + '</span>' +
             '<span class="per num hide-sm">' + (m.msgs_per_customer || 0) + '</span>' +
             '<span class="avg num' + (hasAvg ? '' : ' na') + '">' + (hasAvg ? m.avg_minutes_per_message : '—') + '</span>' +
           '</li>';
@@ -991,8 +1027,8 @@
 
       /* ---------- auto refresh ---------- */
       setInterval(function () {
-        if (state.auth && Date.now() >= state.expiresAt) {
-          expireSession("Your 5 minutes are over. Please sign in again.");
+        if (state.auth && state.expiresAt && Date.now() >= state.expiresAt) {
+          expireSession("Your session is over. Please sign in again.");
           return;
         }
         paintSession();
@@ -1005,8 +1041,8 @@
 
       document.addEventListener("visibilitychange", function () {
         if (document.hidden) return;
-        if (state.auth && Date.now() >= state.expiresAt) {
-          expireSession("Your 5 minutes are over. Please sign in again.");
+        if (state.auth && state.expiresAt && Date.now() >= state.expiresAt) {
+          expireSession("Your session is over. Please sign in again.");
           return;
         }
         if (state.auth && Date.now() - state.lastOk > 15000) loadDashboard();
@@ -1021,4 +1057,4 @@
     })();
   </script>
 </body>
-</html>
+</html>ss
