@@ -1,476 +1,892 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Live Analytics & Operations Dashboard</title>
-  <script src="https://cdn.tailwindcss.com"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;600;700;800&family=Hind+Siliguri:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          fontFamily: {
-            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
-            mono: ['"JetBrains Mono"', 'monospace'],
-          }
-        }
-      }
-    }
+    (function () {
+      try {
+        var saved = localStorage.getItem("dash_theme");
+        var prefersLight = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches;
+        document.documentElement.setAttribute("data-theme", saved || (prefersLight ? "light" : "dark"));
+      } catch (e) {}
+    })();
   </script>
   <style>
+    :root {
+      --bg: #0d1b26;
+      --surface: #132a39;
+      --raised: #1a3547;
+      --line: #284859;
+      --text: #e9f1f5;
+      --muted: #96aebc;
+      --faint: #6d8898;
+      --msg: #3ad3bd;
+      --msg-soft: rgba(58, 211, 189, .14);
+      --sale: #f4b84d;
+      --sale-soft: rgba(244, 184, 77, .14);
+      --ok: #74d69a;
+      --warn: #f4b84d;
+      --bad: #ff7d6b;
+      --bad-soft: rgba(255, 125, 107, .13);
+      --invert: #e9f1f5;
+      --on-invert: #0d1b26;
+      --shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 18px 40px -24px rgba(0,0,0,.6);
+      color-scheme: dark;
+    }
+    [data-theme="light"] {
+      --bg: #edf3f5;
+      --surface: #ffffff;
+      --raised: #f3f8f9;
+      --line: #d3e0e5;
+      --text: #0f2430;
+      --muted: #4f6d7c;
+      --faint: #7b97a5;
+      --msg: #0b8c7b;
+      --msg-soft: rgba(11, 140, 123, .11);
+      --sale: #a86800;
+      --sale-soft: rgba(168, 104, 0, .11);
+      --ok: #1b8a4a;
+      --warn: #b27300;
+      --bad: #cf432d;
+      --bad-soft: rgba(207, 67, 45, .09);
+      --invert: #0f2430;
+      --on-invert: #ffffff;
+      --shadow: 0 1px 2px rgba(15,36,48,.05), 0 14px 30px -22px rgba(15,36,48,.25);
+      color-scheme: light;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    [hidden] { display: none !important; }
+    html { scroll-behavior: smooth; }
     body {
-      background-color: #070b14;
-      background-image: 
-        radial-gradient(at 0% 0%, rgba(37, 99, 235, 0.16) 0px, transparent 50%),
-        radial-gradient(at 100% 0%, rgba(147, 51, 234, 0.14) 0px, transparent 50%),
-        radial-gradient(at 50% 100%, rgba(16, 185, 129, 0.1) 0px, transparent 50%);
-      background-attachment: fixed;
+      font-family: "Hind Siliguri", system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
     }
+    button, input { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+    :focus-visible { outline: 2px solid var(--msg); outline-offset: 2px; border-radius: 6px; }
 
-    /* Base Glassmorphism Card Style */
-    .glass-card {
-      background: rgba(15, 23, 42, 0.78);
-      backdrop-filter: blur(18px);
-      -webkit-backdrop-filter: blur(18px);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
-    }
+    .display, .num { font-family: "Bricolage Grotesque", "Hind Siliguri", sans-serif; }
+    .num { font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
 
-    /* Universal Interactive Hover Effect: 3D Lift, Glow & Subtle Color Shift */
-    .hover-lift {
-      transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
-      cursor: pointer;
-    }
-    .hover-lift:hover {
-      transform: translateY(-6px) scale(1.02);
-      border-color: rgba(96, 165, 250, 0.6);
-      background: rgba(30, 41, 59, 0.88);
-      box-shadow: 0 16px 32px -6px rgba(37, 99, 235, 0.3), 0 0 18px rgba(59, 130, 246, 0.25);
-    }
+    .wrap { max-width: 1240px; margin: 0 auto; padding: 28px 24px 56px; display: grid; gap: 20px; }
 
-    /* Main Customer Active Card Special Pulse Glow */
-    .customer-hero-card {
-      position: relative;
-      overflow: hidden;
-      transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-    }
-    .customer-hero-card:hover {
-      transform: translateY(-8px) scale(1.03);
-      border-color: rgba(56, 189, 248, 0.85);
-      background: radial-gradient(circle at top right, rgba(37, 99, 235, 0.3), rgba(15, 23, 42, 0.96));
-      box-shadow: 0 22px 38px -8px rgba(14, 165, 233, 0.45);
-    }
-    .customer-hero-card:hover .customer-number {
-      color: #38bdf8;
-      text-shadow: 0 0 20px rgba(56, 189, 248, 0.8);
-      transform: scale(1.06);
-    }
+    /* ---------- top bar ---------- */
+    .top { display: flex; flex-wrap: wrap; gap: 16px 24px; align-items: flex-end; justify-content: space-between; }
+    .brand h1 { font-size: clamp(1.35rem, 2.4vw, 1.9rem); font-weight: 700; letter-spacing: -.02em; line-height: 1.15; }
+    .brand p { color: var(--muted); font-size: .92rem; margin-top: 4px; }
+    .live { display: inline-flex; align-items: center; gap: 8px; font-size: .85rem; color: var(--muted); margin-top: 10px; }
+    .live i { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 0 var(--ok); animation: pulse 2.4s infinite; }
+    .live.stale i { background: var(--bad); animation: none; }
+    @keyframes pulse { 70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
 
-    /* Form Input Focus & Hover Transitions */
-    .form-control-hover {
-      transition: all 0.25s ease;
+    .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    .seg { display: inline-flex; padding: 4px; gap: 2px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
+    .seg button { border: 0; background: transparent; padding: 8px 16px; border-radius: 10px; font-weight: 600; font-size: .92rem; color: var(--muted); transition: background .18s, color .18s; }
+    .seg button:hover { color: var(--text); }
+    .seg button[aria-pressed="true"] { background: var(--invert); color: var(--on-invert); }
+    .seg.sm button { padding: 6px 12px; font-size: .86rem; }
+
+    .stepper { display: inline-flex; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+    .stepper button { border: 0; background: transparent; width: 38px; height: 40px; font-size: 1.15rem; color: var(--muted); }
+    .stepper button:hover:not(:disabled) { background: var(--raised); color: var(--text); }
+    .stepper button:disabled { opacity: .35; cursor: not-allowed; }
+    .stepper input { border: 0; background: transparent; padding: 0 6px; height: 40px; font-weight: 600; font-size: .92rem; min-width: 128px; text-align: center; color-scheme: inherit; }
+    .stepper input:focus-visible { outline-offset: -2px; }
+
+    .btn { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; font-weight: 600; font-size: .9rem; transition: background .18s, border-color .18s; }
+    .btn:hover { background: var(--raised); border-color: var(--faint); }
+    .btn svg { width: 16px; height: 16px; }
+    .btn .spin { animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .btn.icon { padding: 0; width: 40px; justify-content: center; }
+    .count { color: var(--faint); font-weight: 500; font-variant-numeric: tabular-nums; min-width: 2.2ch; }
+
+    /* ---------- hero ---------- */
+    .hero { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 20px; }
+    .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); }
+    .hero-main { border-radius: 24px; padding: 28px 30px 26px; }
+    .hero-main h2 { font-size: 1.05rem; font-weight: 600; color: var(--muted); }
+    .hero-number { font-size: clamp(3.6rem, 9vw, 6.2rem); font-weight: 800; line-height: 1; margin: 10px 0 6px; color: var(--text); }
+    .hero-sub { color: var(--muted); max-width: 52ch; font-size: .95rem; }
+    .facts { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 18px; }
+    .facts div { display: flex; align-items: baseline; gap: 8px; color: var(--muted); font-size: .9rem; }
+    .facts b { color: var(--text); font-size: 1.15rem; font-weight: 700; }
+
+    .funnel { display: flex; gap: 3px; height: 16px; margin-top: 26px; }
+    .funnel span { display: block; min-width: 0; border-radius: 6px; transition: flex-grow .6s cubic-bezier(.2,.8,.2,1); }
+    .funnel .f-ok { background: var(--ok); }
+    .funnel .f-bad { background: var(--bad); }
+    .funnel .f-warn { background: var(--warn); }
+    .funnel .f-rest { background: var(--line); }
+
+    .ads { padding: 22px 24px; display: grid; align-content: start; gap: 0; }
+    .ads-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 8px; }
+    .ads-head h2 { font-size: 1.05rem; font-weight: 600; color: var(--muted); }
+    .ads-head small { color: var(--faint); font-size: .82rem; text-align: right; }
+    .adrow { display: grid; grid-template-columns: 1fr auto; gap: 2px 14px; align-items: center; padding: 15px 0; border-top: 1px solid var(--line); }
+    .adrow:first-of-type { border-top: 0; }
+    .lbl { color: var(--muted); font-size: .88rem; }
+    .val { font-size: 1.9rem; font-weight: 700; line-height: 1.15; }
+    .adrow.msg .val { color: var(--msg); }
+    .adrow.sale .val { color: var(--sale); }
+    .detail { color: var(--faint); font-size: .84rem; }
+    .detail b { color: var(--muted); font-weight: 600; }
+    .cost { justify-self: end; text-align: right; }
+    .cost .num { display: inline-block; font-size: 1.05rem; font-weight: 700; padding: 3px 10px; border-radius: 8px; }
+    .adrow.msg .cost .num { background: var(--msg-soft); color: var(--msg); }
+    .adrow.sale .cost .num { background: var(--sale-soft); color: var(--sale); }
+    .cost small { display: block; color: var(--faint); font-size: .76rem; margin-top: 3px; }
+    .notice { margin-top: 6px; padding: 10px 12px; border-radius: 10px; background: var(--bad-soft); color: var(--bad); font-size: .84rem; }
+
+    /* ---------- tiles ---------- */
+    .tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; }
+    .tile { padding: 16px 18px; position: relative; overflow: hidden; }
+    .tile::before { content: ""; position: absolute; left: 0; top: 14px; bottom: 14px; width: 4px; border-radius: 0 4px 4px 0; background: var(--tone, var(--line)); }
+    .tile .lbl { padding-left: 4px; }
+    .tile .val { font-size: 2.1rem; display: block; padding-left: 4px; margin-top: 2px; }
+    .tile .detail { padding-left: 4px; }
+    .tile.ok { --tone: var(--ok); }
+    .tile.warn { --tone: var(--warn); }
+    .tile.bad { --tone: var(--bad); background: linear-gradient(0deg, var(--bad-soft), var(--bad-soft)), var(--surface); }
+    .tile.bad .val { color: var(--bad); }
+    .tile.sale { --tone: var(--sale); }
+    .tile.msg { --tone: var(--msg); }
+
+    /* ---------- reconcile ---------- */
+    .reconcile { padding: 20px 24px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 20px 40px; align-items: center; }
+    .reconcile h2 { font-size: 1.05rem; font-weight: 600; }
+    .reconcile p { color: var(--muted); font-size: .88rem; margin-top: 6px; max-width: 60ch; }
+    .bars { display: grid; gap: 14px; }
+    .bar-row { display: grid; grid-template-columns: 150px 1fr auto; gap: 12px; align-items: center; font-size: .88rem; color: var(--muted); }
+    .track { height: 12px; background: var(--raised); border-radius: 6px; overflow: hidden; }
+    .fill { height: 100%; border-radius: 6px; width: 0; transition: width .6s cubic-bezier(.2,.8,.2,1); }
+    .fill.m { background: var(--msg); }
+    .fill.i { background: var(--invert); }
+    .bar-row b { color: var(--text); font-size: 1.05rem; min-width: 5ch; text-align: right; }
+
+    /* ---------- tables ---------- */
+    .block-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 20px 24px 14px; flex-wrap: wrap; }
+    .block-head h2 { font-size: 1.1rem; font-weight: 700; }
+    .block-head span { color: var(--muted); font-size: .86rem; }
+    .hint { color: var(--muted); font-size: .86rem; padding: 0 24px 14px; max-width: 90ch; }
+    .scroll { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; min-width: 820px; }
+    th { text-align: left; font-weight: 600; font-size: .82rem; color: var(--faint); padding: 10px 16px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--raised); white-space: nowrap; }
+    th:first-child, td:first-child { padding-left: 24px; }
+    td { padding: 14px 16px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+    tbody tr:last-child td { border-bottom: 0; }
+    tbody tr:hover td { background: var(--raised); }
+    tfoot td { font-weight: 700; background: var(--raised); border-top: 1px solid var(--line); border-bottom: 0; }
+    .acc-name { font-weight: 600; }
+    .acc-id { color: var(--faint); font-size: .78rem; font-family: "Bricolage Grotesque", sans-serif; }
+    .share { height: 5px; border-radius: 3px; background: var(--raised); margin-top: 7px; width: 120px; overflow: hidden; }
+    .share i { display: block; height: 100%; background: var(--invert); border-radius: 3px; }
+    .strong { font-weight: 700; }
+    .c-msg { color: var(--msg); }
+    .c-sale { color: var(--sale); }
+    .pill { display: inline-block; padding: 2px 9px; border-radius: 8px; font-weight: 700; font-size: .88rem; }
+    .pill.msg { background: var(--msg-soft); color: var(--msg); }
+    .pill.sale { background: var(--sale-soft); color: var(--sale); }
+    .warn-flag { color: var(--bad); font-size: .78rem; display: block; margin-top: 3px; max-width: 34ch; }
+    .empty { padding: 36px 24px; text-align: center; color: var(--muted); }
+    .empty b { display: block; color: var(--text); margin-bottom: 4px; }
+
+    /* ---------- moderator board ---------- */
+    .mrow { display: grid; grid-template-columns: 38px minmax(110px, 1.1fr) minmax(70px, 1.3fr) 84px 96px 104px 104px; gap: 14px; align-items: center; padding: 12px 24px; }
+    .mhead { background: var(--raised); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: .8rem; font-weight: 600; color: var(--faint); padding-top: 10px; padding-bottom: 10px; }
+    .mhead span:nth-child(n+4), .board .mrow > span:nth-child(n+4) { text-align: right; }
+    .board { list-style: none; padding: 0 0 8px; }
+    .board li.mrow { border-bottom: 1px solid var(--line); }
+    .board li.mrow:last-child { border-bottom: 0; }
+    .board .rank { font-weight: 700; color: var(--faint); font-size: 1.05rem; }
+    .board li:nth-child(1) .rank { color: var(--sale); }
+    .board .who { font-weight: 600; font-size: 1.05rem; }
+    .board .track { height: 10px; }
+    .board .fill { background: var(--ok); }
+    .board li:nth-child(n+2) .fill { background: var(--msg); }
+    .board .n { font-size: 1.2rem; font-weight: 700; }
+    .board .msgs { font-size: 1.1rem; font-weight: 700; color: var(--msg); }
+    .board .per { color: var(--muted); font-weight: 600; }
+    .board .avg { font-weight: 700; }
+    .board .avg.na { color: var(--faint); font-weight: 500; }
+
+    footer { color: var(--faint); font-size: .82rem; }
+
+    /* ---------- loading & toast ---------- */
+    main.is-loading .hero-number, main.is-loading .val { opacity: .55; }
+    main[data-ready="false"] .num { color: transparent !important; background: linear-gradient(90deg, var(--raised), var(--line), var(--raised)); background-size: 200% 100%; border-radius: 8px; animation: shimmer 1.4s infinite; }
+    main[data-ready="false"] .cost .num, main[data-ready="false"] .fill { animation: none; background: var(--raised); }
+    @keyframes shimmer { to { background-position: -200% 0; } }
+    .toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); opacity: 0; pointer-events: none; background: var(--invert); color: var(--on-invert); padding: 11px 18px; border-radius: 12px; font-weight: 500; font-size: .92rem; transition: all .3s; z-index: 40; max-width: calc(100vw - 32px); }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+    /* ---------- login ---------- */
+    .gate { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 20px; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(10px); }
+    .gate form { width: min(400px, 100%); padding: 30px; border-radius: 20px; display: grid; gap: 16px; }
+    .gate h2 { font-size: 1.5rem; font-weight: 700; }
+    .gate p { color: var(--muted); font-size: .92rem; margin-top: -8px; }
+    .field { display: grid; gap: 6px; font-weight: 600; font-size: .88rem; }
+    .field input { height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--raised); padding: 0 14px; font-weight: 500; }
+    .field input:focus-visible { outline-offset: 0; border-color: var(--msg); }
+    .gate .err { color: var(--bad); font-size: .88rem; }
+    .primary { height: 46px; border: 0; border-radius: 12px; background: var(--invert); color: var(--on-invert); font-weight: 700; }
+    .primary:hover { opacity: .9; }
+
+    /* ---------- responsive ---------- */
+    @media (max-width: 1060px) {
+      .hero { grid-template-columns: 1fr; }
+      .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .reconcile { grid-template-columns: 1fr; }
     }
-    .form-control-hover:hover {
-      border-color: rgba(96, 165, 250, 0.5);
-      background: rgba(15, 23, 42, 0.95);
+    @media (max-width: 720px) {
+      .mrow { grid-template-columns: 28px minmax(80px, 1fr) 62px 66px 66px; gap: 10px; padding: 12px 16px; }
+      .mrow .hide-sm { display: none; }
+      .mhead span:nth-child(n+4), .board .mrow > span:nth-child(n+4) { text-align: right; }
+      .hint { padding: 0 16px 14px; }
+      .block-head { padding: 18px 16px 12px; }
+    }
+    @media (max-width: 640px) {
+      .wrap { padding: 18px 14px 48px; }
+      .hero-main { padding: 22px 20px; }
+      .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .seg { width: 100%; }
+      .seg button { flex: 1; padding: 8px 6px; font-size: .84rem; }
+      .seg.sm button { padding: 6px 4px; font-size: .78rem; }
+      .bar-row { grid-template-columns: 1fr auto; }
+      .bar-row .track { grid-column: 1 / -1; order: 3; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; }
+      html { scroll-behavior: auto; }
     }
   </style>
 </head>
-<body class="text-slate-100 min-h-screen p-4 md:p-8 antialiased">
+<body>
 
-  <!-- Gorgeous Glassmorphism Security Login Modal -->
-  <div id="loginModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-xl p-4">
-    <div class="glass-card max-w-md w-full p-8 rounded-3xl border border-slate-700/80 shadow-2xl space-y-6">
-      <div class="text-center space-y-2">
-        <div class="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/30 text-3xl mx-auto">
-          🔐
-        </div>
-        <h2 class="text-2xl font-extrabold text-white tracking-tight">System Login</h2>
-        <p class="text-xs text-slate-400">Enter authenticated credentials to access live operations</p>
-      </div>
-
-      <form id="authForm" onsubmit="event.preventDefault(); submitLogin();" class="space-y-4">
-        <div>
-          <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">Username</label>
-          <input type="text" id="loginUser" required placeholder="admin" class="w-full bg-slate-900/90 text-white text-sm px-4 py-3 rounded-xl border border-slate-700 outline-none focus:border-blue-500 transition-colors">
-        </div>
-        <div>
-          <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">Password</label>
-          <input type="password" id="loginPass" required placeholder="••••••••" class="w-full bg-slate-900/90 text-white text-sm px-4 py-3 rounded-xl border border-slate-700 outline-none focus:border-blue-500 transition-colors">
-        </div>
-
-        <div id="loginError" class="text-xs text-rose-400 font-medium hidden text-center">
-          Invalid username or password! Please try again.
-        </div>
-
-        <button type="submit" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95 text-white font-semibold py-3 rounded-xl transition-all shadow-lg shadow-blue-600/30 cursor-pointer">
-          Authorize & Enter
-        </button>
-      </form>
-    </div>
+  <!-- Login -->
+  <div id="loginModal" class="gate" hidden>
+    <form id="authForm" class="panel" autocomplete="on">
+      <h2 class="display">Sign in</h2>
+      <p>Enter your dashboard username and password.</p>
+      <label class="field">Username
+        <input type="text" id="loginUser" name="username" autocomplete="username" required>
+      </label>
+      <label class="field">Password
+        <input type="password" id="loginPass" name="password" autocomplete="current-password" required>
+      </label>
+      <div id="loginError" class="err" role="alert" hidden>Wrong username or password.</div>
+      <button type="submit" class="primary">Sign in</button>
+    </form>
   </div>
 
-  <!-- Main Dashboard Container -->
-  <div class="max-w-7xl mx-auto space-y-6">
+  <div class="wrap">
 
-    <!-- Top Navigation Header -->
-    <header class="glass-card hover-lift rounded-2xl p-5 shadow-2xl flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5 border border-slate-800">
-      <div class="flex items-center gap-4">
-        <div class="w-12 h-12 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center shadow-lg shadow-blue-500/25 text-2xl animate-pulse">
-          📊
-        </div>
-        <div>
-          <div class="flex items-center gap-2">
-            <h1 class="text-xl md:text-2xl font-extrabold tracking-tight text-white">Live Analytics & Operations Dashboard</h1>
-            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span> LIVE
-            </span>
-          </div>
-          <p class="text-xs text-slate-400 mt-0.5">Campaign-segmented ad spend & unified messenger customer tracking</p>
-        </div>
+    <header class="top">
+      <div class="brand">
+        <h1 class="display">Live Analytics &amp; Operations Dashboard</h1>
+        <p>Messenger inbox, Meta ad spend and moderator workload in one view.</p>
+        <div class="live" id="liveBadge"><i></i><span id="liveText">Connecting…</span></div>
       </div>
 
-      <!-- Real-time Filter Form Controls -->
-      <form id="filterForm" onsubmit="event.preventDefault(); loadDashboard();" class="w-full lg:w-auto flex flex-wrap items-center gap-3 bg-slate-950/70 p-2.5 rounded-xl border border-slate-800/80">
-        <div class="form-control-hover flex items-center gap-2 bg-slate-900/90 px-3.5 py-2 rounded-lg border border-slate-800 focus-within:border-blue-500">
-          <label for="datePicker" class="text-slate-400 text-xs font-semibold cursor-pointer">Date:</label>
-          <input type="date" id="datePicker" class="bg-transparent text-white text-xs md:text-sm font-medium outline-none cursor-pointer">
+      <div class="controls">
+        <div class="seg" id="scopeSeg" role="group" aria-label="Channel">
+          <button type="button" data-scope="all" aria-pressed="true">All pages</button>
+          <button type="button" data-scope="swapons" aria-pressed="false">Swapons World</button>
+          <button type="button" data-scope="stone" aria-pressed="false">Stone Rose BD</button>
         </div>
 
-        <div class="form-control-hover flex items-center gap-2 bg-slate-900/90 px-3.5 py-2 rounded-lg border border-slate-800 focus-within:border-blue-500">
-          <label for="pageFilter" class="text-slate-400 text-xs font-semibold cursor-pointer">Channel:</label>
-          <select id="pageFilter" class="bg-transparent text-white text-xs md:text-sm font-medium outline-none cursor-pointer pr-1">
-            <option value="all" class="bg-slate-900">All Channels (Pages)</option>
-            <option value="102803132669088" class="bg-slate-900">Swapons World</option>
-            <option value="250386238168336" class="bg-slate-900">Stone Rose BD</option>
-          </select>
+        <div class="stepper">
+          <button type="button" id="prevDay" aria-label="Previous day">‹</button>
+          <input type="date" id="datePicker" aria-label="Report date">
+          <button type="button" id="nextDay" aria-label="Next day">›</button>
         </div>
 
-        <button type="submit" class="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95 text-white text-xs md:text-sm font-semibold px-5 py-2.5 rounded-lg transition-all duration-200 shadow-lg shadow-blue-600/30 cursor-pointer">
-          <svg id="refreshIcon" class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-          </svg>
-          <span>Refresh</span>
+        <button type="button" class="btn" id="todayBtn">Today</button>
+
+        <button type="button" class="btn" id="refreshBtn" aria-label="Refresh now">
+          <svg id="refreshIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v5h.58M20 20v-5h-.58M5.1 9a8 8 0 0113.8-1.9M18.9 15a8 8 0 01-13.8 1.9"/></svg>
+          Refresh <span class="count" id="countdown">30</span>
         </button>
-      </form>
+
+        <button type="button" class="btn icon" id="themeBtn" aria-label="Switch light or dark theme">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        </button>
+      </div>
     </header>
 
-    <!-- Meta Ads Core Summary Cards -->
-    <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-      
-      <div class="glass-card hover-lift rounded-2xl p-5 relative overflow-hidden">
-        <div class="flex justify-between items-start">
-          <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Ads Spend</span>
-          <span class="w-9 h-9 rounded-xl bg-sky-500/10 text-sky-400 flex items-center justify-center text-base">💵</span>
+    <main id="main" data-ready="false" style="display:grid;gap:20px">
+
+      <!-- Hero: inbox + ads -->
+      <section class="hero" aria-label="Today at a glance">
+        <div class="panel hero-main">
+          <h2>Total inbox customers</h2>
+          <div class="num hero-number" id="statReceived">0</div>
+          <p class="hero-sub">Unique people who wrote to the page on this date, from ads, direct visits and returning customers. Ten messages from one person count once.</p>
+          <div class="facts">
+            <div><b class="num" id="statNew">0</b> new</div>
+            <div><b class="num" id="statReturning">0</b> returning from earlier days</div>
+            <div><b class="num" id="statRawMsgs">0</b> messages received</div>
+          </div>
+          <div class="funnel" id="funnel" role="img" aria-label="Reply status of customers">
+            <span class="f-ok" style="flex-grow:0"></span>
+            <span class="f-bad" style="flex-grow:0"></span>
+            <span class="f-warn" style="flex-grow:0"></span>
+            <span class="f-rest" style="flex-grow:1"></span>
+          </div>
         </div>
-        <div id="totalSpend" class="text-3xl font-extrabold text-white mt-3 tracking-tight font-mono">$0.00</div>
-        <div class="text-[11px] text-slate-400 mt-2 flex items-center gap-1.5">
-          <span class="inline-block w-2 h-2 rounded-full bg-sky-400"></span> Cumulative budget across 9 accounts
+
+        <aside class="panel ads" aria-label="Meta ads">
+          <div class="ads-head">
+            <h2>Meta ads</h2>
+            <small id="adsScope">—</small>
+          </div>
+
+          <div class="adrow">
+            <div>
+              <div class="lbl">Ad spend</div>
+              <div class="num val" id="totalSpend">$0.00</div>
+            </div>
+            <div class="cost"></div>
+          </div>
+
+          <div class="adrow msg">
+            <div>
+              <div class="lbl">Messaging campaigns</div>
+              <div class="num val" id="totalMessages">0</div>
+              <div class="detail">Spend <b class="num" id="msgSpend">$0.00</b></div>
+            </div>
+            <div class="cost"><span class="num" id="costPerMsg">0.0¢</span><small>per message</small></div>
+          </div>
+
+          <div class="adrow sale">
+            <div>
+              <div class="lbl">Website purchases</div>
+              <div class="num val" id="totalOrders">0</div>
+              <div class="detail">Spend <b class="num" id="salesSpend">$0.00</b></div>
+            </div>
+            <div class="cost"><span class="num" id="costPerOrder">$0.00</span><small>per order</small></div>
+          </div>
+
+          <div class="notice" id="adsNotice" hidden></div>
+        </aside>
+      </section>
+
+      <!-- Status tiles -->
+      <section class="tiles" aria-label="Inbox status">
+        <div class="panel tile ok">
+          <div class="lbl">Replied</div>
+          <span class="num val" id="statReplied">0</span>
+          <div class="detail" id="pctReplied">—</div>
         </div>
-      </div>
-
-      <div class="glass-card hover-lift rounded-2xl p-5 relative overflow-hidden">
-        <div class="flex justify-between items-start">
-          <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Messaging Campaigns</span>
-          <span class="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center text-base">💬</span>
+        <div class="panel tile warn">
+          <div class="lbl">Unread</div>
+          <span class="num val" id="statUnread">0</span>
+          <div class="detail" id="pctUnread">—</div>
         </div>
-        <div id="totalMessages" class="text-3xl font-extrabold text-emerald-400 mt-3 tracking-tight font-mono">0</div>
-        <div class="text-[11px] text-slate-300 mt-2 flex flex-wrap items-center gap-2">
-          <span>Spend: <strong id="msgSpend" class="text-white font-mono">$0.00</strong></span>
-          <span class="text-slate-600">•</span>
-          <span class="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded font-mono font-bold" id="costPerMsg">0.0¢</span>
+        <div class="panel tile bad">
+          <div class="lbl">Seen, no reply</div>
+          <span class="num val" id="statReadNoReply">0</span>
+          <div class="detail" id="pctSeen">Follow up first</div>
         </div>
-      </div>
-
-      <div class="glass-card hover-lift rounded-2xl p-5 relative overflow-hidden">
-        <div class="flex justify-between items-start">
-          <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Website Purchases</span>
-          <span class="w-9 h-9 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center text-base">🛍️</span>
+        <div class="panel tile sale">
+          <div class="lbl">Confirmed orders</div>
+          <span class="num val" id="statOrders">0</span>
+          <div class="detail">Confirmed in chat</div>
         </div>
-        <div id="totalOrders" class="text-3xl font-extrabold text-purple-400 mt-3 tracking-tight font-mono">0</div>
-        <div class="text-[11px] text-slate-300 mt-2 flex flex-wrap items-center gap-2">
-          <span>Spend: <strong id="salesSpend" class="text-white font-mono">$0.00</strong></span>
-          <span class="text-slate-600">•</span>
-          <span class="bg-purple-500/10 text-purple-400 border border-purple-500/20 px-2 py-0.5 rounded font-mono font-bold" id="costPerOrder">$0.00</span>
+        <div class="panel tile msg">
+          <div class="lbl">Phone numbers</div>
+          <span class="num val" id="statPhones">0</span>
+          <div class="detail">Unique leads</div>
         </div>
-      </div>
+      </section>
 
-      <div class="glass-card hover-lift rounded-2xl p-5 relative overflow-hidden">
-        <div class="flex justify-between items-start">
-          <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Connected Accounts</span>
-          <span class="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center text-base">⚡</span>
+      <!-- Meta vs inbox -->
+      <section class="panel reconcile" aria-label="Meta conversations compared with inbox customers">
+        <div>
+          <h2 class="display">Meta vs inbox</h2>
+          <p id="gapText">Meta counts conversations started by ads. The inbox counts unique people who wrote.</p>
         </div>
-        <div id="activeAccounts" class="text-3xl font-extrabold text-amber-400 mt-3 tracking-tight font-mono">0</div>
-        <div class="text-[11px] text-slate-400 mt-2 flex items-center gap-1.5">
-          <span class="inline-block w-2 h-2 rounded-full bg-amber-400"></span> Active Meta Marketing API Stream
+        <div class="bars">
+          <div class="bar-row"><span>Meta conversations</span><div class="track"><div class="fill m" id="barMeta"></div></div><b class="num" id="valMeta">0</b></div>
+          <div class="bar-row"><span>Inbox customers</span><div class="track"><div class="fill i" id="barInbox"></div></div><b class="num" id="valInbox">0</b></div>
         </div>
-      </div>
+      </section>
 
-    </section>
-
-    <!-- Operational Inbox Stats -->
-    <section class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-      
-      <div class="glass-card customer-hero-card rounded-xl p-4 border border-blue-500/40 cursor-pointer">
-        <div class="flex items-center justify-between">
-          <div class="text-[11px] uppercase tracking-wider text-blue-300 font-bold">Active Customers</div>
-          <span class="text-xs">👥</span>
+      <!-- Ad accounts -->
+      <section class="panel" style="padding:0;overflow:hidden" aria-label="Ad accounts">
+        <div class="block-head">
+          <h2 class="display">Ad accounts</h2>
+          <span id="accountsMeta">—</span>
         </div>
-        <div id="statReceived" class="customer-number text-2xl md:text-3xl font-extrabold text-blue-400 mt-1 font-mono transition-all duration-300">0</div>
-        <div class="text-[10px] text-slate-400 mt-1">Unique (Ads + Direct)[cite: 2]</div>
-      </div>
-
-      <div class="glass-card hover-lift rounded-xl p-4 border border-emerald-500/20 hover:border-emerald-500/60">
-        <div class="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Replied Done</div>
-        <div id="statReplied" class="text-2xl font-extrabold text-emerald-400 mt-1 font-mono">0</div>
-        <div class="text-[10px] text-slate-500 mt-1">Response dispatched</div>
-      </div>
-
-      <div class="glass-card hover-lift rounded-xl p-4 border border-amber-500/20 hover:border-amber-500/60">
-        <div class="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Unread Pending</div>
-        <div id="statUnread" class="text-2xl font-extrabold text-amber-400 mt-1 font-mono">0</div>
-        <div class="text-[10px] text-slate-500 mt-1">Awaiting attention</div>
-      </div>
-
-      <div class="glass-card hover-lift rounded-xl p-4 border border-rose-500/30 hover:border-rose-500 bg-rose-950/10">
-        <div class="text-[11px] uppercase tracking-wider text-rose-400 font-semibold">Seen No Reply ⚠️</div>
-        <div id="statReadNoReply" class="text-2xl font-extrabold text-rose-400 mt-1 font-mono">0</div>
-        <div class="text-[10px] text-rose-300/60 mt-1">Urgent follow-up</div>
-      </div>
-
-      <div class="glass-card hover-lift rounded-xl p-4 border border-purple-500/20 hover:border-purple-500/60">
-        <div class="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Confirmed Orders</div>
-        <div id="statOrders" class="text-2xl font-extrabold text-purple-400 mt-1 font-mono">0</div>
-        <div class="text-[10px] text-slate-500 mt-1">Verified in Chat</div>
-      </div>
-
-      <div class="glass-card hover-lift rounded-xl p-4 border border-teal-500/20 hover:border-teal-500/60">
-        <div class="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Collected Leads</div>
-        <div id="statPhones" class="text-2xl font-extrabold text-teal-400 mt-1 font-mono">0</div>
-        <div class="text-[10px] text-slate-500 mt-1">Unique phone numbers</div>
-      </div>
-
-    </section>
-
-    <!-- Meta Ad Accounts Breakdown Table -->
-    <div class="glass-card hover-lift rounded-2xl overflow-hidden shadow-2xl border border-slate-800">
-      <div class="p-4 md:px-6 border-b border-slate-800/80 flex items-center justify-between">
-        <div class="flex items-center gap-2.5">
-          <span class="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></span>
-          <h2 class="text-sm md:text-base font-bold text-white tracking-wide">Live Ad Accounts Breakdown</h2>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Account</th>
+                <th>Total spend</th>
+                <th>Messages</th>
+                <th>Cost / message</th>
+                <th>Orders</th>
+                <th>Cost / order</th>
+              </tr>
+            </thead>
+            <tbody id="adsTableBody">
+              <tr><td colspan="6" class="empty">Loading ad accounts…</td></tr>
+            </tbody>
+            <tfoot id="adsTableFoot"></tfoot>
+          </table>
         </div>
-        <span class="text-xs text-slate-400 font-medium font-mono">Real-time Attribution</span>
-      </div>
+      </section>
 
-      <div class="overflow-x-auto">
-        <table class="w-full text-left text-sm">
-          <thead class="bg-slate-950/80 text-slate-400 text-[11px] uppercase tracking-wider font-semibold border-b border-slate-800 font-mono">
-            <tr>
-              <th class="py-3.5 px-4 md:px-6">Account Name & ID</th>
-              <th class="py-3.5 px-4">Total Spend</th>
-              <th class="py-3.5 px-4">Messaging Campaign</th>
-              <th class="py-3.5 px-4">Cost / SMS</th>
-              <th class="py-3.5 px-4">Sales Campaign</th>
-              <th class="py-3.5 px-4">Cost / Order</th>
-            </tr>
-          </thead>
-          <tbody id="adsTableBody" class="divide-y divide-slate-800/50">
-            <tr><td colspan="6" class="text-center py-8 text-slate-500 font-mono">Syncing with Meta Marketing API...</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- Moderator Team Performance Table (No messy side circles) -->
-    <div class="glass-card hover-lift rounded-2xl overflow-hidden shadow-2xl border border-slate-800">
-      <div class="p-4 md:px-6 border-b border-slate-800/80 flex items-center justify-between">
-        <div class="flex items-center gap-2.5">
-          <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-          <h2 class="text-sm md:text-base font-bold text-white tracking-wide">Moderator Team Attribution</h2>
+      <!-- Moderators -->
+      <section class="panel" style="padding:0;overflow:hidden" aria-label="Moderator workload">
+        <div class="block-head">
+          <h2 class="display">Moderators</h2>
+          <div class="seg sm" id="shiftSeg" role="group" aria-label="Shift">
+            <button type="button" data-shift="all" aria-pressed="true">Full day</button>
+            <button type="button" data-shift="morning" aria-pressed="false">Morning 9am–5pm</button>
+            <button type="button" data-shift="evening" aria-pressed="false">Evening 5pm–12am</button>
+          </div>
         </div>
-        <span class="text-xs text-slate-400 font-medium font-mono">First Reply Locking[cite: 2]</span>
-      </div>
+        <p class="hint" id="modHint">Loading…</p>
 
-      <div class="overflow-x-auto">
-        <table class="w-full text-left text-sm">
-          <thead class="bg-slate-950/80 text-slate-400 text-[11px] uppercase tracking-wider font-semibold border-b border-slate-800 font-mono">
-            <tr>
-              <th class="py-3.5 px-4 md:px-6">Moderator Identity</th>
-              <th class="py-3.5 px-4">Handled Conversations Today</th>
-            </tr>
-          </thead>
-          <tbody id="modTableBody" class="divide-y divide-slate-800/50">
-            <tr><td colspan="2" class="text-center py-8 text-slate-500 font-mono">Loading team metrics...</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+        <div class="mrow mhead" aria-hidden="true">
+          <span>#</span>
+          <span>Moderator</span>
+          <span class="hide-sm"></span>
+          <span>Customers</span>
+          <span>Messages</span>
+          <span class="hide-sm">Msgs / customer</span>
+          <span>Min / message</span>
+        </div>
+        <ol class="board" id="modBoard">
+          <li style="display:block"><div class="empty">Loading moderators…</div></li>
+        </ol>
+      </section>
 
-    <footer class="text-center text-xs text-slate-600 pb-4 font-mono">
-      Internal BI Engine • Auto-refreshing every 30 seconds
-    </footer>
+    </main>
 
+    <footer>Times follow Bangladesh time (UTC+6). Page, date and shift changes load instantly; the dashboard also refreshes every 30 seconds.</footer>
   </div>
 
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
   <script>
-    document.getElementById("datePicker").value = new Date().toISOString().slice(0, 10);
+    (function () {
+      "use strict";
 
-    // Authentication session handler
-    let authHeader = sessionStorage.getItem("dashboard_auth") || "";
+      var REFRESH_SECONDS = 30;
+      var $ = function (id) { return document.getElementById(id); };
+      var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-    function checkAuth() {
-      if (!authHeader) {
-        document.getElementById("loginModal").classList.remove("hidden");
-      } else {
-        document.getElementById("loginModal").classList.add("hidden");
+      function safeGet(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
+      function safeSet(key, val) { try { localStorage.setItem(key, val); } catch (e) {} }
+
+      function dhakaToday() {
+        return new Date(Date.now() + 6 * 3600 * 1000).toISOString().slice(0, 10);
+      }
+      function shiftDate(dateStr, days) {
+        var d = new Date(dateStr + "T00:00:00Z");
+        d.setUTCDate(d.getUTCDate() + days);
+        return d.toISOString().slice(0, 10);
+      }
+
+      var state = {
+        auth: sessionStorage.getItem("dashboard_auth") || "",
+        scope: safeGet("dash_scope") || "all",
+        shift: safeGet("dash_shift") || "all",
+        reqId: 0,
+        countdown: REFRESH_SECONDS,
+        lastOk: 0
+      };
+      if (["all", "swapons", "stone"].indexOf(state.scope) === -1) state.scope = "all";
+      if (["all", "morning", "evening"].indexOf(state.shift) === -1) state.shift = "all";
+
+      /* ---------- helpers ---------- */
+      function esc(v) {
+        return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
+          return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+        });
+      }
+      function fmt(n) { return Number(n || 0).toLocaleString("en-US"); }
+      function money(n) {
+        return "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      }
+      function pct(n, total) { return total > 0 ? Math.round((n / total) * 100) : 0; }
+
+      function toast(msg) {
+        var t = $("toast");
+        t.textContent = msg;
+        t.classList.add("show");
+        clearTimeout(toast._t);
+        toast._t = setTimeout(function () { t.classList.remove("show"); }, 4200);
+      }
+
+      var shown = {};
+      function setNum(id, value) {
+        var el = $(id);
+        var target = Number(value) || 0;
+        var from = shown[id] == null ? 0 : shown[id];
+        shown[id] = target;
+        if (reduceMotion || from === target) { el.textContent = fmt(target); return; }
+        var start = null;
+        function step(ts) {
+          if (start === null) start = ts;
+          var p = Math.min(1, (ts - start) / 520);
+          var eased = 1 - Math.pow(1 - p, 3);
+          el.textContent = fmt(Math.round(from + (target - from) * eased));
+          if (p < 1) requestAnimationFrame(step);
+        }
+        requestAnimationFrame(step);
+      }
+
+      /* ---------- theme ---------- */
+      $("themeBtn").addEventListener("click", function () {
+        var root = document.documentElement;
+        var next = root.getAttribute("data-theme") === "dark" ? "light" : "dark";
+        root.setAttribute("data-theme", next);
+        safeSet("dash_theme", next);
+      });
+
+      /* ---------- scope + shift + date controls ---------- */
+      function paintScope() {
+        var buttons = document.querySelectorAll("#scopeSeg button");
+        for (var i = 0; i < buttons.length; i++) {
+          buttons[i].setAttribute("aria-pressed", buttons[i].getAttribute("data-scope") === state.scope ? "true" : "false");
+        }
+      }
+      function paintShift() {
+        var buttons = document.querySelectorAll("#shiftSeg button");
+        for (var i = 0; i < buttons.length; i++) {
+          buttons[i].setAttribute("aria-pressed", buttons[i].getAttribute("data-shift") === state.shift ? "true" : "false");
+        }
+      }
+      function paintDateButtons() {
+        $("nextDay").disabled = $("datePicker").value >= dhakaToday();
+      }
+
+      $("scopeSeg").addEventListener("click", function (e) {
+        var btn = e.target.closest("button[data-scope]");
+        if (!btn) return;
+        state.scope = btn.getAttribute("data-scope");
+        safeSet("dash_scope", state.scope);
+        paintScope();
+        loadDashboard();                 // পেজ বদলালেই সাথে সাথে লোড — Refresh চাপতে হবে না
+      });
+      $("shiftSeg").addEventListener("click", function (e) {
+        var btn = e.target.closest("button[data-shift]");
+        if (!btn) return;
+        state.shift = btn.getAttribute("data-shift");
+        safeSet("dash_shift", state.shift);
+        paintShift();
         loadDashboard();
-      }
-    }
+      });
+      $("datePicker").addEventListener("change", function () {
+        if (!$("datePicker").value) $("datePicker").value = dhakaToday();
+        paintDateButtons();
+        loadDashboard();
+      });
+      $("prevDay").addEventListener("click", function () {
+        $("datePicker").value = shiftDate($("datePicker").value, -1);
+        paintDateButtons();
+        loadDashboard();
+      });
+      $("nextDay").addEventListener("click", function () {
+        var next = shiftDate($("datePicker").value, 1);
+        if (next > dhakaToday()) return;
+        $("datePicker").value = next;
+        paintDateButtons();
+        loadDashboard();
+      });
+      $("todayBtn").addEventListener("click", function () {
+        $("datePicker").value = dhakaToday();
+        paintDateButtons();
+        loadDashboard();
+      });
+      $("refreshBtn").addEventListener("click", function () { loadDashboard(); });
 
-    async function submitLogin() {
-      const u = document.getElementById("loginUser").value.trim();
-      const p = document.getElementById("loginPass").value.trim();
-      const testHeader = "Basic " + btoa(u + ":" + p);
+      /* ---------- auth ---------- */
+      function showLogin() { $("loginModal").hidden = false; setTimeout(function () { $("loginUser").focus(); }, 30); }
 
-      const errEl = document.getElementById("loginError");
-      errEl.classList.add("hidden");
+      $("authForm").addEventListener("submit", function (e) {
+        e.preventDefault();
+        var header = "Basic " + btoa($("loginUser").value.trim() + ":" + $("loginPass").value.trim());
+        var err = $("loginError");
+        err.hidden = true;
 
-      try {
-        const res = await fetch(`/api/daily-report?date=${document.getElementById("datePicker").value}`, {
-          headers: { "Authorization": testHeader }
+        fetchReport(header).then(function (res) {
+          if (res.status === 401 || res.status === 403) { err.textContent = "Wrong username or password."; err.hidden = false; return; }
+          if (!res.ok) { err.textContent = "The server returned an error. Try again in a moment."; err.hidden = false; return; }
+          state.auth = header;
+          sessionStorage.setItem("dashboard_auth", header);
+          $("loginModal").hidden = true;
+          return res.json().then(function (data) { renderData(data); markLive(true); });
+        }).catch(function () {
+          err.textContent = "Could not reach the server. Check your connection.";
+          err.hidden = false;
         });
+      });
 
-        if (res.status === 401 || res.status === 403) {
-          errEl.classList.remove("hidden");
+      function fetchReport(header) {
+        var qs = "date=" + encodeURIComponent($("datePicker").value) +
+          "&page_id=" + encodeURIComponent(state.scope) +
+          "&shift=" + encodeURIComponent(state.shift);
+        return fetch("/api/daily-report?" + qs, { headers: { Authorization: header } });
+      }
+
+      /* ---------- loading ---------- */
+      function markLive(ok) {
+        var badge = $("liveBadge");
+        badge.classList.toggle("stale", !ok);
+        if (ok) {
+          state.lastOk = Date.now();
+          var t = new Date(state.lastOk + 6 * 3600 * 1000).toISOString().slice(11, 16);
+          $("liveText").textContent = "Live · updated " + t;
+        } else {
+          $("liveText").textContent = "Offline · showing last data";
+        }
+      }
+
+      function loadDashboard() {
+        if (!state.auth) { showLogin(); return Promise.resolve(); }
+
+        var myReq = ++state.reqId;
+        var main = $("main");
+        main.classList.add("is-loading");
+        $("refreshIcon").classList.add("spin");
+        state.countdown = REFRESH_SECONDS;
+
+        return fetchReport(state.auth).then(function (res) {
+          if (res.status === 401 || res.status === 403) {
+            sessionStorage.removeItem("dashboard_auth");
+            state.auth = "";
+            showLogin();
+            return null;
+          }
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          return res.json();
+        }).then(function (data) {
+          if (!data || myReq !== state.reqId) return;      // পুরোনো রেসপন্স বাদ
+          renderData(data);
+          markLive(true);
+        }).catch(function (err) {
+          if (myReq !== state.reqId) return;
+          console.error("Dashboard load error:", err);
+          markLive(false);
+          toast("Could not load the report. Retrying automatically.");
+        }).then(function () {
+          if (myReq === state.reqId) {
+            main.classList.remove("is-loading");
+            setTimeout(function () { $("refreshIcon").classList.remove("spin"); }, 300);
+          }
+        });
+      }
+
+      /* ---------- render ---------- */
+      function renderData(data) {
+        var st = data.stats || {};
+        var total = st.total_received || 0;
+        $("main").setAttribute("data-ready", "true");
+
+        // Inbox hero
+        setNum("statReceived", total);
+        setNum("statNew", st.new_customers);
+        setNum("statReturning", st.returning_customers);
+        setNum("statRawMsgs", st.total_raw_messages);
+
+        // Tiles
+        setNum("statReplied", st.total_replied);
+        setNum("statUnread", st.unread_pending);
+        setNum("statReadNoReply", st.read_without_reply);
+        setNum("statOrders", st.total_confirmed_orders);
+        setNum("statPhones", st.total_phone_numbers);
+        $("pctReplied").textContent = pct(st.total_replied, total) + "% of customers";
+        $("pctUnread").textContent = pct(st.unread_pending, total) + "% waiting";
+        $("pctSeen").textContent = (st.read_without_reply || 0) > 0 ? pct(st.read_without_reply, total) + "% · follow up first" : "Nobody left waiting";
+
+        // Funnel (বিভাগগুলো কিছুটা ওভারল্যাপ করতে পারে, তাই স্কেল করা হয়েছে)
+        var r = st.total_replied || 0, s = st.read_without_reply || 0, u = st.unread_pending || 0;
+        var used = r + s + u;
+        var denom = Math.max(total, used, 1);
+        var parts = $("funnel").children;
+        parts[0].style.flexGrow = r / denom;
+        parts[1].style.flexGrow = s / denom;
+        parts[2].style.flexGrow = u / denom;
+        parts[3].style.flexGrow = Math.max(0, denom - used) / denom;
+        $("funnel").setAttribute("aria-label",
+          "Replied " + r + ", seen without reply " + s + ", unread " + u + " out of " + total + " customers");
+
+        // Ads
+        var ads = data.ads || {};
+        var sum = ads.summary || {};
+        var accounts = ads.accounts || [];
+        var scopeLabel = (data.scope && data.scope.label) || "All Pages";
+
+        $("totalSpend").textContent = money(sum.total_spend);
+        setNum("totalMessages", sum.total_messages);
+        $("msgSpend").textContent = money(sum.msg_spend);
+        $("costPerMsg").textContent = (sum.avg_cost_per_msg_cents || "0.0") + "¢";
+        setNum("totalOrders", sum.total_orders);
+        $("salesSpend").textContent = money(sum.sales_spend);
+        $("costPerOrder").textContent = money(sum.avg_cost_per_order_usd);
+        $("adsScope").textContent = accounts.length + (accounts.length === 1 ? " ad account" : " ad accounts") + " · " + scopeLabel;
+
+        var notice = $("adsNotice");
+        if (ads.configured === false) {
+          notice.textContent = "Meta access token is not set on the server, so ad numbers are empty.";
+          notice.hidden = false;
+        } else if (ads.has_error) {
+          var bad = accounts.filter(function (a) { return a.error; }).length;
+          notice.textContent = bad + " ad account" + (bad === 1 ? "" : "s") + " failed to load. Numbers may be lower than the real total.";
+          notice.hidden = false;
+        } else {
+          notice.hidden = true;
+        }
+
+        renderReconcile(sum.total_messages || 0, total);
+        renderAccounts(accounts, sum, scopeLabel);
+        renderModerators(data.moderators || [], data.shift || null);
+
+        $("datePicker").value = data.date || $("datePicker").value;
+        paintDateButtons();
+      }
+
+      function renderReconcile(metaMsgs, inbox) {
+        setNum("valMeta", metaMsgs);
+        setNum("valInbox", inbox);
+        var max = Math.max(metaMsgs, inbox, 1);
+        $("barMeta").style.width = (metaMsgs / max * 100) + "%";
+        $("barInbox").style.width = (inbox / max * 100) + "%";
+
+        var text;
+        if (!metaMsgs) {
+          text = "No ad conversations reported by Meta for this selection.";
+        } else {
+          var diff = metaMsgs - inbox;
+          var share = Math.abs(diff) / metaMsgs;
+          if (share <= 0.1) {
+            text = "Both numbers are close. Meta counts conversations started by ads; the inbox counts unique people who wrote.";
+          } else if (diff > 0) {
+            text = "Meta reports " + fmt(diff) + " more conversations than the inbox shows. Small gaps are normal (7-day attribution, Instagram or WhatsApp chats). A large gap usually means a connected page is missing from the webhook.";
+          } else {
+            text = "The inbox has " + fmt(-diff) + " more customers than Meta counted. Direct visitors and returning customers add to the inbox but not to ad conversations.";
+          }
+        }
+        $("gapText").textContent = text;
+      }
+
+      function renderAccounts(accounts, sum, scopeLabel) {
+        var body = $("adsTableBody");
+        var foot = $("adsTableFoot");
+        $("accountsMeta").textContent = scopeLabel + " · " + accounts.length + (accounts.length === 1 ? " account" : " accounts");
+
+        if (!accounts.length) {
+          body.innerHTML = '<tr><td colspan="6" class="empty"><b>No ad data for this selection</b>Pick another date or channel.</td></tr>';
+          foot.innerHTML = "";
           return;
         }
 
-        authHeader = testHeader;
-        sessionStorage.setItem("dashboard_auth", authHeader);
-        document.getElementById("loginModal").classList.add("hidden");
-        const data = await res.json();
-        renderData(data);
-      } catch (e) {
-        errEl.innerText = "Network or server connection failed.";
-        errEl.classList.remove("hidden");
+        var totalSpend = parseFloat(sum.total_spend || 0) || 0;
+        var rows = accounts.slice().sort(function (a, b) { return parseFloat(b.spend) - parseFloat(a.spend); });
+
+        body.innerHTML = rows.map(function (a) {
+          var share = totalSpend > 0 ? Math.round(parseFloat(a.spend) / totalSpend * 100) : 0;
+          return '<tr>' +
+            '<td><div class="acc-name">' + esc(a.name) + '</div><div class="acc-id">' + esc(a.id) + '</div>' +
+              (a.error ? '<span class="warn-flag">Could not load: ' + esc(a.error) + '</span>' : '') + '</td>' +
+            '<td><div class="num strong">' + money(a.spend) + '</div><div class="share" title="' + share + '% of spend"><i style="width:' + share + '%"></i></div></td>' +
+            '<td><div class="num strong c-msg">' + fmt(a.messages) + '</div><div class="detail num">spend ' + money(a.msg_spend) + '</div></td>' +
+            '<td><span class="pill msg num">' + esc(a.cost_per_msg_cents) + '¢</span></td>' +
+            '<td><div class="num strong c-sale">' + fmt(a.orders) + '</div><div class="detail num">spend ' + money(a.sales_spend) + '</div></td>' +
+            '<td><span class="pill sale num">' + money(a.cost_per_order_usd) + '</span></td>' +
+          '</tr>';
+        }).join("");
+
+        foot.innerHTML = '<tr>' +
+          '<td>Total</td>' +
+          '<td class="num">' + money(sum.total_spend) + '</td>' +
+          '<td class="num c-msg">' + fmt(sum.total_messages) + '</td>' +
+          '<td class="num">' + esc(sum.avg_cost_per_msg_cents || "0.0") + '¢</td>' +
+          '<td class="num c-sale">' + fmt(sum.total_orders) + '</td>' +
+          '<td class="num">' + money(sum.avg_cost_per_order_usd) + '</td>' +
+        '</tr>';
       }
-    }
 
-    async function loadDashboard() {
-      if (!authHeader) {
-        checkAuth();
-        return;
-      }
-
-      const date = document.getElementById("datePicker").value;
-      const pageId = document.getElementById("pageFilter").value;
-      const refreshIcon = document.getElementById("refreshIcon");
-
-      if (refreshIcon) refreshIcon.classList.add("animate-spin");
-
-      try {
-        const res = await fetch(`/api/daily-report?date=${date}&page_id=${pageId}`, {
-          headers: { "Authorization": authHeader }
+      function renderModerators(mods, shift) {
+        var board = $("modBoard");
+        var totalC = 0, totalM = 0;
+        mods.forEach(function (m) {
+          totalC += m.total_conversations || 0;
+          totalM += m.total_messages || 0;
         });
 
-        if (res.status === 401 || res.status === 403) {
-          sessionStorage.removeItem("dashboard_auth");
-          authHeader = "";
-          checkAuth();
+        // হিন্ট টেক্সট
+        var hint;
+        var common = "A customer counts once, however many messages were sent.";
+        if (shift && shift.minutes) {
+          var done = shift.elapsed_minutes || 0;
+          var dur = done < shift.minutes
+            ? Math.round(done) + " of " + shift.minutes + " minutes so far"
+            : shift.minutes + " minutes";
+          hint = shift.label + " · " + dur + ". Min / message = duty minutes ÷ messages sent. " + common;
+        } else {
+          hint = "Whole day. Pick Morning or Evening to see minutes per message. " + common;
+        }
+        if (totalM) hint = fmt(totalC) + " customers · " + fmt(totalM) + " messages sent. " + hint;
+        $("modHint").textContent = hint;
+
+        if (!mods.length) {
+          board.innerHTML = '<li style="display:block"><div class="empty"><b>No moderator messages in this period</b>' +
+            'A customer is credited to the moderator whose welcome message says “আমি &lt;name&gt;” first.</div></li>';
           return;
         }
 
-        const data = await res.json();
-        renderData(data);
-      } catch (err) {
-        console.error("Dashboard Load Error:", err);
-      } finally {
-        if (refreshIcon) {
-          setTimeout(() => refreshIcon.classList.remove("animate-spin"), 400);
-        }
-      }
-    }
-
-    function renderData(data) {
-      // 1. Messenger Operations
-      document.getElementById("statReceived").innerText = (data.stats.total_received || 0).toLocaleString();
-      document.getElementById("statReplied").innerText = (data.stats.total_replied || 0).toLocaleString();
-      document.getElementById("statUnread").innerText = (data.stats.unread_pending || 0).toLocaleString();
-      document.getElementById("statReadNoReply").innerText = (data.stats.read_without_reply || 0).toLocaleString();
-      document.getElementById("statOrders").innerText = (data.stats.total_confirmed_orders || 0).toLocaleString();
-      document.getElementById("statPhones").innerText = (data.stats.total_phone_numbers || 0).toLocaleString();
-
-      // 2. Ads Summary Cards
-      if (data.ads && data.ads.summary) {
-        const s = data.ads.summary;
-        document.getElementById("totalSpend").innerText = `$${s.total_spend || "0.00"}`;
-        document.getElementById("totalMessages").innerText = (s.total_messages || 0).toLocaleString();
-        document.getElementById("msgSpend").innerText = `$${s.msg_spend || "0.00"}`;
-        document.getElementById("costPerMsg").innerText = `${s.avg_cost_per_msg_cents || "0.0"}¢`;
-
-        document.getElementById("totalOrders").innerText = (s.total_orders || 0).toLocaleString();
-        document.getElementById("salesSpend").innerText = `$${s.sales_spend || "0.00"}`;
-        document.getElementById("costPerOrder").innerText = `$${s.avg_cost_per_order_usd || "0.00"}`;
-        document.getElementById("activeAccounts").innerText = `${data.ads.accounts ? data.ads.accounts.length : 0}`;
+        var max = mods[0].total_conversations || 1;
+        board.innerHTML = mods.map(function (m, i) {
+          var w = Math.round((m.total_conversations / max) * 100);
+          var hasAvg = m.avg_minutes_per_message !== null && m.avg_minutes_per_message !== undefined;
+          return '<li class="mrow">' +
+            '<span class="rank num">' + (i + 1) + '</span>' +
+            '<span class="who">' + esc(m.name) + '</span>' +
+            '<div class="track hide-sm"><div class="fill" style="width:' + w + '%"></div></div>' +
+            '<span class="n num">' + fmt(m.total_conversations) + '</span>' +
+            '<span class="msgs num">' + fmt(m.total_messages) + '</span>' +
+            '<span class="per num hide-sm">' + (m.msgs_per_customer || 0) + '</span>' +
+            '<span class="avg num' + (hasAvg ? '' : ' na') + '">' + (hasAvg ? m.avg_minutes_per_message : '—') + '</span>' +
+          '</li>';
+        }).join("");
       }
 
-      // 3. Ad Accounts Table
-      const adsTable = document.getElementById("adsTableBody");
-      if (data.ads && data.ads.accounts && data.ads.accounts.length > 0) {
-        adsTable.innerHTML = data.ads.accounts.map(acc => `
-          <tr class="hover:bg-slate-800/40 transition-colors">
-            <td class="py-3.5 px-4 md:px-6">
-              <div class="font-semibold text-white tracking-wide">${acc.name}</div>
-              <div class="text-[11px] text-slate-500 font-mono mt-0.5">${acc.id}</div>
-            </td>
-            <td class="py-3.5 px-4 font-mono font-bold text-sky-400">$${acc.spend}</td>
-            <td class="py-3.5 px-4">
-              <div class="font-mono font-bold text-emerald-400">${Number(acc.messages).toLocaleString()} msgs</div>
-              <div class="text-[11px] text-slate-400 font-mono mt-0.5">Spend: $${acc.msg_spend}</div>
-            </td>
-            <td class="py-3.5 px-4">
-              <span class="inline-block bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-mono font-bold px-2 py-0.5 rounded text-xs">
-                ${acc.cost_per_msg_cents}¢
-              </span>
-            </td>
-            <td class="py-3.5 px-4">
-              <div class="font-mono font-bold text-purple-400">${Number(acc.orders).toLocaleString()} orders</div>
-              <div class="text-[11px] text-slate-400 font-mono mt-0.5">Spend: $${acc.sales_spend}</div>
-            </td>
-            <td class="py-3.5 px-4">
-              <span class="inline-block bg-purple-500/10 border border-purple-500/20 text-purple-400 font-mono font-bold px-2 py-0.5 rounded text-xs">
-                $${acc.cost_per_order_usd}
-              </span>
-            </td>
-          </tr>
-        `).join("");
-      } else {
-        adsTable.innerHTML = `<tr><td colspan="6" class="text-center py-8 text-slate-500 font-mono">No ad insights data found for selected date.</td></tr>`;
-      }
+      /* ---------- auto refresh ---------- */
+      setInterval(function () {
+        if (document.hidden || !state.auth) return;
+        state.countdown -= 1;
+        if (state.countdown <= 0) { loadDashboard(); state.countdown = REFRESH_SECONDS; }
+        $("countdown").textContent = Math.max(0, state.countdown);
+        if (state.lastOk && Date.now() - state.lastOk > 90000) markLive(false);
+      }, 1000);
 
-      // 4. Moderator Table (Clean name and count, no messy badges)
-      const modTable = document.getElementById("modTableBody");
-      if (data.moderators && data.moderators.length > 0) {
-        modTable.innerHTML = data.moderators.map(m => `
-          <tr class="hover:bg-slate-800/40 transition-colors">
-            <td class="py-3.5 px-4 md:px-6 font-semibold text-slate-200">
-              ${m.name}
-            </td>
-            <td class="py-3.5 px-4 font-mono font-bold text-emerald-400 text-base">
-              ${m.total_conversations.toLocaleString()}
-            </td>
-          </tr>
-        `).join("");
-      } else {
-        modTable.innerHTML = `<tr><td colspan="2" class="text-center py-8 text-slate-500 font-mono">No conversations resolved by moderators today yet.</td></tr>`;
-      }
-    }
+      document.addEventListener("visibilitychange", function () {
+        if (!document.hidden && state.auth && Date.now() - state.lastOk > 15000) loadDashboard();
+      });
 
-    checkAuth();
-    setInterval(loadDashboard, 30000);
+      /* ---------- start ---------- */
+      $("datePicker").value = dhakaToday();
+      paintScope();
+      paintShift();
+      paintDateButtons();
+      if (state.auth) { loadDashboard(); } else { showLogin(); }
+    })();
   </script>
 </body>
 </html>
