@@ -43,13 +43,14 @@ const DAY_M = "date(m.created_at, '+6 hours')";
 const DAY_R = "date(r.created_at, '+6 hours')";
 
 /* ------------------------------------------------------------------ */
-/* শিফট: সকাল ৯টা–বিকাল ৫টা (৪৮০ মিনিট), বিকাল ৫টা–রাত ১২টা (৪২০ মিনিট) */
+/* শিফট: সকাল ৯টা–বিকাল ৫টা, বিকাল ৫:১৫–রাত ১২টা                        */
 /* সময় বদলাতে চাইলে শুধু startH / endH বদলান (ঘণ্টা, বাংলাদেশ সময়)।       */
+/* যেমন ৫:১৫ = 17.25                                                    */
 /* ------------------------------------------------------------------ */
 const SHIFTS = {
   all: { label: "Full day", startH: 0, endH: 24 },
   morning: { label: "Morning (9am–5pm)", startH: 9, endH: 17 },
-  evening: { label: "Evening (5pm–12am)", startH: 17, endH: 24 }
+  evening: { label: "Evening (5:15pm–12am)", startH: 17.25, endH: 24 }
 };
 
 function sqlTime(ms) {
@@ -60,9 +61,9 @@ function shiftWindow(dateStr, shiftKey) {
   const key = SHIFTS[shiftKey] ? shiftKey : "all";
   const s = SHIFTS[key];
   const dayStartMs = Date.parse(dateStr + "T00:00:00Z") - DHAKA_OFFSET_MS;
-  const startMs = dayStartMs + s.startH * 3600000;
-  const endMs = dayStartMs + s.endH * 3600000;
-  const full = key === "all" ? null : (s.endH - s.startH) * 60;
+  const startMs = dayStartMs + Math.round(s.startH * 3600000);
+  const endMs = dayStartMs + Math.round(s.endH * 3600000);
+  const full = key === "all" ? null : Math.round((s.endH - s.startH) * 60);
   // শিফট চলতে থাকলে এখন পর্যন্ত যত মিনিট গেছে সেটাই ধরা হয়
   const elapsed = key === "all" ? null : Math.max(0, Math.min(endMs, Date.now()) - startMs) / 60000;
   return {
@@ -70,6 +71,8 @@ function shiftWindow(dateStr, shiftKey) {
     label: s.label,
     start: sqlTime(startMs),
     end: sqlTime(endMs),
+    startMs,
+    endMs,
     minutes: full,
     elapsed_minutes: elapsed === null ? null : Math.round(elapsed * 10) / 10
   };
@@ -698,7 +701,7 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
 
     const pc = pageClause(scope.ids);
     const pcM = pageClause(scope.ids, "m.page_id");
-    const pcR = pageClause(scope.ids, "r.page_id");
+    const pcA = pageClause(scope.ids, "a.page_id");
 
     const CUST = "page_id || ':' || sender_id";
     const CUST_M = "m.page_id || ':' || m.sender_id";
@@ -764,25 +767,32 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       [targetDate, ...pc.params]
     );
 
-    // মডারেটর: যে কাস্টমার যার নামে লক (প্রথম ওয়েলকাম), তাকে পাঠানো সব রিপ্লাই তার।
-    //  - Customers = কতজন আলাদা কাস্টমারকে মেসেজ দিয়েছে (১০টা মেসেজ দিলেও ১ জন)
-    //  - Messages  = মোট কতটা মেসেজ পাঠিয়েছে
-    //  - Phones    = ওই মডারেটরের লক করা কাস্টমারদের পাঠানো আলাদা ফোন নম্বর
-    // শিফট বাছলে শুধু ওই সময়ের মধ্যে পাঠানো মেসেজ / আসা ফোন নম্বর গোনা হয়।
+    // মডারেটর হিসাব:
+    //  - যে মডারেটর কাস্টমারকে প্রথম ওয়েলকাম ("আমি <নাম>") দিয়েছে, কাস্টমার/মেসেজ/ফোন নম্বর তার।
+    //  - শিফট বাছলে শুধু ওই শিফটের সময়ে (assigned_at) ওয়েলকাম দেওয়া মডারেটররা দেখাবে।
+    //  - Full day তে সব মডারেটর দেখাবে।
+    //  - Customers = ওয়েলকাম দেওয়া আলাদা কাস্টমার
+    //  - Messages  = ওই কাস্টমারদের পাঠানো মোট রিপ্লাই (শিফটের সময়ের মধ্যে)
+    //  - Phones    = ওই কাস্টমারদের পাঠানো আলাদা ফোন নম্বর
+    const isShift = win.key !== "all";
+    const shiftSql = isShift ? " AND a.assigned_at >= ? AND a.assigned_at < ?" : "";
+    const shiftParams = isShift ? [win.startMs, win.endMs] : [];
+
     const modRows = db
       .prepare(
         `SELECT a.moderator AS name,
-                COUNT(DISTINCT r.page_id || ':' || r.sender_id) AS total_conversations,
-                COUNT(*) AS total_messages
-         FROM replies r
-         JOIN moderator_assignments a
-           ON a.page_id = r.page_id AND a.sender_id = r.sender_id AND a.day = ?
-         WHERE r.created_at >= ? AND r.created_at < ?${pcR.sql}
+                COUNT(DISTINCT a.page_id || ':' || a.sender_id) AS total_conversations,
+                COUNT(r.id) AS total_messages
+         FROM moderator_assignments a
+         LEFT JOIN replies r
+           ON r.page_id = a.page_id AND r.sender_id = a.sender_id
+          AND r.created_at >= ? AND r.created_at < ?
+         WHERE a.day = ?${shiftSql}${pcA.sql}
          GROUP BY a.moderator`
       )
-      .all(targetDate, win.start, win.end, ...pcR.params);
+      .all(win.start, win.end, targetDate, ...shiftParams, ...pcA.params);
 
-    // কাস্টমার আগে ফোন নম্বর দিক বা পরে — যে মডারেটর ওই কথোপকথনের প্রথম ওয়েলকাম দিয়েছে, নম্বর তার।
+    // ফোন নম্বর: কাস্টমার যখনই নম্বর দিক, ওয়েলকাম-দেওয়া মডারেটরের নামে যাবে।
     const phoneRows = db
       .prepare(
         `SELECT a.moderator AS name,
@@ -791,10 +801,10 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
          JOIN moderator_assignments a
            ON a.page_id = m.page_id AND a.sender_id = m.sender_id AND a.day = ?
          WHERE m.phone_number IS NOT NULL AND m.phone_number != ''
-           AND m.created_at >= ? AND m.created_at < ?${pcM.sql}
+           AND ${DAY_M} = ?${shiftSql}${pcA.sql}
          GROUP BY a.moderator`
       )
-      .all(targetDate, win.start, win.end, ...pcM.params);
+      .all(targetDate, targetDate, ...shiftParams, ...pcA.params);
 
     const phoneByMod = new Map(phoneRows.map((p) => [p.name, p.phones]));
     const board = modRows.map((m) => ({
@@ -802,12 +812,6 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       total_conversations: m.total_conversations,
       total_messages: m.total_messages
     }));
-    // শিফটে যার শুধু ফোন নম্বর এসেছে (রিপ্লাই নেই) তাকেও তালিকায় রাখা হয়।
-    for (const p of phoneRows) {
-      if (!board.some((b) => b.name === p.name)) {
-        board.push({ name: p.name, total_conversations: 0, total_messages: 0 });
-      }
-    }
     board.sort(
       (a, b) =>
         b.total_conversations - a.total_conversations ||
@@ -872,4 +876,3 @@ app.get("/privacy-policy", (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
-
