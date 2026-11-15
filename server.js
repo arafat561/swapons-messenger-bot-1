@@ -778,7 +778,6 @@ app.post("/api/mod/send", requireModAuth, async (req, res) => {
     let savedImageUrl = null;
     let lastMid = `local_${now}`;
 
-    // ১. যদি ছবি সিলেক্ট করা থাকে তবে সেভ করে মেসেঞ্জারে পাঠাবে
     if (imageBase64) {
       const match = imageBase64.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
       if (!match) return res.status(400).json({ error: "Invalid image format" });
@@ -804,7 +803,6 @@ app.post("/api/mod/send", requireModAuth, async (req, res) => {
       if (imgRes.message_id) lastMid = imgRes.message_id;
     }
 
-    // ২. যদি টেক্সট লেখা থাকে তবে মেসেঞ্জারে পাঠাবে
     if (text && text.trim()) {
       const txtRes = await sendFacebookPayload(page_id, {
         recipient: { id: sender_id },
