@@ -357,31 +357,41 @@ function sendFacebookPayload(pageId, bodyObj) {
   });
 }
 
-// Graph API থেকে কাস্টমারের নাম, প্রোফাইল ছবি ও অ্যাড রেফারেল বের করা
 async function syncCustomerAndAdFromGraph(pageId, senderId) {
   const token = getPageToken(pageId);
   if (!token) return null;
 
   try {
     const existing = db.prepare(`SELECT name, profile_pic, ad_info FROM customers WHERE page_id = ? AND sender_id = ?`).get(pageId, senderId);
-    if (!existing || !existing.name || existing.name.startsWith("Customer_") || !existing.profile_pic) {
+    let fullName = (existing && existing.name && !existing.name.startsWith("Customer_")) ? existing.name : "";
+    let picUrl = (existing && existing.profile_pic) ? existing.profile_pic : "";
+
+    if (!fullName || !picUrl) {
       const profile = await httpsGetJson(`https://graph.facebook.com/${META_API_VERSION}/${senderId}?fields=first_name,last_name,name,profile_pic&access_token=${token}`);
-      if (profile && (profile.name || profile.first_name || profile.profile_pic)) {
-        const fullName = profile.name || `${profile.first_name || ""} ${profile.last_name || ""}`.trim() || (existing && existing.name) || `Customer_${senderId.slice(-4)}`;
-        const picUrl = profile.profile_pic || (existing && existing.profile_pic) || "";
-        db.prepare(`
-          INSERT INTO customers (page_id, sender_id, name, profile_pic) VALUES (?, ?, ?, ?)
-          ON CONFLICT(page_id, sender_id) DO UPDATE SET name = excluded.name, profile_pic = COALESCE(NULLIF(excluded.profile_pic, ''), customers.profile_pic)
-        `).run(pageId, senderId, fullName, picUrl);
+      if (profile && !profile.error) {
+        if (profile.name || profile.first_name) {
+          fullName = profile.name || `${profile.first_name || ""} ${profile.last_name || ""}`.trim();
+        }
+        if (profile.profile_pic) {
+          picUrl = profile.profile_pic;
+        }
       }
     }
 
-    if (!existing || !existing.ad_info) {
-      const convUrl = `https://graph.facebook.com/${META_API_VERSION}/me/conversations?user_id=${senderId}&fields=messages.limit(6){message,attachments,sticker,from,created_time}&access_token=${token}`;
-      const conv = await httpsGetJson(convUrl);
-      if (conv && conv.data && conv.data[0] && conv.data[0].messages && conv.data[0].messages.data) {
-        const msgs = conv.data[0].messages.data;
-        for (const m of msgs) {
+    const convUrl = `https://graph.facebook.com/${META_API_VERSION}/me/conversations?user_id=${senderId}&fields=participants,messages.limit(5){message,attachments,from}&access_token=${token}`;
+    const conv = await httpsGetJson(convUrl);
+    if (conv && conv.data && conv.data[0]) {
+      const thread = conv.data[0];
+
+      if (!fullName && thread.participants && thread.participants.data) {
+        const custPart = thread.participants.data.find((p) => String(p.id) === String(senderId));
+        if (custPart && custPart.name) {
+          fullName = custPart.name;
+        }
+      }
+
+      if ((!existing || !existing.ad_info) && thread.messages && thread.messages.data) {
+        for (const m of thread.messages.data) {
           if (m.attachments && m.attachments.data && m.attachments.data.length > 0) {
             const att = m.attachments.data[0];
             const imgUrl = (att.image_data && att.image_data.url) || att.file_url || "";
@@ -392,19 +402,30 @@ async function syncCustomerAndAdFromGraph(pageId, senderId) {
                 post_url: imgUrl,
                 photo_url: imgUrl
               };
-              const adStr = JSON.stringify(adObj);
               db.prepare(`
-                INSERT INTO customers (page_id, sender_id, ad_info) VALUES (?, ?, ?)
-                ON CONFLICT(page_id, sender_id) DO UPDATE SET ad_info = excluded.ad_info
-              `).run(pageId, senderId, adStr);
+                INSERT INTO customers (page_id, sender_id, name, profile_pic, ad_info) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(page_id, sender_id) DO UPDATE SET 
+                  name = COALESCE(NULLIF(excluded.name, ''), customers.name),
+                  profile_pic = COALESCE(NULLIF(excluded.profile_pic, ''), customers.profile_pic),
+                  ad_info = excluded.ad_info
+              `).run(pageId, senderId, fullName || `Customer_${senderId.slice(-4)}`, picUrl, JSON.stringify(adObj));
               return adObj;
             }
           }
         }
       }
-    } else if (existing && existing.ad_info) {
-      return JSON.parse(existing.ad_info);
     }
+
+    if (fullName || picUrl) {
+      db.prepare(`
+        INSERT INTO customers (page_id, sender_id, name, profile_pic) VALUES (?, ?, ?, ?)
+        ON CONFLICT(page_id, sender_id) DO UPDATE SET 
+          name = COALESCE(NULLIF(excluded.name, ''), customers.name),
+          profile_pic = COALESCE(NULLIF(excluded.profile_pic, ''), customers.profile_pic)
+      `).run(pageId, senderId, fullName || `Customer_${senderId.slice(-4)}`, picUrl);
+    }
+
+    if (existing && existing.ad_info) return JSON.parse(existing.ad_info);
   } catch (e) {}
   return null;
 }
@@ -560,7 +581,6 @@ async function handleMessagingEvent(pageId, event) {
     `).run(pageId, senderId, adInfoJson);
   }
 
-  // ১. কাস্টমারের মেসেজ ও ছবি
   if (event.message && !event.message.is_echo) {
     const rawText = event.message.text || "";
     let imageUrl = null;
@@ -582,7 +602,6 @@ async function handleMessagingEvent(pageId, event) {
       extractPhoneNumber(rawText)
     );
 
-    // নতুন মেসেজ এলে যদি আগে ক্যাটাগরি করা থাকে তবে আবার pending এ ফিরিয়ে আনা
     db.prepare(`
       UPDATE moderator_assignments SET bucket = 'pending'
       WHERE page_id = ? AND sender_id = ? AND day = ? AND bucket != 'pending'
@@ -592,7 +611,6 @@ async function handleMessagingEvent(pageId, event) {
     return;
   }
 
-  // ২. কাস্টমার অ্যাড বাটনে ক্লিক করলে
   if (event.postback || event.referral) {
     const ts = event.timestamp || Date.now();
     const mid = (event.postback && event.postback.mid) || `ref_${senderId}_${ts}`;
@@ -602,7 +620,6 @@ async function handleMessagingEvent(pageId, event) {
     return;
   }
 
-  // ৩. পেজ/মডারেটরের পাঠানো রিপ্লাই (echo)
   if (event.message && event.message.is_echo) {
     const customerId = event.recipient && event.recipient.id;
     if (!customerId) return;
@@ -628,7 +645,6 @@ async function handleMessagingEvent(pageId, event) {
     return;
   }
 
-  // ৪. কাস্টমার মেসেজ দেখেছে
   if (event.read) {
     stmts.markRead.run(Date.now(), pageId, senderId, event.read.watermark);
   }
@@ -650,14 +666,11 @@ app.post("/webhook", (req, res) => {
   return res.status(200).send("EVENT_RECEIVED");
 });
 
-/* ------------------------------------------------------------------ */
-/* MODERATOR BATCH QUEUE APIs (Pending / Average / Good / Poor)        */
-/* ------------------------------------------------------------------ */
 app.get("/api/mod/list", (req, res) => {
   res.json({ moderators: MODERATORS.map((m) => m.name) });
 });
 
-app.post("/api/mod/batch", requireModAuth, (req, res) => {
+app.post("/api/mod/batch", requireModAuth, async (req, res) => {
   try {
     const { moderator, requestNew, pageFilter, bucket } = req.body;
     if (!moderator) return res.status(400).json({ error: "Moderator name required" });
@@ -693,7 +706,6 @@ app.post("/api/mod/batch", requireModAuth, (req, res) => {
 
     let pendingQueue = getBucketCustomers("pending");
 
-    // লগইন করলে বা কোনো কনভারসেশন সরিয়ে দিলে Pending ব্যাচ সবসময় অটোমেটিক ১০টি পূরণ করবে
     const slotsNeeded = 10 - pendingQueue.length;
     if (slotsNeeded > 0 && (activeBucket === "pending" || requestNew)) {
       const unassignedCustomers = db.prepare(`
@@ -713,7 +725,6 @@ app.post("/api/mod/batch", requireModAuth, (req, res) => {
         const now = Date.now();
         for (const item of list) {
           stmts.assignModerator.run(item.page_id, item.sender_id, today, moderator, now);
-          syncCustomerAndAdFromGraph(item.page_id, item.sender_id).catch(() => {});
         }
       });
       assignTransaction(unassignedCustomers);
@@ -721,9 +732,18 @@ app.post("/api/mod/batch", requireModAuth, (req, res) => {
       pendingQueue = getBucketCustomers("pending");
     }
 
-    const currentList = activeBucket === "pending" ? pendingQueue : getBucketCustomers(activeBucket);
+    let currentList = activeBucket === "pending" ? pendingQueue : getBucketCustomers(activeBucket);
 
-    // প্রতিটি ট্যাবের কাউন্ট
+    const missingProfiles = currentList.filter(
+      (q) => !q.profile_pic || q.customer_name.startsWith("Customer_")
+    );
+    if (missingProfiles.length > 0) {
+      await Promise.all(
+        missingProfiles.map((q) => syncCustomerAndAdFromGraph(q.page_id, q.sender_id))
+      );
+      currentList = activeBucket === "pending" ? getBucketCustomers("pending") : getBucketCustomers(activeBucket);
+    }
+
     const countRows = db.prepare(`
       SELECT COALESCE(NULLIF(a.bucket, ''), 'pending') as b, COUNT(DISTINCT a.page_id || ':' || a.sender_id) as cnt
       FROM moderator_assignments a
@@ -770,7 +790,6 @@ app.post("/api/mod/batch", requireModAuth, (req, res) => {
   }
 });
 
-// কাস্টমারকে Pending / Average / Good / Poor এ স্থানান্তর করা
 app.post("/api/mod/classify", requireModAuth, (req, res) => {
   try {
     const { page_id, sender_id, moderator, bucket } = req.body;
