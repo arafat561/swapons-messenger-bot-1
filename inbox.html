@@ -16,11 +16,11 @@
 
   <!-- Moderator Login Modal -->
   <div id="modLoginModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-lg p-4">
-    <div class="bg-slate-900 max-w-md w-full p-8 rounded-3xl border border-slate-800 shadow-2xl space-y-6">
+    <div class="bg-slate-900 max-w-md w-full p-8 rounded-3xl border border-slate-800 shadow-2xl space-y-5">
       <div class="text-center space-y-1">
         <div class="text-4xl mb-2">💬</div>
         <h2 class="text-2xl font-bold text-white">মডারেটর ইনবক্স লগইন</h2>
-        <p class="text-xs text-slate-400">আপনার নাম সিলেক্ট করে পাসওয়ার্ড দিন (প্রতি ব্যাচে ১০ জন কাস্টমার)</p>
+        <p class="text-xs text-slate-400">আপনার নাম ও পেজ সিলেক্ট করে পাসওয়ার্ড দিন (প্রতি ব্যাচে ১০ জন)</p>
       </div>
 
       <form onsubmit="event.preventDefault(); modLogin();" class="space-y-4">
@@ -30,6 +30,16 @@
             <option value="">লোড হচ্ছে...</option>
           </select>
         </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">পেজ সিলেক্ট করুন</label>
+          <select id="loginPageSelect" class="w-full bg-slate-800 text-white text-sm px-4 py-3 rounded-xl border border-slate-700 outline-none focus:border-blue-500">
+            <option value="all">সব পেজ (All Pages)</option>
+            <option value="swapons">Swapons World</option>
+            <option value="stone">Stone Rose BD</option>
+          </select>
+        </div>
+
         <div>
           <label class="block text-xs font-semibold text-slate-300 mb-1">মডারেটর পাসওয়ার্ড</label>
           <input type="password" id="modPassInput" required placeholder="••••••" class="w-full bg-slate-800 text-white text-sm px-4 py-3 rounded-xl border border-slate-700 outline-none focus:border-blue-500">
@@ -44,12 +54,19 @@
 
   <!-- Top Header -->
   <header class="bg-slate-900 border-b border-slate-800 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-    <div class="flex items-center gap-3">
+    <div class="flex flex-wrap items-center gap-3">
       <span class="bg-blue-600/20 text-blue-400 border border-blue-500/30 px-3 py-1 rounded-full text-sm font-bold" id="activeModBadge">
         Moderator
       </span>
+
+      <select id="headerPageFilter" onchange="changePageFilter()" class="bg-slate-800 text-white text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-700 outline-none focus:border-blue-500 cursor-pointer">
+        <option value="all">🌐 All Pages</option>
+        <option value="swapons">🔵 Swapons World</option>
+        <option value="stone">🟣 Stone Rose BD</option>
+      </select>
+
       <div class="text-xs text-slate-400">
-        ব্যাকএন্ড কিউতে অপেক্ষমান: <strong id="globalQueueCount" class="text-amber-400 text-sm">0</strong> জন |
+        অপেক্ষমান: <strong id="globalQueueCount" class="text-amber-400 text-sm">0</strong> জন |
         আজকে সম্পন্ন: <strong id="completedTodayCount" class="text-emerald-400 text-sm">0</strong> জন
       </div>
     </div>
@@ -70,7 +87,7 @@
     <!-- Left Sidebar: Assigned Batch of 10 Customers -->
     <aside class="w-80 md:w-96 bg-slate-900/60 border-r border-slate-800 flex flex-col">
       <div class="p-3 border-b border-slate-800 flex justify-between items-center">
-        <span class="text-xs font-bold uppercase tracking-wider text-slate-400">আপনার বর্তমান ব্যাচ (<span id="batchCount">0</span>/10)</span>
+        <span class="text-xs font-bold uppercase tracking-wider text-slate-400">বর্তমান ব্যাচ (<span id="batchCount">0</span>/10)</span>
         <button onclick="fetchBatch(false)" class="text-xs text-blue-400 hover:underline cursor-pointer">রিফ্রেশ</button>
       </div>
       <div id="customerList" class="flex-1 overflow-y-auto divide-y divide-slate-800/60">
@@ -98,11 +115,37 @@
           </button>
         </div>
 
+        <!-- Ad Referral Banner -->
+        <div id="adBanner" class="hidden bg-amber-500/10 border-b border-amber-500/30 px-4 py-2.5 flex items-center justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <img id="adThumb" src="" alt="Ad" class="w-12 h-12 rounded-lg object-cover border border-amber-500/40 hidden">
+            <div>
+              <div class="text-[11px] font-bold text-amber-400 uppercase tracking-wider">📢 যে অ্যাড দেখে মেসেজ দিয়েছেন:</div>
+              <div id="adTitleText" class="text-xs font-semibold text-white mt-0.5">Facebook Ad</div>
+              <div id="adIdText" class="text-[10px] text-slate-400 font-mono"></div>
+            </div>
+          </div>
+          <a id="adPostLink" href="#" target="_blank" class="hidden bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold px-3 py-1.5 rounded-lg transition">
+            🔗 অ্যাড দেখুন
+          </a>
+        </div>
+
         <!-- Messages Stream -->
         <div id="messagesContainer" class="flex-1 overflow-y-auto p-4 space-y-3"></div>
 
-        <!-- Reply Input -->
+        <!-- Selected Image Preview Bar -->
+        <div id="imagePreviewBar" class="hidden px-4 py-2 bg-slate-900 border-t border-slate-800 flex items-center gap-3">
+          <img id="previewImgEl" src="" class="h-14 w-14 object-cover rounded-lg border border-blue-500">
+          <span class="text-xs text-slate-300 flex-1">ছবি সিলেক্ট করা হয়েছে (Send চাপলে কাস্টমারের কাছে চলে যাবে)</span>
+          <button type="button" onclick="clearSelectedImage()" class="text-xs text-rose-400 hover:underline px-2 py-1 cursor-pointer">✕ বাতিল</button>
+        </div>
+
+        <!-- Reply Input with Picture Upload -->
         <form onsubmit="event.preventDefault(); sendReply();" class="p-3 bg-slate-900 border-t border-slate-800 flex items-center gap-2">
+          <input type="file" id="imageFileInput" accept="image/*" class="hidden" onchange="handleImageSelect(event)">
+          <button type="button" onclick="document.getElementById('imageFileInput').click()" title="ছবি পাঠান" class="bg-slate-800 hover:bg-slate-700 text-slate-200 p-3 rounded-xl border border-slate-700 transition cursor-pointer">
+            📷
+          </button>
           <input type="text" id="replyInput" placeholder="এখানে রিপ্লাই লিখুন..." autocomplete="off" class="flex-1 bg-slate-800 text-white text-sm px-4 py-3 rounded-xl border border-slate-700 outline-none focus:border-blue-500">
           <button type="submit" id="sendBtn" class="bg-blue-600 hover:bg-blue-500 text-white font-semibold px-6 py-3 rounded-xl transition cursor-pointer">
             Send
@@ -116,7 +159,9 @@
   <script>
     let currentMod = sessionStorage.getItem("mod_name") || "";
     let modPass = sessionStorage.getItem("mod_pass") || "";
+    let currentPageFilter = sessionStorage.getItem("mod_page") || "all";
     let selectedCustomer = null;
+    let selectedImageBase64 = "";
 
     async function loadModList() {
       const res = await fetch("/api/mod/list");
@@ -129,12 +174,13 @@
     async function modLogin() {
       const name = document.getElementById("modSelect").value;
       const pass = document.getElementById("modPassInput").value.trim();
+      const page = document.getElementById("loginPageSelect").value;
       if (!name || !pass) return;
 
       const res = await fetch("/api/mod/batch", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-mod-pass": pass },
-        body: JSON.stringify({ moderator: name, requestNew: false })
+        body: JSON.stringify({ moderator: name, requestNew: false, pageFilter: page })
       });
 
       if (res.status === 401) {
@@ -144,18 +190,31 @@
 
       currentMod = name;
       modPass = pass;
+      currentPageFilter = page;
       sessionStorage.setItem("mod_name", name);
       sessionStorage.setItem("mod_pass", pass);
+      sessionStorage.setItem("mod_page", page);
 
+      document.getElementById("headerPageFilter").value = page;
       document.getElementById("modLoginModal").classList.add("hidden");
       document.getElementById("activeModBadge").innerText = `👤 ${currentMod}`;
       const data = await res.json();
       renderBatch(data);
     }
 
+    function changePageFilter() {
+      currentPageFilter = document.getElementById("headerPageFilter").value;
+      sessionStorage.setItem("mod_page", currentPageFilter);
+      selectedCustomer = null;
+      document.getElementById("activeChatBox").classList.add("hidden");
+      document.getElementById("emptyChatState").classList.remove("hidden");
+      fetchBatch(true);
+    }
+
     function logoutMod() {
       sessionStorage.removeItem("mod_name");
       sessionStorage.removeItem("mod_pass");
+      sessionStorage.removeItem("mod_page");
       location.reload();
     }
 
@@ -164,7 +223,7 @@
       const res = await fetch("/api/mod/batch", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-mod-pass": modPass },
-        body: JSON.stringify({ moderator: currentMod, requestNew })
+        body: JSON.stringify({ moderator: currentMod, requestNew, pageFilter: currentPageFilter })
       });
       if (res.ok) {
         const data = await res.json();
@@ -182,7 +241,7 @@
         listEl.innerHTML = `
           <div class="p-8 text-center space-y-3">
             <div class="text-3xl">🎉</div>
-            <p class="text-xs text-slate-400">আপনার বর্তমান ব্যাচের সব কাস্টমারকে রিপ্লাই দেওয়া শেষ!</p>
+            <p class="text-xs text-slate-400">এই পেজে আপনার বর্তমান ব্যাচের সব কাস্টমারকে রিপ্লাই দেওয়া শেষ!</p>
             <button onclick="fetchBatch(true)" class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-4 py-2 rounded-lg cursor-pointer">
               নতুন ১০টি কাস্টমার লোড করুন
             </button>
@@ -192,24 +251,55 @@
 
       listEl.innerHTML = data.queue.map(c => {
         const isSelected = selectedCustomer && selectedCustomer.sender_id === c.sender_id && selectedCustomer.page_id === c.page_id;
+        const pageColor = c.page_name.includes("Stone") ? "bg-purple-500/20 text-purple-300 border border-purple-500/30" : "bg-blue-500/20 text-blue-300 border border-blue-500/30";
         return `
           <div onclick='openChat(${JSON.stringify(c)})' class="p-3.5 cursor-pointer transition ${isSelected ? 'bg-blue-600/20 border-l-4 border-blue-500' : 'hover:bg-slate-800/50'}">
-            <div class="flex justify-between items-start">
-              <span class="font-bold text-sm text-white">${c.customer_name}</span>
-              <span class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300">${c.page_name}</span>
+            <div class="flex justify-between items-start gap-2">
+              <span class="font-bold text-sm text-white truncate">${c.customer_name}</span>
+              <span class="text-[10px] px-2 py-0.5 rounded shrink-0 ${pageColor}">${c.page_name}</span>
             </div>
+            ${c.ad_data ? `<div class="text-[10px] text-amber-400 mt-0.5 truncate">📢 Ad: ${c.ad_data.ad_title || c.ad_data.ad_id}</div>` : ''}
             <p class="text-xs text-slate-400 truncate mt-1">${c.last_message || "New message"}</p>
           </div>
         `;
       }).join("");
     }
 
+    function showAdBanner(adData) {
+      const banner = document.getElementById("adBanner");
+      if (!adData) {
+        banner.classList.add("hidden");
+        return;
+      }
+      banner.classList.remove("hidden");
+      document.getElementById("adTitleText").innerText = adData.ad_title || "Facebook Ad";
+      document.getElementById("adIdText").innerText = adData.ad_id ? `Ad ID: ${adData.ad_id}` : "";
+
+      const thumb = document.getElementById("adThumb");
+      if (adData.photo_url) {
+        thumb.src = adData.photo_url;
+        thumb.classList.remove("hidden");
+      } else {
+        thumb.classList.add("hidden");
+      }
+
+      const link = document.getElementById("adPostLink");
+      if (adData.post_url) {
+        link.href = adData.post_url;
+        link.classList.remove("hidden");
+      } else {
+        link.classList.add("hidden");
+      }
+    }
+
     async function openChat(customer) {
       selectedCustomer = customer;
+      clearSelectedImage();
       document.getElementById("emptyChatState").classList.add("hidden");
       document.getElementById("activeChatBox").classList.remove("hidden");
       document.getElementById("chatCustomerName").innerText = customer.customer_name;
       document.getElementById("chatPageBadge").innerText = customer.page_name;
+      showAdBanner(customer.ad_data);
 
       await loadChatMessages();
       fetchBatch(false);
@@ -221,14 +311,16 @@
         headers: { "x-mod-pass": modPass }
       });
       const data = await res.json();
-      const box = document.getElementById("messagesContainer");
+      if (data.ad_data) showAdBanner(data.ad_data);
 
+      const box = document.getElementById("messagesContainer");
       box.innerHTML = data.messages.map(m => {
         const isPage = m.sender === "page";
         return `
           <div class="flex flex-col ${isPage ? 'items-end' : 'items-start'}">
-            <div class="max-w-md px-4 py-2.5 rounded-2xl text-sm ${isPage ? 'bg-blue-600 text-white rounded-br-none' : 'bg-slate-800 text-slate-100 rounded-bl-none'}">
-              ${m.text}
+            <div class="max-w-md px-4 py-2.5 rounded-2xl text-sm space-y-2 ${isPage ? 'bg-blue-600 text-white rounded-br-none' : 'bg-slate-800 text-slate-100 rounded-bl-none'}">
+              ${m.image_url ? `<a href="${m.image_url}" target="_blank"><img src="${m.image_url}" class="max-h-60 rounded-xl border border-white/10"></a>` : ''}
+              ${m.text && m.text !== "[ছবি পাঠিয়েছেন]" && m.text !== "[ছবি পাঠানো হয়েছে]" ? `<div>${m.text}</div>` : ''}
             </div>
             ${isPage && m.moderator ? `<span class="text-[10px] text-slate-500 mt-0.5">Sent by ${m.moderator}</span>` : ''}
           </div>
@@ -236,6 +328,24 @@
       }).join("");
 
       box.scrollTop = box.scrollHeight;
+    }
+
+    function handleImageSelect(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        selectedImageBase64 = e.target.result;
+        document.getElementById("previewImgEl").src = selectedImageBase64;
+        document.getElementById("imagePreviewBar").classList.remove("hidden");
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function clearSelectedImage() {
+      selectedImageBase64 = "";
+      document.getElementById("imageFileInput").value = "";
+      document.getElementById("imagePreviewBar").classList.add("hidden");
     }
 
     function insertQuickConfirm() {
@@ -248,7 +358,7 @@
       if (!selectedCustomer) return;
       const input = document.getElementById("replyInput");
       const text = input.value.trim();
-      if (!text) return;
+      if (!text && !selectedImageBase64) return;
 
       const btn = document.getElementById("sendBtn");
       btn.disabled = true;
@@ -262,6 +372,7 @@
             page_id: selectedCustomer.page_id,
             sender_id: selectedCustomer.sender_id,
             text,
+            imageBase64: selectedImageBase64,
             moderator: currentMod
           })
         });
@@ -271,6 +382,7 @@
           alert("Error: " + result.error);
         } else {
           input.value = "";
+          clearSelectedImage();
           await loadChatMessages();
           await fetchBatch(false);
         }
@@ -282,6 +394,7 @@
 
     loadModList();
     if (currentMod && modPass) {
+      document.getElementById("headerPageFilter").value = currentPageFilter;
       document.getElementById("modLoginModal").classList.add("hidden");
       document.getElementById("activeModBadge").innerText = `👤 ${currentMod}`;
       fetchBatch(false);
