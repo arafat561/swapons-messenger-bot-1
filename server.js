@@ -14,12 +14,16 @@ const DASHBOARD_PASS = process.env.DASHBOARD_PASS || "swapons123";
 const MOD_PASS = process.env.MOD_PASS || "mod123";
 const META_ACCESS_TOKEN = process.env.META_ACCESS_TOKEN || "";
 
-// পেজ আইডি অনুযায়ী টোকেন ম্যাপিং
+// পেজ আইডি অনুযায়ী টোকেন ম্যাপিং (যেকোনো নামেই সেট করা থাকুক ফলব্যাকসহ কাজ করবে)
 const PAGE_TOKENS = {
-  "102803132669088": process.env.PAGE_TOKEN_SW1 || "",
-  "1133872699971391": process.env.PAGE_TOKEN_SW2 || process.env.PAGE_TOKEN_SW1 || "",
-  "250386238168336": process.env.PAGE_TOKEN_SR || ""
+  "102803132669088": process.env.PAGE_TOKEN_SW1 || process.env.PAGE_TOKEN_SW2 || process.env.PAGE_ACCESS_TOKEN || "",
+  "1133872699971391": process.env.PAGE_TOKEN_SW2 || process.env.PAGE_TOKEN_SW1 || process.env.PAGE_ACCESS_TOKEN || "",
+  "250386238168336": process.env.PAGE_TOKEN_SR || process.env.PAGE_ACCESS_TOKEN || ""
 };
+
+function getPageToken(pageId) {
+  return PAGE_TOKENS[pageId] || process.env.PAGE_TOKEN_SW1 || process.env.PAGE_TOKEN_SW2 || process.env.PAGE_TOKEN_SR || process.env.PAGE_ACCESS_TOKEN || "";
+}
 
 const PAGES = {
   "102803132669088": "Swapons World",
@@ -173,8 +177,10 @@ function httpsGet(url) {
 
 function sendFacebookMessage(pageId, recipientId, text) {
   return new Promise((resolve, reject) => {
-    const token = PAGE_TOKENS[pageId];
-    if (!token) return reject(new Error("Page access token configured নেই!"));
+    const token = getPageToken(pageId);
+    if (!token) {
+      return reject(new Error(`Page ID (${pageId}) এর জন্য Railway Variables-এ PAGE_TOKEN_SW1 বা PAGE_TOKEN_SR সেট করা নেই!`));
+    }
 
     const payload = JSON.stringify({
       recipient: { id: recipientId },
@@ -216,7 +222,7 @@ async function fetchCustomerName(pageId, senderId) {
   const existing = db.prepare(`SELECT name FROM customers WHERE page_id = ? AND sender_id = ?`).get(pageId, senderId);
   if (existing && existing.name) return existing.name;
 
-  const token = PAGE_TOKENS[pageId];
+  const token = getPageToken(pageId);
   if (!token) return `Customer_${senderId.slice(-4)}`;
 
   const profile = await httpsGet(`https://graph.facebook.com/v19.0/${senderId}?fields=first_name,last_name,name&access_token=${token}`);
@@ -226,7 +232,6 @@ async function fetchCustomerName(pageId, senderId) {
   return fullName;
 }
 
-// রুটস
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "index.html"));
 });
@@ -256,14 +261,12 @@ app.post("/webhook", (req, res) => {
 
       if (entry.messaging) {
         entry.messaging.forEach(async (event) => {
-          // ১. কাস্টমার মেসেজ
           if (event.message && !event.message.is_echo) {
             const senderId = event.sender.id;
             const rawText = event.message.text || (event.message.attachments ? "[Attachment/Photo]" : "");
             const phone = extractPhoneNumber(rawText);
             const customerName = await fetchCustomerName(pageId, senderId);
 
-            // যদি আজকের দিনে এই কাস্টমার ইতিমধ্যে কোনো মডারেটরের নামে লক থাকে, তবে তার ফলো-আপ মেসেজও সেই মডারেটরের কাছেই থাকবে
             const activeModRow = db.prepare(`
               SELECT assigned_moderator FROM messages 
               WHERE page_id = ? AND sender_id = ? AND assigned_moderator IS NOT NULL 
@@ -280,7 +283,6 @@ app.post("/webhook", (req, res) => {
             `).run(pageId, senderId, customerName, event.message.mid, rawText, event.timestamp, phone, existingMod);
           }
 
-          // ২. সিন ইভেন্ট
           if (event.read) {
             const customerId = event.sender.id;
             const watermark = event.read.watermark;
@@ -293,7 +295,6 @@ app.post("/webhook", (req, res) => {
             `).run(readTime, pageId, customerId, watermark);
           }
 
-          // ৩. পেজ রিপ্লাই (Meta Business Suite বা কাস্টম ইনবক্স যেখান থেকেই হোক)
           if (event.message && event.message.is_echo) {
             const customerId = event.recipient.id;
             const replyText = event.message.text || "";
@@ -302,7 +303,6 @@ app.post("/webhook", (req, res) => {
             const isConfirm = replyText.toLowerCase().includes("your order confirm") ? 1 : 0;
             const detectedMod = detectModerator(replyText);
 
-            // ডুপ্লিকেট এড়াতে চেক
             const exists = db.prepare(`SELECT id FROM replies WHERE message_id = ?`).get(event.message.mid);
             if (!exists) {
               db.prepare(`
@@ -344,18 +344,15 @@ app.post("/webhook", (req, res) => {
 
 // ================= MODERATOR BATCH QUEUE APIs =================
 
-// মডারেটর লিস্ট পাঠানো
 app.get("/api/mod/list", (req, res) => {
   res.json({ moderators: MODERATOR_RULES.map(m => m.name) });
 });
 
-// মডারেটরের জন্য ১০টি কাস্টমারের ব্যাচ আনা ও অ্যাসাইন করা
 app.post("/api/mod/batch", requireModAuth, (req, res) => {
   try {
     const { moderator, requestNew } = req.body;
     if (!moderator) return res.status(400).json({ error: "Moderator name required" });
 
-    // ১. এই মডারেটরের বর্তমানে কয়জন পেন্ডিং (unreplied) কাস্টমার আছে দেখা
     const getActiveCustomers = () => {
       return db.prepare(`
         SELECT 
@@ -377,7 +374,6 @@ app.post("/api/mod/batch", requireModAuth, (req, res) => {
 
     let currentQueue = getActiveCustomers();
 
-    // ২. যদি পেন্ডিং ১০টির কম থাকে (বা নতুন ব্যাচ চায় এবং বর্তমান পেন্ডিং ০ হয়), তাহলে ফাঁকা থাকা কাস্টমারদের থেকে ১০ পর্যন্ত পূরণ করবে
     const slotsNeeded = 10 - currentQueue.length;
     if (slotsNeeded > 0 && (currentQueue.length === 0 || requestNew)) {
       const unassignedCustomers = db.prepare(`
@@ -409,7 +405,6 @@ app.post("/api/mod/batch", requireModAuth, (req, res) => {
       currentQueue = getActiveCustomers();
     }
 
-    // ব্যাকএন্ডে মোট কতজন কাস্টমার এখনো কারো ভাগে পড়েনি (Global Queue Count)
     const globalUnassigned = db.prepare(`
       SELECT COUNT(DISTINCT page_id || '_' || sender_id) as count
       FROM messages
@@ -418,7 +413,6 @@ app.post("/api/mod/batch", requireModAuth, (req, res) => {
         AND date(created_at, 'localtime') = date('now', 'localtime')
     `).get().count;
 
-    // আজকে এই মডারেটর মোট কতজন কাস্টমার শেষ করেছে
     const completedToday = db.prepare(`
       SELECT COUNT(DISTINCT sender_id) as count
       FROM messages
@@ -441,7 +435,6 @@ app.post("/api/mod/batch", requireModAuth, (req, res) => {
   }
 });
 
-// নির্দিষ্ট কাস্টমারের পুরো চ্যাট হিস্ট্রি লোড করা
 app.get("/api/mod/chat", requireModAuth, (req, res) => {
   try {
     const { page_id, sender_id } = req.query;
@@ -465,7 +458,6 @@ app.get("/api/mod/chat", requireModAuth, (req, res) => {
   }
 });
 
-// কাস্টমারকে রিপ্লাই পাঠানো (Meta API + Database Save)
 app.post("/api/mod/send", requireModAuth, async (req, res) => {
   try {
     const { page_id, sender_id, text, moderator } = req.body;
@@ -473,20 +465,17 @@ app.post("/api/mod/send", requireModAuth, async (req, res) => {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
-    // ১. Meta Graph API দিয়ে মেসেঞ্জারে পাঠানো
     const fbRes = await sendFacebookMessage(page_id, sender_id, text);
     const mid = fbRes.message_id || `local_${Date.now()}`;
     const now = Date.now();
     const isConfirm = text.toLowerCase().includes("your order confirm") ? 1 : 0;
 
-    // ২. ডাটাবেজে সেভ করা
     db.prepare(`
       INSERT OR IGNORE INTO replies 
       (page_id, sender_id, message_id, reply_text, reply_time, moderator, is_order_confirm)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(page_id, sender_id, mid, text, now, moderator, isConfirm);
 
-    // ৩. কাস্টমারের স্ট্যাটাস 'replied' করে দেওয়া যাতে ব্যাচ থেকে ক্লিয়ার হয়
     db.prepare(`
       UPDATE messages 
       SET status = 'replied', assigned_moderator = ?
