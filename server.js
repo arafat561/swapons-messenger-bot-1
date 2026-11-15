@@ -21,15 +21,15 @@ const META_API_VERSION = process.env.META_API_VERSION || "v25.0";
 const SESSION_MINUTES = Number(process.env.SESSION_MINUTES || 0);
 const SESSION_MS = SESSION_MINUTES > 0 ? SESSION_MINUTES * 60 * 1000 : 0;
 
-// পেজ টোকেন ম্যাপিং (ফলব্যাকসহ)
+// Railway Variables অনুযায়ী টোকেন ম্যাপিং
 const PAGE_TOKENS = {
-  "102803132669088": process.env.PAGE_TOKEN_SW1 || process.env.PAGE_TOKEN_SW2 || process.env.PAGE_ACCESS_TOKEN || "",
-  "1133872699971391": process.env.PAGE_TOKEN_SW2 || process.env.PAGE_TOKEN_SW1 || process.env.PAGE_ACCESS_TOKEN || "",
-  "250386238168336": process.env.PAGE_TOKEN_SR || process.env.PAGE_ACCESS_TOKEN || ""
+  "102803132669088": process.env.PAGE_TOKEN_SW1 || process.env.SWAPONS_WORLD_PAGE_TOKEN || "",
+  "1133872699971391": process.env.PAGE_TOKEN_SW2 || process.env.SWAPONS_WORLD_PAGE_TOKEN || "",
+  "250386238168336": process.env.PAGE_TOKEN_SR || process.env.STONE_ROSE_PAGE_TOKEN || ""
 };
 
 function getPageToken(pageId) {
-  return PAGE_TOKENS[pageId] || process.env.PAGE_TOKEN_SW1 || process.env.PAGE_TOKEN_SW2 || process.env.PAGE_TOKEN_SR || process.env.PAGE_ACCESS_TOKEN || "";
+  return PAGE_TOKENS[pageId] || "";
 }
 
 const PAGE_NAMES = {
@@ -178,11 +178,17 @@ function detectModerator(text) {
 }
 
 /* ------------------------------------------------------------------ */
-/* ডাটাবেস                                                             */
+/* ডাটাবেস ও ছবি আপলোড সাপোর্ট                                         */
 /* ------------------------------------------------------------------ */
-app.use(express.json());
+app.use(express.json({ limit: "15mb" }));
 
 const dbDir = process.env.DATA_DIR || (fs.existsSync("/data") ? "/data" : ".");
+const uploadDir = path.join(dbDir, "uploads");
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+app.use("/uploads", express.static(uploadDir));
+
 const dbPath = path.join(dbDir, "messenger.db");
 const db = new Database(dbPath);
 db.pragma("journal_mode = WAL");
@@ -194,6 +200,8 @@ db.exec(`
     sender_id TEXT NOT NULL,
     message_id TEXT UNIQUE,
     message_text TEXT,
+    image_url TEXT,
+    ad_info TEXT,
     message_time INTEGER,
     phone_number TEXT,
     status TEXT DEFAULT 'unread',
@@ -208,6 +216,7 @@ db.exec(`
     sender_id TEXT NOT NULL,
     message_id TEXT,
     reply_text TEXT,
+    image_url TEXT,
     reply_time INTEGER,
     moderator TEXT,
     is_order_confirm INTEGER DEFAULT 0,
@@ -227,6 +236,7 @@ db.exec(`
     page_id TEXT NOT NULL,
     sender_id TEXT NOT NULL,
     name TEXT,
+    ad_info TEXT,
     PRIMARY KEY (page_id, sender_id)
   );
 
@@ -246,8 +256,12 @@ db.exec(`
 try { db.exec(`ALTER TABLE messages ADD COLUMN read_time INTEGER;`); } catch (e) {}
 try { db.exec(`ALTER TABLE messages ADD COLUMN phone_number TEXT;`); } catch (e) {}
 try { db.exec(`ALTER TABLE messages ADD COLUMN assigned_moderator TEXT;`); } catch (e) {}
+try { db.exec(`ALTER TABLE messages ADD COLUMN image_url TEXT;`); } catch (e) {}
+try { db.exec(`ALTER TABLE messages ADD COLUMN ad_info TEXT;`); } catch (e) {}
 try { db.exec(`ALTER TABLE replies ADD COLUMN moderator TEXT;`); } catch (e) {}
 try { db.exec(`ALTER TABLE replies ADD COLUMN is_order_confirm INTEGER DEFAULT 0;`); } catch (e) {}
+try { db.exec(`ALTER TABLE replies ADD COLUMN image_url TEXT;`); } catch (e) {}
+try { db.exec(`ALTER TABLE customers ADD COLUMN ad_info TEXT;`); } catch (e) {}
 
 function createdAtToDay(createdAt) {
   const ms = Date.parse(String(createdAt).replace(" ", "T") + "Z");
@@ -282,8 +296,8 @@ if (db.pragma("user_version", { simple: true }) < 1) {
 const stmts = {
   insertMessage: db.prepare(`
     INSERT OR IGNORE INTO messages
-    (page_id, sender_id, message_id, message_text, message_time, phone_number, status)
-    VALUES (?, ?, ?, ?, ?, ?, 'unread')
+    (page_id, sender_id, message_id, message_text, image_url, ad_info, message_time, phone_number, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'unread')
   `),
   markRead: db.prepare(`
     UPDATE messages
@@ -292,8 +306,8 @@ const stmts = {
   `),
   insertReply: db.prepare(`
     INSERT INTO replies
-    (page_id, sender_id, message_id, reply_text, reply_time, moderator, is_order_confirm)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    (page_id, sender_id, message_id, reply_text, image_url, reply_time, moderator, is_order_confirm)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `),
   assignModerator: db.prepare(`
     INSERT OR IGNORE INTO moderator_assignments (page_id, sender_id, day, moderator, assigned_at)
@@ -318,21 +332,16 @@ function extractPhoneNumber(text) {
 }
 
 /* ------------------------------------------------------------------ */
-/* মেটা মেসেঞ্জার রিপ্লাই ও কাস্টমার নাম ফেচ                           */
+/* মেটা মেসেঞ্জার টেক্সট ও ছবি সেন্ডিং                                   */
 /* ------------------------------------------------------------------ */
-function sendFacebookMessage(pageId, recipientId, text) {
+function sendFacebookPayload(pageId, bodyObj) {
   return new Promise((resolve, reject) => {
     const token = getPageToken(pageId);
     if (!token) {
-      return reject(new Error(`Page ID (${pageId}) এর জন্য Railway Variables-এ PAGE_TOKEN_SW1 বা PAGE_TOKEN_SR সেট করা নেই!`));
+      return reject(new Error(`Page ID (${pageId}) এর জন্য Railway Variables-এ SWAPONS_WORLD_PAGE_TOKEN বা STONE_ROSE_PAGE_TOKEN সেট করা নেই!`));
     }
 
-    const payload = JSON.stringify({
-      recipient: { id: recipientId },
-      message: { text: text },
-      messaging_type: "RESPONSE"
-    });
-
+    const payload = JSON.stringify(bodyObj);
     const options = {
       hostname: "graph.facebook.com",
       path: `/${META_API_VERSION}/me/messages?access_token=${token}`,
@@ -365,7 +374,7 @@ function sendFacebookMessage(pageId, recipientId, text) {
 
 async function fetchCustomerName(pageId, senderId) {
   const existing = db.prepare(`SELECT name FROM customers WHERE page_id = ? AND sender_id = ?`).get(pageId, senderId);
-  if (existing && existing.name) return existing.name;
+  if (existing && existing.name && !existing.name.startsWith("Customer_")) return existing.name;
 
   const token = getPageToken(pageId);
   if (!token) return `Customer_${senderId.slice(-4)}`;
@@ -373,7 +382,10 @@ async function fetchCustomerName(pageId, senderId) {
   const profile = await httpsGetJson(`https://graph.facebook.com/${META_API_VERSION}/${senderId}?fields=first_name,last_name,name&access_token=${token}`);
   const fullName = (profile && (profile.name || `${profile.first_name || ""} ${profile.last_name || ""}`.trim())) || `Customer_${senderId.slice(-4)}`;
 
-  db.prepare(`INSERT OR REPLACE INTO customers (page_id, sender_id, name) VALUES (?, ?, ?)`).run(pageId, senderId, fullName);
+  db.prepare(`
+    INSERT INTO customers (page_id, sender_id, name) VALUES (?, ?, ?)
+    ON CONFLICT(page_id, sender_id) DO UPDATE SET name = excluded.name
+  `).run(pageId, senderId, fullName);
   return fullName;
 }
 
@@ -508,18 +520,48 @@ app.get("/webhook", (req, res) => {
   }
 });
 
+function extractAdReferral(event) {
+  const ref = event.referral || (event.message && event.message.referral) || (event.postback && event.postback.referral);
+  if (!ref) return null;
+  const ctx = ref.ads_context_data || {};
+  return JSON.stringify({
+    ad_id: ref.ad_id || "",
+    ad_title: ctx.ad_title || ref.ref || "Facebook Ad",
+    post_url: ctx.post_url || "",
+    photo_url: ctx.photo_url || ctx.video_url || ""
+  });
+}
+
 async function handleMessagingEvent(pageId, event) {
   const today = dhakaDate();
+  const senderId = event.sender && event.sender.id;
+  const adInfoJson = extractAdReferral(event);
 
-  // ১. কাস্টমারের মেসেজ
+  if (adInfoJson && senderId && (!event.message || !event.message.is_echo)) {
+    db.prepare(`
+      INSERT INTO customers (page_id, sender_id, ad_info) VALUES (?, ?, ?)
+      ON CONFLICT(page_id, sender_id) DO UPDATE SET ad_info = excluded.ad_info
+    `).run(pageId, senderId, adInfoJson);
+  }
+
+  // ১. কাস্টমারের মেসেজ ও ছবি
   if (event.message && !event.message.is_echo) {
-    const senderId = event.sender.id;
-    const rawText = event.message.text || (event.message.attachments ? "[Attachment/Photo]" : "");
+    const rawText = event.message.text || "";
+    let imageUrl = null;
+    if (event.message.attachments && event.message.attachments.length > 0) {
+      const imgAtt = event.message.attachments.find((a) => a.type === "image" && a.payload && a.payload.url);
+      if (imgAtt) imageUrl = imgAtt.payload.url;
+    }
+
+    const displayText = rawText || (imageUrl ? "[ছবি পাঠিয়েছেন]" : "[Attachment]");
+
     stmts.insertMessage.run(
       pageId,
       senderId,
       event.message.mid,
-      rawText,
+      displayText,
+      imageUrl,
+      adInfoJson,
       event.timestamp,
       extractPhoneNumber(rawText)
     );
@@ -527,12 +569,13 @@ async function handleMessagingEvent(pageId, event) {
     return;
   }
 
-  // ২. কাস্টমার বাটন/আইস-ব্রেকারে ট্যাপ করলে
-  if (event.postback) {
+  // ২. কাস্টমার অ্যাড বাটনে ক্লিক করলে (postback / referral)
+  if (event.postback || event.referral) {
     const ts = event.timestamp || Date.now();
-    const mid = event.postback.mid || `pb_${event.sender.id}_${ts}`;
-    const text = event.postback.title || event.postback.payload || "[button]";
-    stmts.insertMessage.run(pageId, event.sender.id, mid, text, ts, extractPhoneNumber(text));
+    const mid = (event.postback && event.postback.mid) || `ref_${senderId}_${ts}`;
+    const text = (event.postback && (event.postback.title || event.postback.payload)) || "[Ad Click / Started Chat]";
+    stmts.insertMessage.run(pageId, senderId, mid, text, null, adInfoJson, ts, extractPhoneNumber(text));
+    fetchCustomerName(pageId, senderId).catch(() => {});
     return;
   }
 
@@ -542,13 +585,19 @@ async function handleMessagingEvent(pageId, event) {
     if (!customerId) return;
 
     const replyText = event.message.text || "";
+    let replyImg = null;
+    if (event.message.attachments && event.message.attachments.length > 0) {
+      const imgAtt = event.message.attachments.find((a) => a.type === "image" && a.payload && a.payload.url);
+      if (imgAtt) replyImg = imgAtt.payload.url;
+    }
+
     const replyTime = event.timestamp || Date.now();
     const isConfirm = replyText.toLowerCase().includes("your order confirm") ? 1 : 0;
     const mod = detectModerator(replyText);
 
     const exists = db.prepare(`SELECT id FROM replies WHERE message_id = ?`).get(event.message.mid);
     if (!exists) {
-      stmts.insertReply.run(pageId, customerId, event.message.mid, replyText, replyTime, mod, isConfirm);
+      stmts.insertReply.run(pageId, customerId, event.message.mid, replyText || (replyImg ? "[ছবি]" : ""), replyImg, replyTime, mod, isConfirm);
     }
 
     if (mod) stmts.assignModerator.run(pageId, customerId, today, mod, replyTime);
@@ -558,7 +607,7 @@ async function handleMessagingEvent(pageId, event) {
 
   // ৪. কাস্টমার মেসেজ দেখেছে
   if (event.read) {
-    stmts.markRead.run(Date.now(), pageId, event.sender.id, event.read.watermark);
+    stmts.markRead.run(Date.now(), pageId, senderId, event.read.watermark);
   }
 }
 
@@ -579,7 +628,7 @@ app.post("/webhook", (req, res) => {
 });
 
 /* ------------------------------------------------------------------ */
-/* MODERATOR BATCH QUEUE APIs (/inbox এর জন্য ১০টি করে কাস্টমার)       */
+/* MODERATOR BATCH QUEUE APIs (পেজ ফিল্টার + অ্যাড ডিটেইলস + ছবি)      */
 /* ------------------------------------------------------------------ */
 app.get("/api/mod/list", (req, res) => {
   res.json({ moderators: MODERATORS.map((m) => m.name) });
@@ -587,10 +636,12 @@ app.get("/api/mod/list", (req, res) => {
 
 app.post("/api/mod/batch", requireModAuth, (req, res) => {
   try {
-    const { moderator, requestNew } = req.body;
+    const { moderator, requestNew, pageFilter } = req.body;
     if (!moderator) return res.status(400).json({ error: "Moderator name required" });
 
     const today = dhakaDate();
+    const scope = resolveScope(pageFilter || "all");
+    const pcM = pageClause(scope.ids, "m.page_id");
 
     const getActiveCustomers = () => {
       return db.prepare(`
@@ -598,6 +649,7 @@ app.post("/api/mod/batch", requireModAuth, (req, res) => {
           m.page_id,
           m.sender_id,
           COALESCE(MAX(c.name), 'Customer_' || substr(m.sender_id, -4)) as customer_name,
+          COALESCE(MAX(c.ad_info), MAX(m.ad_info)) as ad_info,
           MAX(m.message_text) as last_message,
           MAX(m.message_time) as last_time,
           COUNT(m.id) as msg_count
@@ -608,9 +660,10 @@ app.post("/api/mod/batch", requireModAuth, (req, res) => {
         WHERE a.moderator = ?
           AND m.status != 'replied'
           AND ${DAY_M} = ?
+          ${pcM.sql}
         GROUP BY m.page_id, m.sender_id
         ORDER BY MIN(m.id) ASC
-      `).all(today, moderator, today);
+      `).all(today, moderator, today, ...pcM.params);
     };
 
     let currentQueue = getActiveCustomers();
@@ -625,9 +678,10 @@ app.post("/api/mod/batch", requireModAuth, (req, res) => {
         WHERE a.moderator IS NULL
           AND m.status != 'replied'
           AND ${DAY_M} = ?
+          ${pcM.sql}
         ORDER BY m.id ASC
         LIMIT ?
-      `).all(today, today, slotsNeeded);
+      `).all(today, today, ...pcM.params, slotsNeeded);
 
       const assignTransaction = db.transaction((list) => {
         const now = Date.now();
@@ -648,7 +702,8 @@ app.post("/api/mod/batch", requireModAuth, (req, res) => {
       WHERE a.moderator IS NULL
         AND m.status != 'replied'
         AND ${DAY_M} = ?
-    `).get(today, today).count;
+        ${pcM.sql}
+    `).get(today, today, ...pcM.params).count;
 
     const completedToday = db.prepare(`
       SELECT COUNT(DISTINCT m.page_id || ':' || m.sender_id) as count
@@ -662,10 +717,17 @@ app.post("/api/mod/batch", requireModAuth, (req, res) => {
 
     res.json({
       moderator,
-      queue: currentQueue.map((q) => ({
-        ...q,
-        page_name: PAGE_NAMES[q.page_id] || "Page"
-      })),
+      queue: currentQueue.map((q) => {
+        let parsedAd = null;
+        if (q.ad_info) {
+          try { parsedAd = JSON.parse(q.ad_info); } catch (e) {}
+        }
+        return {
+          ...q,
+          ad_data: parsedAd,
+          page_name: PAGE_NAMES[q.page_id] || "Page"
+        };
+      }),
       global_unassigned: globalUnassigned,
       completed_today: completedToday
     });
@@ -679,19 +741,26 @@ app.get("/api/mod/chat", requireModAuth, (req, res) => {
     const { page_id, sender_id } = req.query;
 
     const incoming = db.prepare(`
-      SELECT 'customer' as sender, message_text as text, message_time as time
+      SELECT 'customer' as sender, message_text as text, image_url, ad_info, message_time as time
       FROM messages
       WHERE page_id = ? AND sender_id = ?
     `).all(page_id, sender_id);
 
     const outgoing = db.prepare(`
-      SELECT 'page' as sender, reply_text as text, reply_time as time, moderator
+      SELECT 'page' as sender, reply_text as text, image_url, reply_time as time, moderator
       FROM replies
       WHERE page_id = ? AND sender_id = ?
     `).all(page_id, sender_id);
 
+    const custRow = db.prepare(`SELECT ad_info FROM customers WHERE page_id = ? AND sender_id = ?`).get(page_id, sender_id);
+    let adData = null;
+    const rawAd = (custRow && custRow.ad_info) || (incoming.find((i) => i.ad_info) || {}).ad_info;
+    if (rawAd) {
+      try { adData = JSON.parse(rawAd); } catch (e) {}
+    }
+
     const merged = [...incoming, ...outgoing].sort((a, b) => (a.time || 0) - (b.time || 0));
-    res.json({ messages: merged });
+    res.json({ messages: merged, ad_data: adData });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -699,22 +768,69 @@ app.get("/api/mod/chat", requireModAuth, (req, res) => {
 
 app.post("/api/mod/send", requireModAuth, async (req, res) => {
   try {
-    const { page_id, sender_id, text, moderator } = req.body;
-    if (!page_id || !sender_id || !text || !moderator) {
-      return res.status(400).json({ error: "Missing required fields" });
+    const { page_id, sender_id, text, imageBase64, moderator } = req.body;
+    if (!page_id || !sender_id || !moderator || (!text && !imageBase64)) {
+      return res.status(400).json({ error: "মেসেজ অথবা ছবি দিন" });
     }
 
-    const fbRes = await sendFacebookMessage(page_id, sender_id, text);
-    const mid = fbRes.message_id || `local_${Date.now()}`;
     const now = Date.now();
     const today = dhakaDate();
-    const isConfirm = text.toLowerCase().includes("your order confirm") ? 1 : 0;
+    let savedImageUrl = null;
+    let lastMid = `local_${now}`;
 
-    stmts.insertReply.run(page_id, sender_id, mid, text, now, moderator, isConfirm);
+    // ১. যদি ছবি সিলেক্ট করা থাকে তবে সেভ করে মেসেঞ্জারে পাঠাবে
+    if (imageBase64) {
+      const match = imageBase64.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
+      if (!match) return res.status(400).json({ error: "Invalid image format" });
+
+      const ext = match[1].split("/")[1].replace("jpeg", "jpg");
+      const filename = `img_${now}_${crypto.randomBytes(4).toString("hex")}.${ext}`;
+      fs.writeFileSync(path.join(uploadDir, filename), Buffer.from(match[2], "base64"));
+
+      const host = req.get("host");
+      const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
+      savedImageUrl = `${protocol}://${host}/uploads/${filename}`;
+
+      const imgRes = await sendFacebookPayload(page_id, {
+        recipient: { id: sender_id },
+        message: {
+          attachment: {
+            type: "image",
+            payload: { url: savedImageUrl, is_reusable: true }
+          }
+        },
+        messaging_type: "RESPONSE"
+      });
+      if (imgRes.message_id) lastMid = imgRes.message_id;
+    }
+
+    // ২. যদি টেক্সট লেখা থাকে তবে মেসেঞ্জারে পাঠাবে
+    if (text && text.trim()) {
+      const txtRes = await sendFacebookPayload(page_id, {
+        recipient: { id: sender_id },
+        message: { text: text.trim() },
+        messaging_type: "RESPONSE"
+      });
+      if (txtRes.message_id) lastMid = txtRes.message_id;
+    }
+
+    const cleanText = (text || "").trim();
+    const isConfirm = cleanText.toLowerCase().includes("your order confirm") ? 1 : 0;
+
+    stmts.insertReply.run(
+      page_id,
+      sender_id,
+      lastMid,
+      cleanText || "[ছবি পাঠানো হয়েছে]",
+      savedImageUrl,
+      now,
+      moderator,
+      isConfirm
+    );
     stmts.assignModerator.run(page_id, sender_id, today, moderator, now);
     stmts.markReplied.run(page_id, sender_id, today);
 
-    res.json({ success: true, message_id: mid });
+    res.json({ success: true, message_id: lastMid, image_url: savedImageUrl });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
