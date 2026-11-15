@@ -20,7 +20,7 @@
       <div class="text-center space-y-1">
         <div class="text-4xl mb-2">💬</div>
         <h2 class="text-2xl font-bold text-white">মডারেটর ইনবক্স লগইন</h2>
-        <p class="text-xs text-slate-400">আপনার নাম ও পেজ সিলেক্ট করে পাসওয়ার্ড দিন (প্রতি ব্যাচে ১০ জন)</p>
+        <p class="text-xs text-slate-400">নাম ও পেজ সিলেক্ট করে লগইন করলেই অটোমেটিক ১০টি মেসেজ চলে আসবে</p>
       </div>
 
       <form onsubmit="event.preventDefault(); modLogin();" class="space-y-4">
@@ -53,7 +53,7 @@
   </div>
 
   <!-- Top Header -->
-  <header class="bg-slate-900 border-b border-slate-800 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+  <header class="bg-slate-900 border-b border-slate-800 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
     <div class="flex flex-wrap items-center gap-3">
       <span class="bg-blue-600/20 text-blue-400 border border-blue-500/30 px-3 py-1 rounded-full text-sm font-bold" id="activeModBadge">
         Moderator
@@ -66,14 +66,13 @@
       </select>
 
       <div class="text-xs text-slate-400">
-        অপেক্ষমান: <strong id="globalQueueCount" class="text-amber-400 text-sm">0</strong> জন |
-        আজকে সম্পন্ন: <strong id="completedTodayCount" class="text-emerald-400 text-sm">0</strong> জন
+        ব্যাকএন্ড কিউতে অপেক্ষমান: <strong id="globalQueueCount" class="text-amber-400 text-sm">0</strong> জন
       </div>
     </div>
 
     <div class="flex items-center gap-2">
-      <button onclick="fetchBatch(true)" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition cursor-pointer">
-        + পরবর্তী ১০টি কাস্টমার নিন
+      <button onclick="fetchBatch(true)" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-3.5 py-2 rounded-lg transition cursor-pointer">
+        + নতুন কাস্টমার লোড
       </button>
       <button onclick="logoutMod()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs px-3 py-2 rounded-lg transition cursor-pointer">
         লগআউট
@@ -84,12 +83,29 @@
   <!-- Main Chat Layout -->
   <div class="flex-1 flex overflow-hidden">
     
-    <!-- Left Sidebar: Assigned Batch of 10 Customers -->
+    <!-- Left Sidebar: 4 Dashboard Tabs + Customer List -->
     <aside class="w-80 md:w-96 bg-slate-900/60 border-r border-slate-800 flex flex-col">
-      <div class="p-3 border-b border-slate-800 flex justify-between items-center">
-        <span class="text-xs font-bold uppercase tracking-wider text-slate-400">বর্তমান ব্যাচ (<span id="batchCount">0</span>/10)</span>
-        <button onclick="fetchBatch(false)" class="text-xs text-blue-400 hover:underline cursor-pointer">রিফ্রেশ</button>
+      <!-- 4 Category Filter Tabs -->
+      <div class="grid grid-cols-4 gap-1 p-2 bg-slate-950/60 border-b border-slate-800 text-center">
+        <button onclick="switchBucket('pending')" id="tab_pending" class="py-1.5 px-1 rounded-lg text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 cursor-pointer">
+          Pending (<span id="cnt_pending">0</span>)
+        </button>
+        <button onclick="switchBucket('average')" id="tab_average" class="py-1.5 px-1 rounded-lg text-[11px] font-semibold bg-slate-800/60 text-slate-400 hover:text-white cursor-pointer">
+          Average (<span id="cnt_average">0</span>)
+        </button>
+        <button onclick="switchBucket('good')" id="tab_good" class="py-1.5 px-1 rounded-lg text-[11px] font-semibold bg-slate-800/60 text-slate-400 hover:text-white cursor-pointer">
+          Good (<span id="cnt_good">0</span>)
+        </button>
+        <button onclick="switchBucket('poor')" id="tab_poor" class="py-1.5 px-1 rounded-lg text-[11px] font-semibold bg-slate-800/60 text-slate-400 hover:text-white cursor-pointer">
+          Poor (<span id="cnt_poor">0</span>)
+        </button>
       </div>
+
+      <div class="px-3 py-2 border-b border-slate-800 flex justify-between items-center text-[11px] text-slate-400">
+        <span id="bucketTitleLabel">Pending ব্যাচ (১০ জন করে)</span>
+        <button onclick="fetchBatch(false)" class="text-blue-400 hover:underline cursor-pointer">রিফ্রেশ</button>
+      </div>
+
       <div id="customerList" class="flex-1 overflow-y-auto divide-y divide-slate-800/60">
         <div class="p-6 text-center text-xs text-slate-500">কাস্টমার লোড হচ্ছে...</div>
       </div>
@@ -99,34 +115,57 @@
     <main class="flex-1 flex flex-col bg-slate-950/40">
       <div id="emptyChatState" class="flex-1 flex flex-col items-center justify-center text-slate-500 p-6 text-center">
         <div class="text-5xl mb-3">👈</div>
-        <p class="text-sm font-medium">বাম পাশের তালিকা থেকে একজন কাস্টমার সিলেক্ট করে রিপ্লাই দিন</p>
-        <p class="text-xs text-slate-600 mt-1">১০ জনের রিপ্লাই শেষ হলে অটোমেটিক নতুন ১০ জন যুক্ত হবে</p>
+        <p class="text-sm font-medium">বাম পাশ থেকে একজন কাস্টমার সিলেক্ট করুন</p>
+        <p class="text-xs text-slate-600 mt-1">কথা শেষে উপরের Average / Good / Poor বাটনে ক্লিক করলে অটোমেটিক নতুন কাস্টমার চলে আসবে</p>
       </div>
 
       <div id="activeChatBox" class="hidden flex-1 flex flex-col h-full">
-        <!-- Chat Header -->
-        <div class="p-4 bg-slate-900/80 border-b border-slate-800 flex items-center justify-between">
-          <div>
-            <h3 id="chatCustomerName" class="font-bold text-white text-base">Customer Name</h3>
-            <span id="chatPageBadge" class="text-[11px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded">Page</span>
+        <!-- Chat Header with Profile Pic + 4 Classification Buttons -->
+        <div class="p-3.5 bg-slate-900/90 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <div id="headerAvatarBox" class="w-11 h-11 rounded-full bg-slate-800 border border-slate-700 overflow-hidden flex items-center justify-center font-bold text-white shrink-0">
+              C
+            </div>
+            <div>
+              <h3 id="chatCustomerName" class="font-bold text-white text-base leading-tight">Customer Name</h3>
+              <span id="chatPageBadge" class="text-[11px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded inline-block mt-0.5">Page</span>
+            </div>
           </div>
-          <button onclick="insertQuickConfirm()" class="bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 text-xs font-semibold px-3 py-1.5 rounded-lg transition cursor-pointer">
-            ✅ Your order confirm
-          </button>
+
+          <!-- 4 Action Status Buttons -->
+          <div class="flex flex-wrap items-center gap-1.5">
+            <button onclick="classifyCustomer('pending')" class="bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold px-3 py-1.5 rounded-lg transition cursor-pointer">
+              ⏳ Pending
+            </button>
+            <button onclick="classifyCustomer('average')" class="bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 text-xs font-bold px-3 py-1.5 rounded-lg transition cursor-pointer">
+              📊 Average
+            </button>
+            <button onclick="classifyCustomer('good')" class="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold px-3 py-1.5 rounded-lg transition cursor-pointer">
+              🌟 Good
+            </button>
+            <button onclick="classifyCustomer('poor')" class="bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-xs font-bold px-3 py-1.5 rounded-lg transition cursor-pointer">
+              ⚠️ Poor
+            </button>
+            <button onclick="insertQuickConfirm()" class="bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/40 text-xs font-semibold px-3 py-1.5 rounded-lg transition cursor-pointer ml-1">
+              ✅ Order Confirm
+            </button>
+          </div>
         </div>
 
         <!-- Ad Referral Banner -->
         <div id="adBanner" class="hidden bg-amber-500/10 border-b border-amber-500/30 px-4 py-2.5 flex items-center justify-between gap-3">
           <div class="flex items-center gap-3">
-            <img id="adThumb" src="" alt="Ad" class="w-12 h-12 rounded-lg object-cover border border-amber-500/40 hidden">
+            <a id="adThumbLink" href="#" target="_blank">
+              <img id="adThumb" src="" alt="Ad" class="w-14 h-14 rounded-lg object-cover border border-amber-500/50 hidden">
+            </a>
             <div>
-              <div class="text-[11px] font-bold text-amber-400 uppercase tracking-wider">📢 যে অ্যাড দেখে মেসেজ দিয়েছেন:</div>
+              <div class="text-[11px] font-bold text-amber-400 uppercase tracking-wider">📢 যে অ্যাড / প্রোডাক্ট দেখে মেসেজ দিয়েছেন:</div>
               <div id="adTitleText" class="text-xs font-semibold text-white mt-0.5">Facebook Ad</div>
               <div id="adIdText" class="text-[10px] text-slate-400 font-mono"></div>
             </div>
           </div>
-          <a id="adPostLink" href="#" target="_blank" class="hidden bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold px-3 py-1.5 rounded-lg transition">
-            🔗 অ্যাড দেখুন
+          <a id="adPostLink" href="#" target="_blank" class="hidden bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold px-3.5 py-2 rounded-lg transition shrink-0">
+            🔗 প্রোডাক্ট / অ্যাড দেখুন
           </a>
         </div>
 
@@ -160,8 +199,18 @@
     let currentMod = sessionStorage.getItem("mod_name") || "";
     let modPass = sessionStorage.getItem("mod_pass") || "";
     let currentPageFilter = sessionStorage.getItem("mod_page") || "all";
+    let currentBucket = "pending";
     let selectedCustomer = null;
     let selectedImageBase64 = "";
+
+    function renderAvatar(picUrl, name, sizeClass = "w-10 h-10") {
+      const initial = (name || "C").replace("Customer_", "").charAt(0).toUpperCase();
+      if (picUrl) {
+        return `<img src="${picUrl}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" class="${sizeClass} rounded-full object-cover">
+                <div style="display:none" class="${sizeClass} rounded-full bg-blue-600/30 text-blue-300 items-center justify-center font-bold text-sm">${initial}</div>`;
+      }
+      return `<div class="${sizeClass} rounded-full bg-blue-600/30 text-blue-300 flex items-center justify-center font-bold text-sm">${initial}</div>`;
+    }
 
     async function loadModList() {
       const res = await fetch("/api/mod/list");
@@ -180,7 +229,7 @@
       const res = await fetch("/api/mod/batch", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-mod-pass": pass },
-        body: JSON.stringify({ moderator: name, requestNew: false, pageFilter: page })
+        body: JSON.stringify({ moderator: name, requestNew: true, pageFilter: page, bucket: "pending" })
       });
 
       if (res.status === 401) {
@@ -191,6 +240,7 @@
       currentMod = name;
       modPass = pass;
       currentPageFilter = page;
+      currentBucket = "pending";
       sessionStorage.setItem("mod_name", name);
       sessionStorage.setItem("mod_pass", pass);
       sessionStorage.setItem("mod_page", page);
@@ -200,6 +250,34 @@
       document.getElementById("activeModBadge").innerText = `👤 ${currentMod}`;
       const data = await res.json();
       renderBatch(data);
+    }
+
+    function switchBucket(bucket) {
+      currentBucket = bucket;
+      selectedCustomer = null;
+      document.getElementById("activeChatBox").classList.add("hidden");
+      document.getElementById("emptyChatState").classList.remove("hidden");
+
+      const styles = {
+        pending: "py-1.5 px-1 rounded-lg text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 cursor-pointer",
+        average: "py-1.5 px-1 rounded-lg text-[11px] font-bold bg-sky-500/20 text-sky-300 border border-sky-500/40 cursor-pointer",
+        good: "py-1.5 px-1 rounded-lg text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 cursor-pointer",
+        poor: "py-1.5 px-1 rounded-lg text-[11px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40 cursor-pointer"
+      };
+      const inactive = "py-1.5 px-1 rounded-lg text-[11px] font-semibold bg-slate-800/60 text-slate-400 hover:text-white cursor-pointer";
+
+      ["pending", "average", "good", "poor"].forEach(b => {
+        document.getElementById(`tab_${b}`).className = (b === bucket) ? styles[b] : inactive;
+      });
+
+      const titles = {
+        pending: "Pending ব্যাচ (১০ জন করে)",
+        average: "Average কাস্টমার তালিকা",
+        good: "Good কাস্টমার তালিকা",
+        poor: "Poor কাস্টমার তালিকা"
+      };
+      document.getElementById("bucketTitleLabel").innerText = titles[bucket];
+      fetchBatch(false);
     }
 
     function changePageFilter() {
@@ -223,7 +301,7 @@
       const res = await fetch("/api/mod/batch", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-mod-pass": modPass },
-        body: JSON.stringify({ moderator: currentMod, requestNew, pageFilter: currentPageFilter })
+        body: JSON.stringify({ moderator: currentMod, requestNew, pageFilter: currentPageFilter, bucket: currentBucket })
       });
       if (res.ok) {
         const data = await res.json();
@@ -233,18 +311,20 @@
 
     function renderBatch(data) {
       document.getElementById("globalQueueCount").innerText = data.global_unassigned || 0;
-      document.getElementById("completedTodayCount").innerText = data.completed_today || 0;
-      document.getElementById("batchCount").innerText = data.queue.length;
+      if (data.counts) {
+        document.getElementById("cnt_pending").innerText = data.counts.pending || 0;
+        document.getElementById("cnt_average").innerText = data.counts.average || 0;
+        document.getElementById("cnt_good").innerText = data.counts.good || 0;
+        document.getElementById("cnt_poor").innerText = data.counts.poor || 0;
+      }
 
       const listEl = document.getElementById("customerList");
       if (data.queue.length === 0) {
         listEl.innerHTML = `
           <div class="p-8 text-center space-y-3">
-            <div class="text-3xl">🎉</div>
-            <p class="text-xs text-slate-400">এই পেজে আপনার বর্তমান ব্যাচের সব কাস্টমারকে রিপ্লাই দেওয়া শেষ!</p>
-            <button onclick="fetchBatch(true)" class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-4 py-2 rounded-lg cursor-pointer">
-              নতুন ১০টি কাস্টমার লোড করুন
-            </button>
+            <div class="text-3xl">📭</div>
+            <p class="text-xs text-slate-400">এই ফোল্ডারে কোনো কাস্টমার নেই</p>
+            ${currentBucket === 'pending' ? `<button onclick="fetchBatch(true)" class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-4 py-2 rounded-lg cursor-pointer">নতুন ১০টি কাস্টমার লোড করুন</button>` : ''}
           </div>`;
         return;
       }
@@ -253,13 +333,16 @@
         const isSelected = selectedCustomer && selectedCustomer.sender_id === c.sender_id && selectedCustomer.page_id === c.page_id;
         const pageColor = c.page_name.includes("Stone") ? "bg-purple-500/20 text-purple-300 border border-purple-500/30" : "bg-blue-500/20 text-blue-300 border border-blue-500/30";
         return `
-          <div onclick='openChat(${JSON.stringify(c)})' class="p-3.5 cursor-pointer transition ${isSelected ? 'bg-blue-600/20 border-l-4 border-blue-500' : 'hover:bg-slate-800/50'}">
-            <div class="flex justify-between items-start gap-2">
-              <span class="font-bold text-sm text-white truncate">${c.customer_name}</span>
-              <span class="text-[10px] px-2 py-0.5 rounded shrink-0 ${pageColor}">${c.page_name}</span>
+          <div onclick='openChat(${JSON.stringify(c).replace(/'/g, "&#39;")})' class="p-3 cursor-pointer transition flex items-center gap-3 ${isSelected ? 'bg-blue-600/20 border-l-4 border-blue-500' : 'hover:bg-slate-800/50'}">
+            <div class="shrink-0">${renderAvatar(c.profile_pic, c.customer_name, "w-10 h-10")}</div>
+            <div class="flex-1 min-w-0">
+              <div class="flex justify-between items-center gap-1.5">
+                <span class="font-bold text-sm text-white truncate">${c.customer_name}</span>
+                <span class="text-[9px] px-1.5 py-0.5 rounded shrink-0 ${pageColor}">${c.page_name}</span>
+              </div>
+              ${c.ad_data ? `<div class="text-[10px] text-amber-400 truncate">📢 ${c.ad_data.ad_title || 'Ad'}</div>` : ''}
+              <p class="text-xs text-slate-400 truncate mt-0.5">${c.last_message || "New message"}</p>
             </div>
-            ${c.ad_data ? `<div class="text-[10px] text-amber-400 mt-0.5 truncate">📢 Ad: ${c.ad_data.ad_title || c.ad_data.ad_id}</div>` : ''}
-            <p class="text-xs text-slate-400 truncate mt-1">${c.last_message || "New message"}</p>
           </div>
         `;
       }).join("");
@@ -276,16 +359,18 @@
       document.getElementById("adIdText").innerText = adData.ad_id ? `Ad ID: ${adData.ad_id}` : "";
 
       const thumb = document.getElementById("adThumb");
+      const thumbLink = document.getElementById("adThumbLink");
       if (adData.photo_url) {
         thumb.src = adData.photo_url;
+        thumbLink.href = adData.post_url || adData.photo_url;
         thumb.classList.remove("hidden");
       } else {
         thumb.classList.add("hidden");
       }
 
       const link = document.getElementById("adPostLink");
-      if (adData.post_url) {
-        link.href = adData.post_url;
+      if (adData.post_url || adData.photo_url) {
+        link.href = adData.post_url || adData.photo_url;
         link.classList.remove("hidden");
       } else {
         link.classList.add("hidden");
@@ -299,10 +384,33 @@
       document.getElementById("activeChatBox").classList.remove("hidden");
       document.getElementById("chatCustomerName").innerText = customer.customer_name;
       document.getElementById("chatPageBadge").innerText = customer.page_name;
+      document.getElementById("headerAvatarBox").innerHTML = renderAvatar(customer.profile_pic, customer.customer_name, "w-11 h-11");
       showAdBanner(customer.ad_data);
 
       await loadChatMessages();
       fetchBatch(false);
+    }
+
+    async function classifyCustomer(targetBucket) {
+      if (!selectedCustomer) return;
+      const res = await fetch("/api/mod/classify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-mod-pass": modPass },
+        body: JSON.stringify({
+          page_id: selectedCustomer.page_id,
+          sender_id: selectedCustomer.sender_id,
+          moderator: currentMod,
+          bucket: targetBucket
+        })
+      });
+
+      if (res.ok) {
+        selectedCustomer = null;
+        document.getElementById("activeChatBox").classList.add("hidden");
+        document.getElementById("emptyChatState").classList.remove("hidden");
+        // সরানোর সাথে সাথে নতুন মেসেজ এনে ১০টি পূরণ করবে
+        await fetchBatch(true);
+      }
     }
 
     async function loadChatMessages() {
@@ -312,15 +420,22 @@
       });
       const data = await res.json();
       if (data.ad_data) showAdBanner(data.ad_data);
+      if (data.customer) {
+        document.getElementById("chatCustomerName").innerText = data.customer.name;
+        document.getElementById("headerAvatarBox").innerHTML = renderAvatar(data.customer.profile_pic, data.customer.name, "w-11 h-11");
+      }
 
       const box = document.getElementById("messagesContainer");
       box.innerHTML = data.messages.map(m => {
         const isPage = m.sender === "page";
+        const cleanTxt = (m.text && m.text !== "[ছবি পাঠিয়েছেন]" && m.text !== "[ছবি পাঠানো হয়েছে]") ? m.text : "";
+        if (!cleanTxt && !m.image_url) return "";
+
         return `
           <div class="flex flex-col ${isPage ? 'items-end' : 'items-start'}">
             <div class="max-w-md px-4 py-2.5 rounded-2xl text-sm space-y-2 ${isPage ? 'bg-blue-600 text-white rounded-br-none' : 'bg-slate-800 text-slate-100 rounded-bl-none'}">
-              ${m.image_url ? `<a href="${m.image_url}" target="_blank"><img src="${m.image_url}" class="max-h-60 rounded-xl border border-white/10"></a>` : ''}
-              ${m.text && m.text !== "[ছবি পাঠিয়েছেন]" && m.text !== "[ছবি পাঠানো হয়েছে]" ? `<div>${m.text}</div>` : ''}
+              ${m.image_url ? `<a href="${m.image_url}" target="_blank"><img src="${m.image_url}" class="max-h-64 rounded-xl border border-white/10"></a>` : ''}
+              ${cleanTxt ? `<div>${cleanTxt}</div>` : ''}
             </div>
             ${isPage && m.moderator ? `<span class="text-[10px] text-slate-500 mt-0.5">Sent by ${m.moderator}</span>` : ''}
           </div>
@@ -397,7 +512,7 @@
       document.getElementById("headerPageFilter").value = currentPageFilter;
       document.getElementById("modLoginModal").classList.add("hidden");
       document.getElementById("activeModBadge").innerText = `👤 ${currentMod}`;
-      fetchBatch(false);
+      fetchBatch(true);
     }
 
     setInterval(() => {
