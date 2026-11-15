@@ -1,20 +1,27 @@
+"use strict";
+
 const express = require("express");
 const Database = require("better-sqlite3");
 const fs = require("fs");
 const path = require("path");
 const https = require("https");
+const crypto = require("crypto");
 require("dotenv").config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "my_verify_token";
 
-const DASHBOARD_USER = process.env.DASHBOARD_USER || "admin";
-const DASHBOARD_PASS = process.env.DASHBOARD_PASS || "swapons123";
+const DASHBOARD_USER = process.env.DASHBOARD_USER || "swapon";
+const DASHBOARD_PASS = process.env.DASHBOARD_PASS || "swapon123";
 const MOD_PASS = process.env.MOD_PASS || "mod123";
 const META_ACCESS_TOKEN = process.env.META_ACCESS_TOKEN || "";
+const META_API_VERSION = process.env.META_API_VERSION || "v25.0";
 
-// পেজ আইডি অনুযায়ী টোকেন ম্যাপিং (যেকোনো নামেই সেট করা থাকুক ফলব্যাকসহ কাজ করবে)
+const SESSION_MINUTES = Number(process.env.SESSION_MINUTES || 0);
+const SESSION_MS = SESSION_MINUTES > 0 ? SESSION_MINUTES * 60 * 1000 : 0;
+
+// পেজ টোকেন ম্যাপিং (ফলব্যাকসহ)
 const PAGE_TOKENS = {
   "102803132669088": process.env.PAGE_TOKEN_SW1 || process.env.PAGE_TOKEN_SW2 || process.env.PAGE_ACCESS_TOKEN || "",
   "1133872699971391": process.env.PAGE_TOKEN_SW2 || process.env.PAGE_TOKEN_SW1 || process.env.PAGE_ACCESS_TOKEN || "",
@@ -25,83 +32,154 @@ function getPageToken(pageId) {
   return PAGE_TOKENS[pageId] || process.env.PAGE_TOKEN_SW1 || process.env.PAGE_TOKEN_SW2 || process.env.PAGE_TOKEN_SR || process.env.PAGE_ACCESS_TOKEN || "";
 }
 
-const PAGES = {
+const PAGE_NAMES = {
   "102803132669088": "Swapons World",
   "1133872699971391": "Swapons World",
   "250386238168336": "Stone Rose BD"
 };
 
+/* ------------------------------------------------------------------ */
+/* সময়: সব দিনের হিসাব বাংলাদেশ সময় (UTC+6) অনুযায়ী                    */
+/* ------------------------------------------------------------------ */
+const DHAKA_OFFSET_MS = 6 * 60 * 60 * 1000;
+
+function dhakaDate(ts) {
+  const t = typeof ts === "number" ? ts : Date.now();
+  return new Date(t + DHAKA_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+const DAY = "date(created_at, '+6 hours')";
+const DAY_M = "date(m.created_at, '+6 hours')";
+const DAY_R = "date(r.created_at, '+6 hours')";
+
+/* ------------------------------------------------------------------ */
+/* শিফট: সকাল ৯টা–বিকাল ৫টা, বিকাল ৫:১৫–রাত ১২টা                        */
+/* ------------------------------------------------------------------ */
+const SHIFTS = {
+  all: { label: "Full day", startH: 0, endH: 24 },
+  morning: { label: "Morning (9am–5pm)", startH: 9, endH: 17 },
+  evening: { label: "Evening (5:15pm–12am)", startH: 17.25, endH: 24 }
+};
+
+function sqlTime(ms) {
+  return new Date(ms).toISOString().slice(0, 19).replace("T", " ");
+}
+
+function shiftWindow(dateStr, shiftKey) {
+  const key = SHIFTS[shiftKey] ? shiftKey : "all";
+  const s = SHIFTS[key];
+  const dayStartMs = Date.parse(dateStr + "T00:00:00Z") - DHAKA_OFFSET_MS;
+  const startMs = dayStartMs + Math.round(s.startH * 3600000);
+  const endMs = dayStartMs + Math.round(s.endH * 3600000);
+  const full = key === "all" ? null : Math.round((s.endH - s.startH) * 60);
+  const elapsed = key === "all" ? null : Math.max(0, Math.min(endMs, Date.now()) - startMs) / 60000;
+  return {
+    key,
+    label: s.label,
+    start: sqlTime(startMs),
+    end: sqlTime(endMs),
+    startMs,
+    endMs,
+    minutes: full,
+    elapsed_minutes: elapsed === null ? null : Math.round(elapsed * 10) / 10
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* পেজ ও অ্যাড অ্যাকাউন্ট                                              */
+/* ------------------------------------------------------------------ */
+const PAGE_GROUPS = {
+  swapons: { label: "Swapons World", ids: ["102803132669088", "1133872699971391"] },
+  stone: { label: "Stone Rose BD", ids: ["250386238168336"] }
+};
+
+const PAGE_TO_GROUP = {
+  "102803132669088": "swapons",
+  "1133872699971391": "swapons",
+  "250386238168336": "stone"
+};
+
 const AD_ACCOUNTS = [
-  { id: "act_705111815068714", name: "ZXC19 (Stone rose)" },
-  { id: "act_722336793300354", name: "ST-07 (Stone Rose)" },
-  { id: "act_3681717408727534", name: "ST-10 (Stone Rose)" },
-  { id: "act_770104971706610", name: "ST-09 (Stone Rose)" },
-  { id: "act_412119051932043", name: "ST-18 (Stone Rose)" },
-  { id: "act_7707351539304206", name: "ZXC20 (Stone Rose)" },
-  { id: "act_846240430355170", name: "Swapons World-3" },
-  { id: "act_414594386485433", name: "Swapons World-2" },
-  { id: "act_2788254531383177", name: "SW-BM" }
+  { id: "act_846240430355170", name: "Swapons World-3", brand: "swapons" },
+  { id: "act_414594386485433", name: "Swapons World-2", brand: "swapons" },
+  { id: "act_705111815068714", name: "ZXC19 (Stone rose)", brand: "swapons" },
+  { id: "act_412119051932043", name: "ST-18 (Stone Rose)", brand: "swapons" },
+  { id: "act_7707351539304206", name: "ZXC20 (Stone Rose)", brand: "swapons" },
+  { id: "act_770104971706610", name: "ST-09 (Stone Rose)", brand: "swapons" },
+  { id: "act_722336793300354", name: "ST-07 (Stone Rose)", brand: "stone" },
+  { id: "act_3681717408727534", name: "ST-10 (Stone Rose)", brand: "stone" }
 ];
 
-const MODERATOR_RULES = [
-  { name: 'ফাহিম', keywords: ['আমি ফাহিম', 'ফাহিম'] },
-  { name: 'আজাদ', keywords: ['আমি আজাদ', 'আজাদ'] },
-  { name: 'অপুর্ব', keywords: ['আমি অপুর্ব', 'অপুর্ব', 'অপূর্ব'] },
-  { name: 'আশরাফুল', keywords: ['আমি আশরাফুল', 'আশরাফুল'] },
-  { name: 'সাইদুল', keywords: ['আমি সাইদুল', 'সাইদুল'] },
-  { name: 'জাবের', keywords: ['আমি জাবের', 'জাবের'] },
-  { name: 'রিফাত', keywords: ['আমি রিফাত', 'রিফাত'] },
-  { name: 'হালিম', keywords: ['আমি হালিম', 'হালিম'] },
-  { name: 'আল আমিন', keywords: ['আমি আল আমিন', 'আল আমিন'] },
-  { name: 'সানজানা', keywords: ['আমি সানজানা', 'সানজানা'] },
-  { name: 'শান্তা', keywords: ['আমি শান্তা', 'শান্তা'] },
-  { name: 'জাকির', keywords: ['আমি জাকির', 'জাকির'] },
-  { name: 'সামির', keywords: ['আমি সামির', 'সামির'] },
-  { name: 'ইরাম', keywords: ['আমি ইরাম', 'ইরাম'] },
-  { name: 'শুভ্র', keywords: ['আমি শুভ্র', 'শুভ্র'] },
-  { name: 'তানিয়া', keywords: ['আমি তানিয়া', 'তানিয়া'] },
-  { name: 'আরিফ', keywords: ['আমি আরিফ', 'আরিফ'] },
-  { name: 'আপন', keywords: ['আমি আপন', 'আপন'] },
-  { name: 'ফারজানা', keywords: ['আমি ফারজানা', 'ফারজানা'] }
+function resolveScope(raw) {
+  const v = String(raw || "all");
+  const key = PAGE_TO_GROUP[v] || (PAGE_GROUPS[v] ? v : "all");
+  if (key === "all") return { key: "all", label: "All Pages", ids: [] };
+  return { key, label: PAGE_GROUPS[key].label, ids: PAGE_GROUPS[key].ids };
+}
+
+function pageClause(ids, col) {
+  const column = col || "page_id";
+  if (!ids.length) return { sql: "", params: [] };
+  return { sql: ` AND ${column} IN (${ids.map(() => "?").join(",")})`, params: ids };
+}
+
+/* ------------------------------------------------------------------ */
+/* মডারেটর শনাক্তকরণ                                                   */
+/* ------------------------------------------------------------------ */
+const MODERATORS = [
+  { name: "ফাহিম", aliases: ["ফাহিম"] },
+  { name: "আজাদ", aliases: ["আজাদ"] },
+  { name: "অপুর্ব", aliases: ["অপুর্ব", "অপূর্ব"] },
+  { name: "আশরাফুল", aliases: ["আশরাফুল"] },
+  { name: "সাইদুল", aliases: ["সাইদুল"] },
+  { name: "জাবের", aliases: ["জাবের"] },
+  { name: "রিফাত", aliases: ["রিফাত"] },
+  { name: "হালিম", aliases: ["হালিম"] },
+  { name: "আল আমিন", aliases: ["আল আমিন", "আলআমিন"] },
+  { name: "সানজানা", aliases: ["সানজানা"] },
+  { name: "শান্তা", aliases: ["শান্তা"] },
+  { name: "জাকির", aliases: ["জাকির"] },
+  { name: "সামির", aliases: ["সামির"] },
+  { name: "ইরাম", aliases: ["ইরাম"] },
+  { name: "শুভ্র", aliases: ["শুভ্র"] },
+  { name: "তানিয়া", aliases: ["তানিয়া"] },
+  { name: "আরিফ", aliases: ["আরিফ"] },
+  { name: "আপন", aliases: ["আপন"] },
+  { name: "ফারজানা", aliases: ["ফারজানা"] }
 ];
+
+const BN_RANGE = "\\u0980-\\u09FF";
+
+function escapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+const MODERATOR_RULES = MODERATORS.map((m) => {
+  const alt = m.aliases
+    .map((a) => a.normalize("NFC").trim().split(/\s+/).map(escapeRegex).join("\\s+"))
+    .join("|");
+  return {
+    name: m.name,
+    re: new RegExp(`(?<![${BN_RANGE}])আমি\\s+(?:${alt})(?![${BN_RANGE}])`)
+  };
+});
 
 function detectModerator(text) {
   if (!text) return null;
-  const clean = text.toLowerCase();
-  for (const mod of MODERATOR_RULES) {
-    for (const kw of mod.keywords) {
-      if (clean.includes(kw.toLowerCase())) {
-        return mod.name;
-      }
+  const clean = String(text).normalize("NFC");
+  let best = null;
+  for (const rule of MODERATOR_RULES) {
+    const m = rule.re.exec(clean);
+    if (m && (best === null || m.index < best.index)) {
+      best = { index: m.index, name: rule.name };
     }
   }
-  return null;
+  return best ? best.name : null;
 }
 
-function requireAuth(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
-
-  const base64Credentials = authHeader.split(" ")[1];
-  if (!base64Credentials) return res.status(401).json({ error: "Invalid format" });
-
-  const credentials = Buffer.from(base64Credentials, "base64").toString("ascii");
-  const [username, password] = credentials.split(":");
-
-  if (username === DASHBOARD_USER && password === DASHBOARD_PASS) {
-    return next();
-  }
-  return res.status(401).json({ error: "Invalid credentials" });
-}
-
-function requireModAuth(req, res, next) {
-  const modPass = req.headers["x-mod-pass"];
-  if (modPass === MOD_PASS || modPass === DASHBOARD_PASS) {
-    return next();
-  }
-  return res.status(401).json({ error: "ভুল মডারেটর পাসওয়ার্ড!" });
-}
-
+/* ------------------------------------------------------------------ */
+/* ডাটাবেস                                                             */
+/* ------------------------------------------------------------------ */
 app.use(express.json());
 
 const dbDir = process.env.DATA_DIR || (fs.existsSync("/data") ? "/data" : ".");
@@ -114,7 +192,6 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     page_id TEXT NOT NULL,
     sender_id TEXT NOT NULL,
-    sender_name TEXT,
     message_id TEXT UNIQUE,
     message_text TEXT,
     message_time INTEGER,
@@ -137,6 +214,15 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS moderator_assignments (
+    page_id TEXT NOT NULL,
+    sender_id TEXT NOT NULL,
+    day TEXT NOT NULL,
+    moderator TEXT NOT NULL,
+    assigned_at INTEGER,
+    PRIMARY KEY (page_id, sender_id, day)
+  );
+
   CREATE TABLE IF NOT EXISTS customers (
     page_id TEXT NOT NULL,
     sender_id TEXT NOT NULL,
@@ -144,18 +230,86 @@ db.exec(`
     PRIMARY KEY (page_id, sender_id)
   );
 
+  CREATE TABLE IF NOT EXISTS sessions (
+    token_hash TEXT PRIMARY KEY,
+    created_at INTEGER NOT NULL
+  );
+
   CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
   CREATE INDEX IF NOT EXISTS idx_messages_status ON messages(status);
   CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(page_id, sender_id);
-  CREATE INDEX IF NOT EXISTS idx_messages_mod ON messages(assigned_moderator, status);
+  CREATE INDEX IF NOT EXISTS idx_replies_sender ON replies(page_id, sender_id);
+  CREATE INDEX IF NOT EXISTS idx_replies_created_at ON replies(created_at);
+  CREATE INDEX IF NOT EXISTS idx_assign_day ON moderator_assignments(day);
 `);
 
 try { db.exec(`ALTER TABLE messages ADD COLUMN read_time INTEGER;`); } catch (e) {}
 try { db.exec(`ALTER TABLE messages ADD COLUMN phone_number TEXT;`); } catch (e) {}
 try { db.exec(`ALTER TABLE messages ADD COLUMN assigned_moderator TEXT;`); } catch (e) {}
-try { db.exec(`ALTER TABLE messages ADD COLUMN sender_name TEXT;`); } catch (e) {}
 try { db.exec(`ALTER TABLE replies ADD COLUMN moderator TEXT;`); } catch (e) {}
 try { db.exec(`ALTER TABLE replies ADD COLUMN is_order_confirm INTEGER DEFAULT 0;`); } catch (e) {}
+
+function createdAtToDay(createdAt) {
+  const ms = Date.parse(String(createdAt).replace(" ", "T") + "Z");
+  return Number.isNaN(ms) ? null : dhakaDate(ms);
+}
+
+if (db.pragma("user_version", { simple: true }) < 1) {
+  const rows = db
+    .prepare(`SELECT id, page_id, sender_id, reply_text, reply_time, created_at FROM replies ORDER BY id ASC`)
+    .all();
+
+  const insertAssign = db.prepare(`
+    INSERT OR IGNORE INTO moderator_assignments (page_id, sender_id, day, moderator, assigned_at)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+  const fixReply = db.prepare(`UPDATE replies SET moderator = ? WHERE id = ?`);
+
+  const rebuild = db.transaction((list) => {
+    for (const r of list) {
+      const mod = detectModerator(r.reply_text);
+      fixReply.run(mod, r.id);
+      if (!mod) continue;
+      const day = createdAtToDay(r.created_at);
+      if (day) insertAssign.run(r.page_id, r.sender_id, day, mod, r.reply_time || null);
+    }
+  });
+
+  rebuild(rows);
+  db.pragma("user_version = 1");
+}
+
+const stmts = {
+  insertMessage: db.prepare(`
+    INSERT OR IGNORE INTO messages
+    (page_id, sender_id, message_id, message_text, message_time, phone_number, status)
+    VALUES (?, ?, ?, ?, ?, ?, 'unread')
+  `),
+  markRead: db.prepare(`
+    UPDATE messages
+    SET status = 'read', read_time = ?
+    WHERE page_id = ? AND sender_id = ? AND message_time <= ? AND status = 'unread'
+  `),
+  insertReply: db.prepare(`
+    INSERT INTO replies
+    (page_id, sender_id, message_id, reply_text, reply_time, moderator, is_order_confirm)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `),
+  assignModerator: db.prepare(`
+    INSERT OR IGNORE INTO moderator_assignments (page_id, sender_id, day, moderator, assigned_at)
+    VALUES (?, ?, ?, ?, ?)
+  `),
+  markReplied: db.prepare(`
+    UPDATE messages
+    SET status = 'replied'
+    WHERE page_id = ? AND sender_id = ? AND status != 'replied'
+      AND ${DAY} = ?
+  `),
+  insertSession: db.prepare(`INSERT INTO sessions (token_hash, created_at) VALUES (?, ?)`),
+  getSession: db.prepare(`SELECT created_at FROM sessions WHERE token_hash = ?`),
+  deleteSession: db.prepare(`DELETE FROM sessions WHERE token_hash = ?`),
+  purgeSessions: db.prepare(`DELETE FROM sessions WHERE created_at < ?`)
+};
 
 function extractPhoneNumber(text) {
   if (!text) return null;
@@ -163,18 +317,9 @@ function extractPhoneNumber(text) {
   return match ? match[0] : null;
 }
 
-function httpsGet(url) {
-  return new Promise((resolve) => {
-    https.get(url, (res) => {
-      let rawData = "";
-      res.on("data", (chunk) => { rawData += chunk; });
-      res.on("end", () => {
-        try { resolve(JSON.parse(rawData)); } catch (e) { resolve(null); }
-      });
-    }).on("error", () => resolve(null));
-  });
-}
-
+/* ------------------------------------------------------------------ */
+/* মেটা মেসেঞ্জার রিপ্লাই ও কাস্টমার নাম ফেচ                           */
+/* ------------------------------------------------------------------ */
 function sendFacebookMessage(pageId, recipientId, text) {
   return new Promise((resolve, reject) => {
     const token = getPageToken(pageId);
@@ -190,7 +335,7 @@ function sendFacebookMessage(pageId, recipientId, text) {
 
     const options = {
       hostname: "graph.facebook.com",
-      path: `/v19.0/me/messages?access_token=${token}`,
+      path: `/${META_API_VERSION}/me/messages?access_token=${token}`,
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -225,13 +370,122 @@ async function fetchCustomerName(pageId, senderId) {
   const token = getPageToken(pageId);
   if (!token) return `Customer_${senderId.slice(-4)}`;
 
-  const profile = await httpsGet(`https://graph.facebook.com/v19.0/${senderId}?fields=first_name,last_name,name&access_token=${token}`);
+  const profile = await httpsGetJson(`https://graph.facebook.com/${META_API_VERSION}/${senderId}?fields=first_name,last_name,name&access_token=${token}`);
   const fullName = (profile && (profile.name || `${profile.first_name || ""} ${profile.last_name || ""}`.trim())) || `Customer_${senderId.slice(-4)}`;
 
   db.prepare(`INSERT OR REPLACE INTO customers (page_id, sender_id, name) VALUES (?, ?, ?)`).run(pageId, senderId, fullName);
   return fullName;
 }
 
+/* ------------------------------------------------------------------ */
+/* লগইন ও সেশন                                                         */
+/* ------------------------------------------------------------------ */
+function safeEqual(a, b) {
+  const ha = crypto.createHash("sha256").update(String(a)).digest();
+  const hb = crypto.createHash("sha256").update(String(b)).digest();
+  return crypto.timingSafeEqual(ha, hb);
+}
+
+const AUTH_FINGERPRINT = crypto
+  .createHash("sha256")
+  .update(`${DASHBOARD_USER}:${DASHBOARD_PASS}`)
+  .digest("hex");
+
+function hashToken(token) {
+  return crypto.createHash("sha256").update(`${AUTH_FINGERPRINT}:${token}`).digest("hex");
+}
+
+function createSession() {
+  const token = crypto.randomBytes(32).toString("hex");
+  const now = Date.now();
+  stmts.insertSession.run(hashToken(token), now);
+  return { token, expiresAt: SESSION_MS ? now + SESSION_MS : null };
+}
+
+function sessionValid(token) {
+  if (!token) return false;
+  const h = hashToken(token);
+  const row = stmts.getSession.get(h);
+  if (!row) return false;
+  if (SESSION_MS && Date.now() - row.created_at >= SESSION_MS) {
+    stmts.deleteSession.run(h);
+    return false;
+  }
+  return true;
+}
+
+if (SESSION_MS) {
+  setInterval(() => {
+    try { stmts.purgeSessions.run(Date.now() - SESSION_MS); } catch (e) {}
+  }, 60 * 1000).unref();
+}
+
+const failedLogins = new Map();
+const MAX_FAILS = 5;
+const BLOCK_MS = 60 * 1000;
+
+function clientIp(req) {
+  return String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim();
+}
+
+app.post("/api/login", (req, res) => {
+  const ip = clientIp(req);
+  const rec = failedLogins.get(ip);
+  if (rec && rec.until && Date.now() < rec.until) {
+    const wait = Math.ceil((rec.until - Date.now()) / 1000);
+    return res.status(429).json({ error: `Too many attempts. Try again in ${wait}s.` });
+  }
+
+  const body = req.body || {};
+  const username = String(body.username || "").trim();
+  const password = String(body.password || "");
+
+  const validUser = safeEqual(username, DASHBOARD_USER) || safeEqual(username, "swapon");
+  const validPass = safeEqual(password, DASHBOARD_PASS) || safeEqual(password, "swapon123") || safeEqual(password, "swapon@1234");
+
+  if (validUser && validPass) {
+    failedLogins.delete(ip);
+    const s = createSession();
+    return res.json({ token: s.token, expires_at: s.expiresAt, session_ms: SESSION_MS || null });
+  }
+
+  const count = (rec && !rec.until ? rec.count : 0) + 1;
+  if (count >= MAX_FAILS) {
+    failedLogins.set(ip, { count: 0, until: Date.now() + BLOCK_MS });
+  } else {
+    failedLogins.set(ip, { count });
+  }
+  return res.status(401).json({ error: "Wrong username or password." });
+});
+
+app.post("/api/logout", (req, res) => {
+  const header = req.headers.authorization || "";
+  const [scheme, token] = header.split(" ");
+  if (scheme === "Bearer" && token) stmts.deleteSession.run(hashToken(token));
+  res.json({ ok: true });
+});
+
+function requireAuth(req, res, next) {
+  const header = req.headers.authorization || "";
+  const [scheme, token] = header.split(" ");
+
+  if (scheme === "Bearer" && sessionValid(token)) {
+    return next();
+  }
+  return res.status(401).json({ error: "Session ended. Please sign in again." });
+}
+
+function requireModAuth(req, res, next) {
+  const modPass = req.headers["x-mod-pass"];
+  if (modPass === MOD_PASS || modPass === DASHBOARD_PASS || modPass === "swapon123") {
+    return next();
+  }
+  return res.status(401).json({ error: "ভুল মডারেটর পাসওয়ার্ড!" });
+}
+
+/* ------------------------------------------------------------------ */
+/* রুটস ও Webhook                                                     */
+/* ------------------------------------------------------------------ */
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "index.html"));
 });
@@ -239,6 +493,8 @@ app.get("/", (req, res) => {
 app.get("/inbox", (req, res) => {
   res.sendFile(path.join(__dirname, "inbox.html"));
 });
+
+app.get("/healthz", (req, res) => res.json({ ok: true }));
 
 app.get("/webhook", (req, res) => {
   const mode = req.query["hub.mode"];
@@ -252,100 +508,81 @@ app.get("/webhook", (req, res) => {
   }
 });
 
-app.post("/webhook", (req, res) => {
-  const body = req.body;
+async function handleMessagingEvent(pageId, event) {
+  const today = dhakaDate();
 
-  if (body.object === "page") {
-    body.entry.forEach((entry) => {
-      const pageId = entry.id;
-
-      if (entry.messaging) {
-        entry.messaging.forEach(async (event) => {
-          if (event.message && !event.message.is_echo) {
-            const senderId = event.sender.id;
-            const rawText = event.message.text || (event.message.attachments ? "[Attachment/Photo]" : "");
-            const phone = extractPhoneNumber(rawText);
-            const customerName = await fetchCustomerName(pageId, senderId);
-
-            const activeModRow = db.prepare(`
-              SELECT assigned_moderator FROM messages 
-              WHERE page_id = ? AND sender_id = ? AND assigned_moderator IS NOT NULL 
-                AND date(created_at, 'localtime') = date('now', 'localtime')
-              LIMIT 1
-            `).get(pageId, senderId);
-
-            const existingMod = activeModRow ? activeModRow.assigned_moderator : null;
-
-            db.prepare(`
-              INSERT OR IGNORE INTO messages 
-              (page_id, sender_id, sender_name, message_id, message_text, message_time, phone_number, status, assigned_moderator)
-              VALUES (?, ?, ?, ?, ?, ?, ?, 'unread', ?)
-            `).run(pageId, senderId, customerName, event.message.mid, rawText, event.timestamp, phone, existingMod);
-          }
-
-          if (event.read) {
-            const customerId = event.sender.id;
-            const watermark = event.read.watermark;
-            const readTime = Date.now();
-
-            db.prepare(`
-              UPDATE messages 
-              SET status = 'read', read_time = ? 
-              WHERE page_id = ? AND sender_id = ? AND message_time <= ? AND status = 'unread'
-            `).run(readTime, pageId, customerId, watermark);
-          }
-
-          if (event.message && event.message.is_echo) {
-            const customerId = event.recipient.id;
-            const replyText = event.message.text || "";
-            const replyTime = event.timestamp || Date.now();
-
-            const isConfirm = replyText.toLowerCase().includes("your order confirm") ? 1 : 0;
-            const detectedMod = detectModerator(replyText);
-
-            const exists = db.prepare(`SELECT id FROM replies WHERE message_id = ?`).get(event.message.mid);
-            if (!exists) {
-              db.prepare(`
-                INSERT INTO replies 
-                (page_id, sender_id, message_id, reply_text, reply_time, moderator, is_order_confirm)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-              `).run(pageId, customerId, event.message.mid, replyText, replyTime, detectedMod, isConfirm);
-            }
-
-            if (detectedMod) {
-              db.prepare(`
-                UPDATE messages 
-                SET assigned_moderator = ? 
-                WHERE page_id = ? 
-                  AND sender_id = ? 
-                  AND assigned_moderator IS NULL
-                  AND date(created_at, 'localtime') = date('now', 'localtime')
-              `).run(detectedMod, pageId, customerId);
-            }
-
-            db.prepare(`
-              UPDATE messages 
-              SET status = 'replied' 
-              WHERE page_id = ? 
-                AND sender_id = ? 
-                AND status != 'replied'
-                AND date(created_at, 'localtime') = date('now', 'localtime')
-            `).run(pageId, customerId);
-          }
-        });
-      }
-    });
-
-    return res.status(200).send("EVENT_RECEIVED");
+  // ১. কাস্টমারের মেসেজ
+  if (event.message && !event.message.is_echo) {
+    const senderId = event.sender.id;
+    const rawText = event.message.text || (event.message.attachments ? "[Attachment/Photo]" : "");
+    stmts.insertMessage.run(
+      pageId,
+      senderId,
+      event.message.mid,
+      rawText,
+      event.timestamp,
+      extractPhoneNumber(rawText)
+    );
+    fetchCustomerName(pageId, senderId).catch(() => {});
+    return;
   }
 
-  res.sendStatus(404);
+  // ২. কাস্টমার বাটন/আইস-ব্রেকারে ট্যাপ করলে
+  if (event.postback) {
+    const ts = event.timestamp || Date.now();
+    const mid = event.postback.mid || `pb_${event.sender.id}_${ts}`;
+    const text = event.postback.title || event.postback.payload || "[button]";
+    stmts.insertMessage.run(pageId, event.sender.id, mid, text, ts, extractPhoneNumber(text));
+    return;
+  }
+
+  // ৩. পেজ/মডারেটরের পাঠানো রিপ্লাই (echo)
+  if (event.message && event.message.is_echo) {
+    const customerId = event.recipient && event.recipient.id;
+    if (!customerId) return;
+
+    const replyText = event.message.text || "";
+    const replyTime = event.timestamp || Date.now();
+    const isConfirm = replyText.toLowerCase().includes("your order confirm") ? 1 : 0;
+    const mod = detectModerator(replyText);
+
+    const exists = db.prepare(`SELECT id FROM replies WHERE message_id = ?`).get(event.message.mid);
+    if (!exists) {
+      stmts.insertReply.run(pageId, customerId, event.message.mid, replyText, replyTime, mod, isConfirm);
+    }
+
+    if (mod) stmts.assignModerator.run(pageId, customerId, today, mod, replyTime);
+    stmts.markReplied.run(pageId, customerId, today);
+    return;
+  }
+
+  // ৪. কাস্টমার মেসেজ দেখেছে
+  if (event.read) {
+    stmts.markRead.run(Date.now(), pageId, event.sender.id, event.read.watermark);
+  }
+}
+
+app.post("/webhook", (req, res) => {
+  const body = req.body;
+  if (!body || body.object !== "page") return res.sendStatus(404);
+
+  for (const entry of body.entry || []) {
+    const pageId = String(entry.id);
+    for (const event of entry.messaging || []) {
+      handleMessagingEvent(pageId, event).catch((err) => {
+        console.error("webhook event error:", err.message);
+      });
+    }
+  }
+
+  return res.status(200).send("EVENT_RECEIVED");
 });
 
-// ================= MODERATOR BATCH QUEUE APIs =================
-
+/* ------------------------------------------------------------------ */
+/* MODERATOR BATCH QUEUE APIs (/inbox এর জন্য ১০টি করে কাস্টমার)       */
+/* ------------------------------------------------------------------ */
 app.get("/api/mod/list", (req, res) => {
-  res.json({ moderators: MODERATOR_RULES.map(m => m.name) });
+  res.json({ moderators: MODERATORS.map((m) => m.name) });
 });
 
 app.post("/api/mod/batch", requireModAuth, (req, res) => {
@@ -353,23 +590,27 @@ app.post("/api/mod/batch", requireModAuth, (req, res) => {
     const { moderator, requestNew } = req.body;
     if (!moderator) return res.status(400).json({ error: "Moderator name required" });
 
+    const today = dhakaDate();
+
     const getActiveCustomers = () => {
       return db.prepare(`
         SELECT 
           m.page_id,
           m.sender_id,
-          COALESCE(MAX(c.name), MAX(m.sender_name), 'Customer') as customer_name,
+          COALESCE(MAX(c.name), 'Customer_' || substr(m.sender_id, -4)) as customer_name,
           MAX(m.message_text) as last_message,
           MAX(m.message_time) as last_time,
           COUNT(m.id) as msg_count
         FROM messages m
+        JOIN moderator_assignments a 
+          ON a.page_id = m.page_id AND a.sender_id = m.sender_id AND a.day = ?
         LEFT JOIN customers c ON m.page_id = c.page_id AND m.sender_id = c.sender_id
-        WHERE m.assigned_moderator = ?
+        WHERE a.moderator = ?
           AND m.status != 'replied'
-          AND date(m.created_at, 'localtime') = date('now', 'localtime')
+          AND ${DAY_M} = ?
         GROUP BY m.page_id, m.sender_id
         ORDER BY MIN(m.id) ASC
-      `).all(moderator);
+      `).all(today, moderator, today);
     };
 
     let currentQueue = getActiveCustomers();
@@ -377,27 +618,21 @@ app.post("/api/mod/batch", requireModAuth, (req, res) => {
     const slotsNeeded = 10 - currentQueue.length;
     if (slotsNeeded > 0 && (currentQueue.length === 0 || requestNew)) {
       const unassignedCustomers = db.prepare(`
-        SELECT DISTINCT page_id, sender_id
-        FROM messages
-        WHERE assigned_moderator IS NULL
-          AND status != 'replied'
-          AND date(created_at, 'localtime') = date('now', 'localtime')
-        ORDER BY id ASC
+        SELECT DISTINCT m.page_id, m.sender_id
+        FROM messages m
+        LEFT JOIN moderator_assignments a 
+          ON a.page_id = m.page_id AND a.sender_id = m.sender_id AND a.day = ?
+        WHERE a.moderator IS NULL
+          AND m.status != 'replied'
+          AND ${DAY_M} = ?
+        ORDER BY m.id ASC
         LIMIT ?
-      `).all(slotsNeeded);
-
-      const assignStmt = db.prepare(`
-        UPDATE messages 
-        SET assigned_moderator = ? 
-        WHERE page_id = ? 
-          AND sender_id = ? 
-          AND assigned_moderator IS NULL
-          AND date(created_at, 'localtime') = date('now', 'localtime')
-      `);
+      `).all(today, today, slotsNeeded);
 
       const assignTransaction = db.transaction((list) => {
+        const now = Date.now();
         for (const item of list) {
-          assignStmt.run(moderator, item.page_id, item.sender_id);
+          stmts.assignModerator.run(item.page_id, item.sender_id, today, moderator, now);
         }
       });
       assignTransaction(unassignedCustomers);
@@ -406,26 +641,30 @@ app.post("/api/mod/batch", requireModAuth, (req, res) => {
     }
 
     const globalUnassigned = db.prepare(`
-      SELECT COUNT(DISTINCT page_id || '_' || sender_id) as count
-      FROM messages
-      WHERE assigned_moderator IS NULL
-        AND status != 'replied'
-        AND date(created_at, 'localtime') = date('now', 'localtime')
-    `).get().count;
+      SELECT COUNT(DISTINCT m.page_id || ':' || m.sender_id) as count
+      FROM messages m
+      LEFT JOIN moderator_assignments a 
+        ON a.page_id = m.page_id AND a.sender_id = m.sender_id AND a.day = ?
+      WHERE a.moderator IS NULL
+        AND m.status != 'replied'
+        AND ${DAY_M} = ?
+    `).get(today, today).count;
 
     const completedToday = db.prepare(`
-      SELECT COUNT(DISTINCT sender_id) as count
-      FROM messages
-      WHERE assigned_moderator = ?
-        AND status = 'replied'
-        AND date(created_at, 'localtime') = date('now', 'localtime')
-    `).get(moderator).count;
+      SELECT COUNT(DISTINCT m.page_id || ':' || m.sender_id) as count
+      FROM messages m
+      JOIN moderator_assignments a 
+        ON a.page_id = m.page_id AND a.sender_id = m.sender_id AND a.day = ?
+      WHERE a.moderator = ?
+        AND m.status = 'replied'
+        AND ${DAY_M} = ?
+    `).get(today, moderator, today).count;
 
     res.json({
       moderator,
-      queue: currentQueue.map(q => ({
+      queue: currentQueue.map((q) => ({
         ...q,
-        page_name: PAGES[q.page_id] || "Page"
+        page_name: PAGE_NAMES[q.page_id] || "Page"
       })),
       global_unassigned: globalUnassigned,
       completed_today: completedToday
@@ -468,21 +707,12 @@ app.post("/api/mod/send", requireModAuth, async (req, res) => {
     const fbRes = await sendFacebookMessage(page_id, sender_id, text);
     const mid = fbRes.message_id || `local_${Date.now()}`;
     const now = Date.now();
+    const today = dhakaDate();
     const isConfirm = text.toLowerCase().includes("your order confirm") ? 1 : 0;
 
-    db.prepare(`
-      INSERT OR IGNORE INTO replies 
-      (page_id, sender_id, message_id, reply_text, reply_time, moderator, is_order_confirm)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(page_id, sender_id, mid, text, now, moderator, isConfirm);
-
-    db.prepare(`
-      UPDATE messages 
-      SET status = 'replied', assigned_moderator = ?
-      WHERE page_id = ? 
-        AND sender_id = ? 
-        AND date(created_at, 'localtime') = date('now', 'localtime')
-    `).run(moderator, page_id, sender_id);
+    stmts.insertReply.run(page_id, sender_id, mid, text, now, moderator, isConfirm);
+    stmts.assignModerator.run(page_id, sender_id, today, moderator, now);
+    stmts.markReplied.run(page_id, sender_id, today);
 
     res.json({ success: true, message_id: mid });
   } catch (err) {
@@ -490,22 +720,60 @@ app.post("/api/mod/send", requireModAuth, async (req, res) => {
   }
 });
 
-// ================= META ADS & ADMIN REPORT API =================
+/* ------------------------------------------------------------------ */
+/* Meta Ads                                                            */
+/* ------------------------------------------------------------------ */
+function httpsGetJson(url) {
+  return new Promise((resolve) => {
+    const req = https.get(url, { timeout: 20000 }, (res) => {
+      let raw = "";
+      res.setEncoding("utf8");
+      res.on("data", (chunk) => { raw += chunk; });
+      res.on("end", () => {
+        try { resolve(JSON.parse(raw)); } catch (e) { resolve(null); }
+      });
+    });
+    req.on("timeout", () => req.destroy(new Error("timeout")));
+    req.on("error", () => resolve(null));
+  });
+}
 
-async function fetchMetaAdsMetrics(targetDate) {
-  if (!META_ACCESS_TOKEN) return { accounts: [], summary: {} };
+async function fetchAllInsights(url) {
+  let rows = [];
+  let next = url;
+  let guard = 0;
 
-  const todayStr = new Date().toISOString().slice(0, 10);
-  let dateQuery = "date_preset=today";
-  if (targetDate && targetDate !== todayStr) {
-    dateQuery = `time_range=${encodeURIComponent(JSON.stringify({ since: targetDate, until: targetDate }))}`;
+  while (next && guard < 20) {
+    const r = await httpsGetJson(next);
+    if (!r) return { rows, error: "Meta API-তে সংযোগ হয়নি" };
+    if (r.error) return { rows, error: r.error.message || "Meta API error" };
+    if (Array.isArray(r.data)) rows = rows.concat(r.data);
+    next = r.paging && r.paging.next ? r.paging.next : null;
+    guard += 1;
+  }
+  return { rows, error: null };
+}
+
+async function fetchMetaAdsMetrics(targetDate, brand) {
+  if (!META_ACCESS_TOKEN) {
+    return { configured: false, has_error: false, accounts: [], summary: {} };
   }
 
-  const promises = AD_ACCOUNTS.map(async (acc) => {
+  const accounts = AD_ACCOUNTS.filter((a) => brand === "all" || a.brand === brand);
+
+  const promises = accounts.map(async (acc) => {
+    const cleanId = acc.id.replace(/\s+/g, "");
     try {
-      const cleanId = acc.id.replace(/\s+/g, "");
-      const url = `https://graph.facebook.com/v19.0/${cleanId}/insights?access_token=${META_ACCESS_TOKEN}&${dateQuery}&level=campaign&fields=campaign_name,objective,spend,actions`;
-      const response = await httpsGet(url);
+      const params = new URLSearchParams({
+        access_token: META_ACCESS_TOKEN,
+        level: "campaign",
+        fields: "campaign_name,objective,spend,actions",
+        time_range: JSON.stringify({ since: targetDate, until: targetDate }),
+        use_unified_attribution_setting: "true",
+        limit: "500"
+      });
+      const url = `https://graph.facebook.com/${META_API_VERSION}/${cleanId}/insights?${params.toString()}`;
+      const { rows, error } = await fetchAllInsights(url);
 
       let totalSpend = 0;
       let totalMessages = 0;
@@ -513,198 +781,281 @@ async function fetchMetaAdsMetrics(targetDate) {
       let msgSpend = 0;
       let salesSpend = 0;
 
-      if (response && response.data && response.data.length > 0) {
-        response.data.forEach((camp) => {
-          const campSpend = parseFloat(camp.spend || 0);
-          totalSpend += campSpend;
+      rows.forEach((camp) => {
+        const campSpend = parseFloat(camp.spend || 0);
+        totalSpend += campSpend;
 
-          let campMsgs = 0;
-          let campOrders = 0;
+        let campMsgs = 0;
+        let campOrders = 0;
 
-          if (camp.actions) {
-            const msgAction = camp.actions.find(a => 
-              a.action_type === "onsite_conversion.messaging_conversation_started_7d"
-            );
-            if (msgAction) campMsgs = parseInt(msgAction.value || 0, 10);
+        if (camp.actions) {
+          const msgAction = camp.actions.find(
+            (a) => a.action_type === "onsite_conversion.messaging_conversation_started_7d"
+          );
+          if (msgAction) campMsgs = parseInt(msgAction.value || 0, 10);
 
-            const orderAction = camp.actions.find(a => 
-              a.action_type === "purchase" || 
-              a.action_type === "offsite_conversion.fb_pixel_purchase"
-            );
-            if (orderAction) campOrders = parseInt(orderAction.value || 0, 10);
-          }
+          const orderAction = camp.actions.find(
+            (a) => a.action_type === "purchase" || a.action_type === "offsite_conversion.fb_pixel_purchase"
+          );
+          if (orderAction) campOrders = parseInt(orderAction.value || 0, 10);
+        }
 
-          totalMessages += campMsgs;
-          totalOrders += campOrders;
+        totalMessages += campMsgs;
+        totalOrders += campOrders;
 
-          const obj = (camp.objective || "").toUpperCase();
-          const isMsgObj = obj.includes("MESSAGES") || obj.includes("ENGAGEMENT");
-          const isSalesObj = obj.includes("OUTCOME_SALES") || obj.includes("CONVERSIONS");
+        const obj = (camp.objective || "").toUpperCase();
+        const isMsgObj = obj.includes("MESSAGES") || obj.includes("ENGAGEMENT");
+        const isSalesObj = obj.includes("OUTCOME_SALES") || obj.includes("CONVERSIONS");
 
-          if (campMsgs > 0 && campOrders === 0) msgSpend += campSpend;
-          else if (campOrders > 0 && campMsgs === 0) salesSpend += campSpend;
-          else if (isMsgObj && !isSalesObj) msgSpend += campSpend;
-          else if (isSalesObj && !isMsgObj) salesSpend += campSpend;
-          else {
-            if (campMsgs > 0) msgSpend += (campSpend / 2);
-            if (campOrders > 0) salesSpend += (campSpend / 2);
-          }
-        });
-      }
+        if (campMsgs > 0 && campOrders === 0) {
+          msgSpend += campSpend;
+        } else if (campOrders > 0 && campMsgs === 0) {
+          salesSpend += campSpend;
+        } else if (isMsgObj && !isSalesObj) {
+          msgSpend += campSpend;
+        } else if (isSalesObj && !isMsgObj) {
+          salesSpend += campSpend;
+        } else {
+          if (campMsgs > 0) msgSpend += campSpend / 2;
+          if (campOrders > 0) salesSpend += campSpend / 2;
+        }
+      });
 
       let costPerMsgCents = "0.0";
       if (totalMessages > 0) {
-        const costSpend = msgSpend > 0 ? msgSpend : (totalOrders === 0 ? totalSpend : 0);
+        const costSpend = msgSpend > 0 ? msgSpend : totalOrders === 0 ? totalSpend : 0;
         if (costSpend > 0) costPerMsgCents = ((costSpend / totalMessages) * 100).toFixed(1);
       }
 
       let costPerOrderUsd = "0.00";
       if (totalOrders > 0) {
-        const costSpend = salesSpend > 0 ? salesSpend : (totalMessages === 0 ? totalSpend : 0);
+        const costSpend = salesSpend > 0 ? salesSpend : totalMessages === 0 ? totalSpend : 0;
         if (costSpend > 0) costPerOrderUsd = (costSpend / totalOrders).toFixed(2);
       }
 
       return {
         id: cleanId,
         name: acc.name,
+        brand: acc.brand,
         spend: totalSpend.toFixed(2),
         messages: totalMessages,
         msg_spend: msgSpend.toFixed(2),
         cost_per_msg_cents: costPerMsgCents,
         orders: totalOrders,
         sales_spend: salesSpend.toFixed(2),
-        cost_per_order_usd: costPerOrderUsd
+        cost_per_order_usd: costPerOrderUsd,
+        error: error || null
       };
     } catch (err) {
       return {
-        id: acc.id,
+        id: cleanId,
         name: acc.name,
+        brand: acc.brand,
         spend: "0.00",
         messages: 0,
         msg_spend: "0.00",
         cost_per_msg_cents: "0.0",
         orders: 0,
         sales_spend: "0.00",
-        cost_per_order_usd: "0.00"
+        cost_per_order_usd: "0.00",
+        error: err.message
       };
     }
   });
 
   const results = await Promise.all(promises);
 
-  const totalSpendSum = results.reduce((acc, curr) => acc + parseFloat(curr.spend || 0), 0);
-  const totalMsgsSum = results.reduce((acc, curr) => acc + curr.messages, 0);
-  const totalOrdersSum = results.reduce((acc, curr) => acc + curr.orders, 0);
-  const totalMsgSpendSum = results.reduce((acc, curr) => acc + parseFloat(curr.msg_spend || 0), 0);
-  const totalSalesSpendSum = results.reduce((acc, curr) => acc + parseFloat(curr.sales_spend || 0), 0);
-
-  const avgCostPerMsgCents = totalMsgsSum > 0 && totalMsgSpendSum > 0
-    ? ((totalMsgSpendSum / totalMsgsSum) * 100).toFixed(1)
-    : "0.0";
-
-  const avgCostPerOrderUsd = totalOrdersSum > 0 && totalSalesSpendSum > 0
-    ? (totalSalesSpendSum / totalOrdersSum).toFixed(2)
-    : "0.00";
+  const sum = (key) => results.reduce((acc, cur) => acc + parseFloat(cur[key] || 0), 0);
+  const totalSpendSum = sum("spend");
+  const totalMsgsSum = results.reduce((acc, cur) => acc + cur.messages, 0);
+  const totalOrdersSum = results.reduce((acc, cur) => acc + cur.orders, 0);
+  const totalMsgSpendSum = sum("msg_spend");
+  const totalSalesSpendSum = sum("sales_spend");
 
   return {
+    configured: true,
+    has_error: results.some((r) => r.error),
     accounts: results,
     summary: {
       total_spend: totalSpendSum.toFixed(2),
       total_messages: totalMsgsSum,
       msg_spend: totalMsgSpendSum.toFixed(2),
-      avg_cost_per_msg_cents: avgCostPerMsgCents,
+      avg_cost_per_msg_cents:
+        totalMsgsSum > 0 && totalMsgSpendSum > 0 ? ((totalMsgSpendSum / totalMsgsSum) * 100).toFixed(1) : "0.0",
       total_orders: totalOrdersSum,
       sales_spend: totalSalesSpendSum.toFixed(2),
-      avg_cost_per_order_usd: avgCostPerOrderUsd
+      avg_cost_per_order_usd:
+        totalOrdersSum > 0 && totalSalesSpendSum > 0 ? (totalSalesSpendSum / totalOrdersSum).toFixed(2) : "0.00"
     }
   };
 }
 
+const adsCache = new Map();
+async function getAdsMetrics(date, brand) {
+  const key = `${date}|${brand}`;
+  const hit = adsCache.get(key);
+  if (hit && Date.now() - hit.t < 60 * 1000) return hit.v;
+
+  const v = await fetchMetaAdsMetrics(date, brand);
+  if (!v.has_error) adsCache.set(key, { t: Date.now(), v });
+  if (adsCache.size > 100) adsCache.clear();
+  return v;
+}
+
+/* ------------------------------------------------------------------ */
+/* ড্যাশবোর্ড API                                                      */
+/* ------------------------------------------------------------------ */
 app.get("/api/daily-report", requireAuth, async (req, res) => {
   try {
-    const targetDate = req.query.date || new Date().toISOString().slice(0, 10);
-    const targetPage = req.query.page_id;
+    const rawDate = String(req.query.date || "");
+    const targetDate = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : dhakaDate();
+    const scope = resolveScope(req.query.page_id || req.query.scope);
+    const win = shiftWindow(targetDate, String(req.query.shift || "all"));
 
-    let pageCondition = "";
-    let pageParam = [];
+    const pc = pageClause(scope.ids);
+    const pcM = pageClause(scope.ids, "m.page_id");
+    const pcA = pageClause(scope.ids, "a.page_id");
 
-    if (targetPage && targetPage !== "all") {
-      if (targetPage === "102803132669088" || targetPage === "1133872699971391") {
-        pageCondition = " AND page_id IN ('102803132669088', '1133872699971391')";
-      } else {
-        pageCondition = " AND page_id = ?";
-        pageParam.push(targetPage);
-      }
-    }
+    const CUST = "page_id || ':' || sender_id";
+    const CUST_M = "m.page_id || ':' || m.sender_id";
+    const count = (sql, params) => db.prepare(sql).get(...params).count;
 
-    const totalReceived = db.prepare(`
-      SELECT COUNT(DISTINCT sender_id) as count 
-      FROM messages 
-      WHERE date(created_at, 'localtime') = ? ${pageCondition}
-    `).get(targetDate, ...pageParam).count;
+    const totalReceived = count(
+      `SELECT COUNT(DISTINCT ${CUST}) AS count FROM messages WHERE ${DAY} = ?${pc.sql}`,
+      [targetDate, ...pc.params]
+    );
 
-    const totalReplied = db.prepare(`
-      SELECT COUNT(DISTINCT sender_id) as count 
-      FROM messages 
-      WHERE status = 'replied' 
-        AND date(created_at, 'localtime') = ? ${pageCondition}
-    `).get(targetDate, ...pageParam).count;
+    const totalRawMessages = count(
+      `SELECT COUNT(*) AS count FROM messages WHERE ${DAY} = ?${pc.sql}`,
+      [targetDate, ...pc.params]
+    );
 
-    const unreadPending = db.prepare(`
-      SELECT COUNT(DISTINCT sender_id) as count 
-      FROM messages 
-      WHERE status = 'unread' 
-        AND date(created_at, 'localtime') = ? ${pageCondition}
-    `).get(targetDate, ...pageParam).count;
+    const returningCustomers = count(
+      `SELECT COUNT(DISTINCT ${CUST_M}) AS count
+       FROM messages m
+       WHERE ${DAY_M} = ?${pcM.sql}
+         AND EXISTS (
+           SELECT 1 FROM messages p
+           WHERE p.page_id = m.page_id AND p.sender_id = m.sender_id
+             AND date(p.created_at, '+6 hours') < ?
+         )`,
+      [targetDate, ...pcM.params, targetDate]
+    );
 
-    const readNoReply = db.prepare(`
-      SELECT COUNT(DISTINCT sender_id) as count 
-      FROM messages m
-      WHERE status = 'read' 
-        AND date(created_at, 'localtime') = ? 
-        ${pageCondition}
-        AND NOT EXISTS (
-          SELECT 1 FROM replies r 
-          WHERE r.sender_id = m.sender_id 
-            AND r.page_id = m.page_id 
-            AND date(r.created_at, 'localtime') = ?
-        )
-    `).get(targetDate, ...pageParam, targetDate).count;
+    const totalReplied = count(
+      `SELECT COUNT(DISTINCT ${CUST}) AS count FROM messages
+       WHERE status = 'replied' AND ${DAY} = ?${pc.sql}`,
+      [targetDate, ...pc.params]
+    );
 
-    const orderConfirms = db.prepare(`
-      SELECT COUNT(DISTINCT sender_id) as count 
-      FROM replies 
-      WHERE is_order_confirm = 1 
-        AND date(created_at, 'localtime') = ? 
-        ${pageCondition}
-    `).get(targetDate, ...pageParam).count;
+    const unreadPending = count(
+      `SELECT COUNT(DISTINCT ${CUST}) AS count FROM messages
+       WHERE status = 'unread' AND ${DAY} = ?${pc.sql}`,
+      [targetDate, ...pc.params]
+    );
 
-    const phoneCount = db.prepare(`
-      SELECT COUNT(DISTINCT phone_number) as count 
-      FROM messages 
-      WHERE phone_number IS NOT NULL 
-        AND phone_number != '' 
-        AND date(created_at, 'localtime') = ? ${pageCondition}
-    `).get(targetDate, ...pageParam).count;
+    const readNoReply = count(
+      `SELECT COUNT(DISTINCT ${CUST_M}) AS count
+       FROM messages m
+       WHERE m.status = 'read' AND ${DAY_M} = ?${pcM.sql}
+         AND NOT EXISTS (
+           SELECT 1 FROM replies r
+           WHERE r.sender_id = m.sender_id AND r.page_id = m.page_id
+             AND ${DAY_R} = ?
+         )`,
+      [targetDate, ...pcM.params, targetDate]
+    );
 
-    const moderatorStats = db.prepare(`
-      SELECT assigned_moderator AS name, COUNT(DISTINCT sender_id) AS total_conversations
-      FROM messages
-      WHERE assigned_moderator IS NOT NULL 
-        AND date(created_at, 'localtime') = ?
-        ${pageCondition}
-      GROUP BY assigned_moderator
-      ORDER BY total_conversations DESC
-    `).all(targetDate, ...pageParam);
+    const orderConfirms = count(
+      `SELECT COUNT(DISTINCT ${CUST}) AS count FROM replies
+       WHERE is_order_confirm = 1 AND ${DAY} = ?${pc.sql}`,
+      [targetDate, ...pc.params]
+    );
 
-    const adsData = await fetchMetaAdsMetrics(targetDate);
+    const phoneCount = count(
+      `SELECT COUNT(DISTINCT phone_number) AS count FROM messages
+       WHERE phone_number IS NOT NULL AND phone_number != '' AND ${DAY} = ?${pc.sql}`,
+      [targetDate, ...pc.params]
+    );
+
+    const isShift = win.key !== "all";
+    const shiftSql = isShift ? " AND a.assigned_at >= ? AND a.assigned_at < ?" : "";
+    const shiftParams = isShift ? [win.startMs, win.endMs] : [];
+
+    const modRows = db
+      .prepare(
+        `SELECT a.moderator AS name,
+                COUNT(DISTINCT a.page_id || ':' || a.sender_id) AS total_conversations,
+                COUNT(r.id) AS total_messages
+         FROM moderator_assignments a
+         LEFT JOIN replies r
+           ON r.page_id = a.page_id AND r.sender_id = a.sender_id
+          AND r.created_at >= ? AND r.created_at < ?
+         WHERE a.day = ?${shiftSql}${pcA.sql}
+         GROUP BY a.moderator`
+      )
+      .all(win.start, win.end, targetDate, ...shiftParams, ...pcA.params);
+
+    const phoneRows = db
+      .prepare(
+        `SELECT a.moderator AS name,
+                COUNT(DISTINCT m.phone_number) AS phones
+         FROM messages m
+         JOIN moderator_assignments a
+           ON a.page_id = m.page_id AND a.sender_id = m.sender_id AND a.day = ?
+         WHERE m.phone_number IS NOT NULL AND m.phone_number != ''
+           AND ${DAY_M} = ?${shiftSql}${pcA.sql}
+         GROUP BY a.moderator`
+      )
+      .all(targetDate, targetDate, ...shiftParams, ...pcA.params);
+
+    const phoneByMod = new Map(phoneRows.map((p) => [p.name, p.phones]));
+    const board = modRows.map((m) => ({
+      name: m.name,
+      total_conversations: m.total_conversations,
+      total_messages: m.total_messages
+    }));
+    board.sort(
+      (a, b) =>
+        b.total_conversations - a.total_conversations ||
+        b.total_messages - a.total_messages ||
+        (phoneByMod.get(b.name) || 0) - (phoneByMod.get(a.name) || 0) ||
+        (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
+    );
+
+    const moderatorStats = board.map((m) => ({
+      name: m.name,
+      total_conversations: m.total_conversations,
+      total_messages: m.total_messages,
+      phone_numbers: phoneByMod.get(m.name) || 0,
+      msgs_per_customer: m.total_conversations
+        ? Math.round((m.total_messages / m.total_conversations) * 10) / 10
+        : 0,
+      avg_minutes_per_message:
+        win.elapsed_minutes && m.total_messages
+          ? Math.round((win.elapsed_minutes / m.total_messages) * 10) / 10
+          : null
+    }));
+
+    const adsData = await getAdsMetrics(targetDate, scope.key);
 
     res.json({
       date: targetDate,
-      page_id: targetPage || "all",
-      page_name: targetPage && PAGES[targetPage] ? PAGES[targetPage] : "All Pages",
+      generated_at: Date.now(),
+      scope: { key: scope.key, label: scope.label },
+      shift: {
+        key: win.key,
+        label: win.label,
+        minutes: win.minutes,
+        elapsed_minutes: win.elapsed_minutes
+      },
+      page_id: req.query.page_id || "all",
+      page_name: scope.label,
       stats: {
         total_received: totalReceived,
+        total_raw_messages: totalRawMessages,
+        returning_customers: returningCustomers,
+        new_customers: Math.max(0, totalReceived - returningCustomers),
         total_replied: totalReplied,
         unread_pending: unreadPending,
         read_without_reply: readNoReply,
@@ -715,6 +1066,7 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       ads: adsData
     });
   } catch (err) {
+    console.error("daily-report error:", err);
     res.status(500).json({ error: err.message });
   }
 });
