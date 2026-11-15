@@ -1,301 +1,477 @@
 <!DOCTYPE html>
-<html lang="bn">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Moderator Batch Inbox</title>
+  <title>Live Analytics & Operations Dashboard</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
   <style>
-    body { font-family: 'Hind Siliguri', sans-serif; background-color: #070b14; color: #f1f5f9; }
-    ::-webkit-scrollbar { width: 6px; }
-    ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 10px; }
+    body {
+      background-color: #070b14;
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(37, 99, 235, 0.16) 0px, transparent 50%),
+        radial-gradient(at 100% 0%, rgba(147, 51, 234, 0.14) 0px, transparent 50%),
+        radial-gradient(at 50% 100%, rgba(16, 185, 129, 0.1) 0px, transparent 50%);
+      background-attachment: fixed;
+    }
+
+    .glass-card {
+      background: rgba(15, 23, 42, 0.78);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    .hover-lift {
+      transition: all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+      cursor: pointer;
+    }
+    .hover-lift:hover {
+      transform: translateY(-6px) scale(1.02);
+      border-color: rgba(96, 165, 250, 0.6);
+      background: rgba(30, 41, 59, 0.88);
+      box-shadow: 0 16px 32px -6px rgba(37, 99, 235, 0.3), 0 0 18px rgba(59, 130, 246, 0.25);
+    }
+
+    .customer-hero-card {
+      position: relative;
+      overflow: hidden;
+      transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .customer-hero-card:hover {
+      transform: translateY(-8px) scale(1.03);
+      border-color: rgba(56, 189, 248, 0.85);
+      background: radial-gradient(circle at top right, rgba(37, 99, 235, 0.3), rgba(15, 23, 42, 0.96));
+      box-shadow: 0 22px 38px -8px rgba(14, 165, 233, 0.45);
+    }
+    .customer-hero-card:hover .customer-number {
+      color: #38bdf8;
+      text-shadow: 0 0 20px rgba(56, 189, 248, 0.8);
+      transform: scale(1.06);
+    }
+
+    .form-control-hover {
+      transition: all 0.25s ease;
+    }
+    .form-control-hover:hover {
+      border-color: rgba(96, 165, 250, 0.5);
+      background: rgba(15, 23, 42, 0.95);
+    }
   </style>
 </head>
-<body class="h-screen flex flex-col overflow-hidden">
+<body class="text-slate-100 min-h-screen p-4 md:p-8 antialiased">
 
-  <!-- Moderator Login Modal -->
-  <div id="modLoginModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-lg p-4">
-    <div class="bg-slate-900 max-w-md w-full p-8 rounded-3xl border border-slate-800 shadow-2xl space-y-6">
-      <div class="text-center space-y-1">
-        <div class="text-4xl mb-2">💬</div>
-        <h2 class="text-2xl font-bold text-white">মডারেটর ইনবক্স লগইন</h2>
-        <p class="text-xs text-slate-400">আপনার নাম সিলেক্ট করে পাসওয়ার্ড দিন (প্রতি ব্যাচে ১০ জন কাস্টমার)</p>
+  <!-- Security Login Modal -->
+  <div id="loginModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-xl p-4">
+    <div class="glass-card max-w-md w-full p-8 rounded-3xl border border-slate-700/80 shadow-2xl space-y-6">
+      <div class="text-center space-y-2">
+        <div class="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/30 text-3xl mx-auto">
+          🔐
+        </div>
+        <h2 class="text-2xl font-extrabold text-white tracking-tight">System Login</h2>
+        <p class="text-xs text-slate-400">Enter authenticated credentials to access live operations</p>
       </div>
 
-      <form onsubmit="event.preventDefault(); modLogin();" class="space-y-4">
+      <form id="authForm" onsubmit="event.preventDefault(); submitLogin();" class="space-y-4">
         <div>
-          <label class="block text-xs font-semibold text-slate-300 mb-1">আপনার নাম সিলেক্ট করুন</label>
-          <select id="modSelect" required class="w-full bg-slate-800 text-white text-sm px-4 py-3 rounded-xl border border-slate-700 outline-none focus:border-blue-500">
-            <option value="">লোড হচ্ছে...</option>
-          </select>
+          <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">Username</label>
+          <input type="text" id="loginUser" required placeholder="admin" class="w-full bg-slate-900/90 text-white text-sm px-4 py-3 rounded-xl border border-slate-700 outline-none focus:border-blue-500 transition-colors">
         </div>
         <div>
-          <label class="block text-xs font-semibold text-slate-300 mb-1">মডারেটর পাসওয়ার্ড</label>
-          <input type="password" id="modPassInput" required placeholder="••••••" class="w-full bg-slate-800 text-white text-sm px-4 py-3 rounded-xl border border-slate-700 outline-none focus:border-blue-500">
+          <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">Password</label>
+          <input type="password" id="loginPass" required placeholder="••••••••" class="w-full bg-slate-900/90 text-white text-sm px-4 py-3 rounded-xl border border-slate-700 outline-none focus:border-blue-500 transition-colors">
         </div>
-        <div id="modLoginErr" class="text-xs text-rose-400 text-center hidden">ভুল পাসওয়ার্ড! আবার চেষ্টা করুন।</div>
-        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 rounded-xl transition cursor-pointer">
-          ইনবক্সে প্রবেশ করুন
+
+        <div id="loginError" class="text-xs text-rose-400 font-medium hidden text-center">
+          Invalid username or password! Please try again.
+        </div>
+
+        <button type="submit" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95 text-white font-semibold py-3 rounded-xl transition-all shadow-lg shadow-blue-600/30 cursor-pointer">
+          Authorize & Enter
         </button>
       </form>
     </div>
   </div>
 
-  <!-- Top Header -->
-  <header class="bg-slate-900 border-b border-slate-800 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-    <div class="flex items-center gap-3">
-      <span class="bg-blue-600/20 text-blue-400 border border-blue-500/30 px-3 py-1 rounded-full text-sm font-bold" id="activeModBadge">
-        Moderator
-      </span>
-      <div class="text-xs text-slate-400">
-        ব্যাকএন্ড কিউতে অপেক্ষমান: <strong id="globalQueueCount" class="text-amber-400 text-sm">0</strong> জন |
-        আজকে সম্পন্ন: <strong id="completedTodayCount" class="text-emerald-400 text-sm">0</strong> জন
-      </div>
-    </div>
+  <!-- Main Dashboard Container -->
+  <div class="max-w-7xl mx-auto space-y-6">
 
-    <div class="flex items-center gap-2">
-      <button onclick="fetchBatch(true)" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition cursor-pointer">
-        + পরবর্তী ১০টি কাস্টমার নিন
-      </button>
-      <button onclick="logoutMod()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs px-3 py-2 rounded-lg transition cursor-pointer">
-        লগআউট
-      </button>
-    </div>
-  </header>
-
-  <!-- Main Chat Layout -->
-  <div class="flex-1 flex overflow-hidden">
-    
-    <!-- Left Sidebar: Assigned Batch of 10 Customers -->
-    <aside class="w-80 md:w-96 bg-slate-900/60 border-r border-slate-800 flex flex-col">
-      <div class="p-3 border-b border-slate-800 flex justify-between items-center">
-        <span class="text-xs font-bold uppercase tracking-wider text-slate-400">আপনার বর্তমান ব্যাচ (<span id="batchCount">0</span>/10)</span>
-        <button onclick="fetchBatch(false)" class="text-xs text-blue-400 hover:underline cursor-pointer">রিফ্রেশ</button>
-      </div>
-      <div id="customerList" class="flex-1 overflow-y-auto divide-y divide-slate-800/60">
-        <div class="p-6 text-center text-xs text-slate-500">কাস্টমার লোড হচ্ছে...</div>
-      </div>
-    </aside>
-
-    <!-- Right Panel: Active Conversation -->
-    <main class="flex-1 flex flex-col bg-slate-950/40">
-      <div id="emptyChatState" class="flex-1 flex flex-col items-center justify-center text-slate-500 p-6 text-center">
-        <div class="text-5xl mb-3">👈</div>
-        <p class="text-sm font-medium">বাম পাশের তালিকা থেকে একজন কাস্টমার সিলেক্ট করে রিপ্লাই দিন</p>
-        <p class="text-xs text-slate-600 mt-1">১০ জনের রিপ্লাই শেষ হলে অটোমেটিক নতুন ১০ জন যুক্ত হবে</p>
-      </div>
-
-      <div id="activeChatBox" class="hidden flex-1 flex flex-col h-full">
-        <!-- Chat Header -->
-        <div class="p-4 bg-slate-900/80 border-b border-slate-800 flex items-center justify-between">
-          <div>
-            <h3 id="chatCustomerName" class="font-bold text-white text-base">Customer Name</h3>
-            <span id="chatPageBadge" class="text-[11px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded">Page</span>
-          </div>
-          <button onclick="insertQuickConfirm()" class="bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 text-xs font-semibold px-3 py-1.5 rounded-lg transition cursor-pointer">
-            ✅ Your order confirm
-          </button>
+    <!-- Top Navigation Header -->
+    <header class="glass-card hover-lift rounded-2xl p-5 shadow-2xl flex flex-col lg:flex-row items-start lg:items-center justify-between gap-5 border border-slate-800">
+      <div class="flex items-center gap-4">
+        <div class="w-12 h-12 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 flex items-center justify-center shadow-lg shadow-blue-500/25 text-2xl animate-pulse">
+          📊
         </div>
+        <div>
+          <div class="flex items-center gap-2 flex-wrap">
+            <h1 class="text-xl md:text-2xl font-extrabold tracking-tight text-white">Live Analytics & Operations Dashboard</h1>
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span> LIVE
+            </span>
+          </div>
+          <p class="text-xs text-slate-400 mt-0.5">Campaign-segmented ad spend & unified messenger customer tracking</p>
+        </div>
+      </div>
 
-        <!-- Messages Stream -->
-        <div id="messagesContainer" class="flex-1 overflow-y-auto p-4 space-y-3"></div>
+      <!-- Real-time Filter Form Controls -->
+      <div class="w-full lg:w-auto flex flex-wrap items-center gap-3">
+        <form id="filterForm" onsubmit="event.preventDefault(); loadDashboard();" class="w-full sm:w-auto flex flex-wrap items-center gap-3 bg-slate-950/70 p-2.5 rounded-xl border border-slate-800/80">
+          <div class="form-control-hover flex items-center gap-2 bg-slate-900/90 px-3.5 py-2 rounded-lg border border-slate-800 focus-within:border-blue-500">
+            <label for="datePicker" class="text-slate-400 text-xs font-semibold cursor-pointer">Date:</label>
+            <input type="date" id="datePicker" class="bg-transparent text-white text-xs md:text-sm font-medium outline-none cursor-pointer">
+          </div>
 
-        <!-- Reply Input -->
-        <form onsubmit="event.preventDefault(); sendReply();" class="p-3 bg-slate-900 border-t border-slate-800 flex items-center gap-2">
-          <input type="text" id="replyInput" placeholder="এখানে রিপ্লাই লিখুন..." autocomplete="off" class="flex-1 bg-slate-800 text-white text-sm px-4 py-3 rounded-xl border border-slate-700 outline-none focus:border-blue-500">
-          <button type="submit" id="sendBtn" class="bg-blue-600 hover:bg-blue-500 text-white font-semibold px-6 py-3 rounded-xl transition cursor-pointer">
-            Send
+          <div class="form-control-hover flex items-center gap-2 bg-slate-900/90 px-3.5 py-2 rounded-lg border border-slate-800 focus-within:border-blue-500">
+            <label for="pageFilter" class="text-slate-400 text-xs font-semibold cursor-pointer">Channel:</label>
+            <select id="pageFilter" class="bg-transparent text-white text-xs md:text-sm font-medium outline-none cursor-pointer pr-1">
+              <option value="all" class="bg-slate-900">All Channels (Pages)</option>
+              <option value="102803132669088" class="bg-slate-900">Swapons World</option>
+              <option value="250386238168336" class="bg-slate-900">Stone Rose BD</option>
+            </select>
+          </div>
+
+          <button type="submit" class="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 active:scale-95 text-white text-xs md:text-sm font-semibold px-5 py-2.5 rounded-lg transition-all duration-200 shadow-lg shadow-blue-600/30 cursor-pointer">
+            <svg id="refreshIcon" class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+            </svg>
+            <span>Refresh</span>
           </button>
         </form>
+
+        <a href="/inbox" target="_blank" class="inline-flex items-center justify-center gap-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-semibold px-4 py-3 rounded-xl transition">
+          💬 Moderator Inbox
+        </a>
       </div>
-    </main>
+    </header>
+
+    <!-- Meta Ads Core Summary Cards -->
+    <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      
+      <div class="glass-card hover-lift rounded-2xl p-5 relative overflow-hidden">
+        <div class="flex justify-between items-start">
+          <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Ads Spend</span>
+          <span class="w-9 h-9 rounded-xl bg-sky-500/10 text-sky-400 flex items-center justify-center text-base">💵</span>
+        </div>
+        <div id="totalSpend" class="text-3xl font-extrabold text-white mt-3 tracking-tight font-mono">$0.00</div>
+        <div class="text-[11px] text-slate-400 mt-2 flex items-center gap-1.5">
+          <span class="inline-block w-2 h-2 rounded-full bg-sky-400"></span> Cumulative budget across 9 accounts
+        </div>
+      </div>
+
+      <div class="glass-card hover-lift rounded-2xl p-5 relative overflow-hidden">
+        <div class="flex justify-between items-start">
+          <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Messaging Campaigns</span>
+          <span class="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center text-base">💬</span>
+        </div>
+        <div id="totalMessages" class="text-3xl font-extrabold text-emerald-400 mt-3 tracking-tight font-mono">0</div>
+        <div class="text-[11px] text-slate-300 mt-2 flex flex-wrap items-center gap-2">
+          <span>Spend: <strong id="msgSpend" class="text-white font-mono">$0.00</strong></span>
+          <span class="text-slate-600">•</span>
+          <span class="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded font-mono font-bold" id="costPerMsg">0.0¢</span>
+        </div>
+      </div>
+
+      <div class="glass-card hover-lift rounded-2xl p-5 relative overflow-hidden">
+        <div class="flex justify-between items-start">
+          <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Website Purchases</span>
+          <span class="w-9 h-9 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center text-base">🛍️</span>
+        </div>
+        <div id="totalOrders" class="text-3xl font-extrabold text-purple-400 mt-3 tracking-tight font-mono">0</div>
+        <div class="text-[11px] text-slate-300 mt-2 flex flex-wrap items-center gap-2">
+          <span>Spend: <strong id="salesSpend" class="text-white font-mono">$0.00</strong></span>
+          <span class="text-slate-600">•</span>
+          <span class="bg-purple-500/10 text-purple-400 border border-purple-500/20 px-2 py-0.5 rounded font-mono font-bold" id="costPerOrder">$0.00</span>
+        </div>
+      </div>
+
+      <div class="glass-card hover-lift rounded-2xl p-5 relative overflow-hidden">
+        <div class="flex justify-between items-start">
+          <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Connected Accounts</span>
+          <span class="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center text-base">⚡</span>
+        </div>
+        <div id="activeAccounts" class="text-3xl font-extrabold text-amber-400 mt-3 tracking-tight font-mono">0</div>
+        <div class="text-[11px] text-slate-400 mt-2 flex items-center gap-1.5">
+          <span class="inline-block w-2 h-2 rounded-full bg-amber-400"></span> Active Meta Marketing API Stream
+        </div>
+      </div>
+
+    </section>
+
+    <!-- Operational Inbox Stats -->
+    <section class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+      
+      <div class="glass-card customer-hero-card rounded-xl p-4 border border-blue-500/40 cursor-pointer">
+        <div class="flex items-center justify-between">
+          <div class="text-[11px] uppercase tracking-wider text-blue-300 font-bold">Active Customers</div>
+          <span class="text-xs">👥</span>
+        </div>
+        <div id="statReceived" class="customer-number text-2xl md:text-3xl font-extrabold text-blue-400 mt-1 font-mono transition-all duration-300">0</div>
+        <div class="text-[10px] text-slate-400 mt-1">Unique (Ads + Direct)</div>
+      </div>
+
+      <div class="glass-card hover-lift rounded-xl p-4 border border-emerald-500/20 hover:border-emerald-500/60">
+        <div class="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Replied Done</div>
+        <div id="statReplied" class="text-2xl font-extrabold text-emerald-400 mt-1 font-mono">0</div>
+        <div class="text-[10px] text-slate-500 mt-1">Response dispatched</div>
+      </div>
+
+      <div class="glass-card hover-lift rounded-xl p-4 border border-amber-500/20 hover:border-amber-500/60">
+        <div class="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Unread Pending</div>
+        <div id="statUnread" class="text-2xl font-extrabold text-amber-400 mt-1 font-mono">0</div>
+        <div class="text-[10px] text-slate-500 mt-1">Awaiting attention</div>
+      </div>
+
+      <div class="glass-card hover-lift rounded-xl p-4 border border-rose-500/30 hover:border-rose-500 bg-rose-950/10">
+        <div class="text-[11px] uppercase tracking-wider text-rose-400 font-semibold">Seen No Reply ⚠️</div>
+        <div id="statReadNoReply" class="text-2xl font-extrabold text-rose-400 mt-1 font-mono">0</div>
+        <div class="text-[10px] text-rose-300/60 mt-1">Urgent follow-up</div>
+      </div>
+
+      <div class="glass-card hover-lift rounded-xl p-4 border border-purple-500/20 hover:border-purple-500/60">
+        <div class="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Confirmed Orders</div>
+        <div id="statOrders" class="text-2xl font-extrabold text-purple-400 mt-1 font-mono">0</div>
+        <div class="text-[10px] text-slate-500 mt-1">Verified in Chat</div>
+      </div>
+
+      <div class="glass-card hover-lift rounded-xl p-4 border border-teal-500/20 hover:border-teal-500/60">
+        <div class="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Collected Leads</div>
+        <div id="statPhones" class="text-2xl font-extrabold text-teal-400 mt-1 font-mono">0</div>
+        <div class="text-[10px] text-slate-500 mt-1">Unique phone numbers</div>
+      </div>
+
+    </section>
+
+    <!-- Meta Ad Accounts Breakdown Table -->
+    <div class="glass-card hover-lift rounded-2xl overflow-hidden shadow-2xl border border-slate-800">
+      <div class="p-4 md:px-6 border-b border-slate-800/80 flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <span class="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></span>
+          <h2 class="text-sm md:text-base font-bold text-white tracking-wide">Live Ad Accounts Breakdown</h2>
+        </div>
+        <span class="text-xs text-slate-400 font-medium font-mono">Real-time Attribution</span>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-sm">
+          <thead class="bg-slate-950/80 text-slate-400 text-[11px] uppercase tracking-wider font-semibold border-b border-slate-800 font-mono">
+            <tr>
+              <th class="py-3.5 px-4 md:px-6">Account Name & ID</th>
+              <th class="py-3.5 px-4">Total Spend</th>
+              <th class="py-3.5 px-4">Messaging Campaign</th>
+              <th class="py-3.5 px-4">Cost / SMS</th>
+              <th class="py-3.5 px-4">Sales Campaign</th>
+              <th class="py-3.5 px-4">Cost / Order</th>
+            </tr>
+          </thead>
+          <tbody id="adsTableBody" class="divide-y divide-slate-800/50">
+            <tr><td colspan="6" class="text-center py-8 text-slate-500 font-mono">Syncing with Meta Marketing API...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Moderator Team Performance Table (Clean display without round badges) -->
+    <div class="glass-card hover-lift rounded-2xl overflow-hidden shadow-2xl border border-slate-800">
+      <div class="p-4 md:px-6 border-b border-slate-800/80 flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+          <h2 class="text-sm md:text-base font-bold text-white tracking-wide">Moderator Team Attribution</h2>
+        </div>
+        <span class="text-xs text-slate-400 font-medium font-mono">First Reply Locking</span>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-sm">
+          <thead class="bg-slate-950/80 text-slate-400 text-[11px] uppercase tracking-wider font-semibold border-b border-slate-800 font-mono">
+            <tr>
+              <th class="py-3.5 px-4 md:px-6">Moderator Identity</th>
+              <th class="py-3.5 px-4">Handled Conversations Today</th>
+            </tr>
+          </thead>
+          <tbody id="modTableBody" class="divide-y divide-slate-800/50">
+            <tr><td colspan="2" class="text-center py-8 text-slate-500 font-mono">Loading team metrics...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <footer class="text-center text-xs text-slate-600 pb-4 font-mono">
+      Internal BI Engine • Auto-refreshing every 30 seconds
+    </footer>
 
   </div>
 
   <script>
-    let currentMod = sessionStorage.getItem("mod_name") || "";
-    let modPass = sessionStorage.getItem("mod_pass") || "";
-    let selectedCustomer = null;
-    let chatRefreshInterval = null;
+    document.getElementById("datePicker").value = new Date().toISOString().slice(0, 10);
 
-    // মডারেটরদের তালিকা লোড
-    async function loadModList() {
-      const res = await fetch("/api/mod/list");
-      const data = await res.json();
-      const select = document.getElementById("modSelect");
-      select.innerHTML = `<option value="">-- নাম নির্বাচন করুন --</option>` + 
-        data.moderators.map(name => `<option value="${name}">${name}</option>`).join("");
-    }
+    let authHeader = sessionStorage.getItem("dashboard_auth") || "";
 
-    async function modLogin() {
-      const name = document.getElementById("modSelect").value;
-      const pass = document.getElementById("modPassInput").value.trim();
-      if (!name || !pass) return;
-
-      const res = await fetch("/api/mod/batch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-mod-pass": pass },
-        body: JSON.stringify({ moderator: name, requestNew: false })
-      });
-
-      if (res.status === 401) {
-        document.getElementById("modLoginErr").classList.remove("hidden");
-        return;
-      }
-
-      currentMod = name;
-      modPass = pass;
-      sessionStorage.setItem("mod_name", name);
-      sessionStorage.setItem("mod_pass", pass);
-
-      document.getElementById("modLoginModal").classList.add("hidden");
-      document.getElementById("activeModBadge").innerText = `👤 ${currentMod}`;
-      const data = await res.json();
-      renderBatch(data);
-    }
-
-    function logoutMod() {
-      sessionStorage.removeItem("mod_name");
-      sessionStorage.removeItem("mod_pass");
-      location.reload();
-    }
-
-    async function fetchBatch(requestNew = false) {
-      if (!currentMod || !modPass) return;
-      const res = await fetch("/api/mod/batch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-mod-pass": modPass },
-        body: JSON.stringify({ moderator: currentMod, requestNew })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        renderBatch(data);
+    function checkAuth() {
+      if (!authHeader) {
+        document.getElementById("loginModal").classList.remove("hidden");
+      } else {
+        document.getElementById("loginModal").classList.add("hidden");
+        loadDashboard();
       }
     }
 
-    function renderBatch(data) {
-      document.getElementById("globalQueueCount").innerText = data.global_unassigned || 0;
-      document.getElementById("completedTodayCount").innerText = data.completed_today || 0;
-      document.getElementById("batchCount").innerText = data.queue.length;
+    async function submitLogin() {
+      const u = document.getElementById("loginUser").value.trim();
+      const p = document.getElementById("loginPass").value.trim();
+      const testHeader = "Basic " + btoa(u + ":" + p);
 
-      const listEl = document.getElementById("customerList");
-      if (data.queue.length === 0) {
-        listEl.innerHTML = `
-          <div class="p-8 text-center space-y-3">
-            <div class="text-3xl">🎉</div>
-            <p class="text-xs text-slate-400">আপনার বর্তমান ব্যাচের সব কাস্টমারকে রিপ্লাই দেওয়া শেষ!</p>
-            <button onclick="fetchBatch(true)" class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-4 py-2 rounded-lg cursor-pointer">
-              নতুন ১০টি কাস্টমার লোড করুন
-            </button>
-          </div>`;
-        return;
-      }
-
-      listEl.innerHTML = data.queue.map(c => {
-        const isSelected = selectedCustomer && selectedCustomer.sender_id === c.sender_id && selectedCustomer.page_id === c.page_id;
-        return `
-          <div onclick='openChat(${JSON.stringify(c)})' class="p-3.5 cursor-pointer transition ${isSelected ? 'bg-blue-600/20 border-l-4 border-blue-500' : 'hover:bg-slate-800/50'}">
-            <div class="flex justify-between items-start">
-              <span class="font-bold text-sm text-white">${c.customer_name}</span>
-              <span class="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300">${c.page_name}</span>
-            </div>
-            <p class="text-xs text-slate-400 truncate mt-1">${c.last_message || "New message"}</p>
-          </div>
-        `;
-      }).join("");
-    }
-
-    async function openChat(customer) {
-      selectedCustomer = customer;
-      document.getElementById("emptyChatState").classList.add("hidden");
-      document.getElementById("activeChatBox").classList.remove("hidden");
-      document.getElementById("chatCustomerName").innerText = customer.customer_name;
-      document.getElementById("chatPageBadge").innerText = customer.page_name;
-
-      await loadChatMessages();
-      fetchBatch(false);
-    }
-
-    async function loadChatMessages() {
-      if (!selectedCustomer) return;
-      const res = await fetch(`/api/mod/chat?page_id=${selectedCustomer.page_id}&sender_id=${selectedCustomer.sender_id}`, {
-        headers: { "x-mod-pass": modPass }
-      });
-      const data = await res.json();
-      const box = document.getElementById("messagesContainer");
-
-      box.innerHTML = data.messages.map(m => {
-        const isPage = m.sender === "page";
-        return `
-          <div class="flex flex-col ${isPage ? 'items-end' : 'items-start'}">
-            <div class="max-w-md px-4 py-2.5 rounded-2xl text-sm ${isPage ? 'bg-blue-600 text-white rounded-br-none' : 'bg-slate-800 text-slate-100 rounded-bl-none'}">
-              ${m.text}
-            </div>
-            ${isPage && m.moderator ? `<span class="text-[10px] text-slate-500 mt-0.5">Sent by ${m.moderator}</span>` : ''}
-          </div>
-        `;
-      }).join("");
-
-      box.scrollTop = box.scrollHeight;
-    }
-
-    function insertQuickConfirm() {
-      const input = document.getElementById("replyInput");
-      input.value = `Your order confirm. ধন্যবাদ! - ${currentMod}`;
-      input.focus();
-    }
-
-    async function sendReply() {
-      if (!selectedCustomer) return;
-      const input = document.getElementById("replyInput");
-      const text = input.value.trim();
-      if (!text) return;
-
-      const btn = document.getElementById("sendBtn");
-      btn.disabled = true;
-      btn.innerText = "Sending...";
+      const errEl = document.getElementById("loginError");
+      errEl.classList.add("hidden");
 
       try {
-        const res = await fetch("/api/mod/send", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-mod-pass": modPass },
-          body: JSON.stringify({
-            page_id: selectedCustomer.page_id,
-            sender_id: selectedCustomer.sender_id,
-            text,
-            moderator: currentMod
-          })
+        const res = await fetch(`/api/daily-report?date=${document.getElementById("datePicker").value}`, {
+          headers: { "Authorization": testHeader }
         });
 
-        const result = await res.json();
-        if (result.error) {
-          alert("Error: " + result.error);
-        } else {
-          input.value = "";
-          await loadChatMessages();
-          await fetchBatch(false);
+        if (res.status === 401 || res.status === 403) {
+          errEl.classList.remove("hidden");
+          return;
         }
+
+        authHeader = testHeader;
+        sessionStorage.setItem("dashboard_auth", authHeader);
+        document.getElementById("loginModal").classList.add("hidden");
+        const data = await res.json();
+        renderData(data);
+      } catch (e) {
+        errEl.innerText = "Network or server connection failed.";
+        errEl.classList.remove("hidden");
+      }
+    }
+
+    async function loadDashboard() {
+      if (!authHeader) {
+        checkAuth();
+        return;
+      }
+
+      const date = document.getElementById("datePicker").value;
+      const pageId = document.getElementById("pageFilter").value;
+      const refreshIcon = document.getElementById("refreshIcon");
+
+      if (refreshIcon) refreshIcon.classList.add("animate-spin");
+
+      try {
+        const res = await fetch(`/api/daily-report?date=${date}&page_id=${pageId}`, {
+          headers: { "Authorization": authHeader }
+        });
+
+        if (res.status === 401 || res.status === 403) {
+          sessionStorage.removeItem("dashboard_auth");
+          authHeader = "";
+          checkAuth();
+          return;
+        }
+
+        const data = await res.json();
+        renderData(data);
+      } catch (err) {
+        console.error("Dashboard Load Error:", err);
       } finally {
-        btn.disabled = false;
-        btn.innerText = "Send";
+        if (refreshIcon) {
+          setTimeout(() => refreshIcon.classList.remove("animate-spin"), 400);
+        }
       }
     }
 
-    // ইনিশিয়ালাইজেশন
-    loadModList();
-    if (currentMod && modPass) {
-      document.getElementById("modLoginModal").classList.add("hidden");
-      document.getElementById("activeModBadge").innerText = `👤 ${currentMod}`;
-      fetchBatch(false);
+    function renderData(data) {
+      // 1. Messenger Operations
+      document.getElementById("statReceived").innerText = (data.stats.total_received || 0).toLocaleString();
+      document.getElementById("statReplied").innerText = (data.stats.total_replied || 0).toLocaleString();
+      document.getElementById("statUnread").innerText = (data.stats.unread_pending || 0).toLocaleString();
+      document.getElementById("statReadNoReply").innerText = (data.stats.read_without_reply || 0).toLocaleString();
+      document.getElementById("statOrders").innerText = (data.stats.total_confirmed_orders || 0).toLocaleString();
+      document.getElementById("statPhones").innerText = (data.stats.total_phone_numbers || 0).toLocaleString();
+
+      // 2. Ads Summary Cards
+      if (data.ads && data.ads.summary) {
+        const s = data.ads.summary;
+        document.getElementById("totalSpend").innerText = `$${s.total_spend || "0.00"}`;
+        document.getElementById("totalMessages").innerText = (s.total_messages || 0).toLocaleString();
+        document.getElementById("msgSpend").innerText = `$${s.msg_spend || "0.00"}`;
+        document.getElementById("costPerMsg").innerText = `${s.avg_cost_per_msg_cents || "0.0"}¢`;
+
+        document.getElementById("totalOrders").innerText = (s.total_orders || 0).toLocaleString();
+        document.getElementById("salesSpend").innerText = `$${s.sales_spend || "0.00"}`;
+        document.getElementById("costPerOrder").innerText = `$${s.avg_cost_per_order_usd || "0.00"}`;
+        document.getElementById("activeAccounts").innerText = `${data.ads.accounts ? data.ads.accounts.length : 0}`;
+      }
+
+      // 3. Ad Accounts Table
+      const adsTable = document.getElementById("adsTableBody");
+      if (data.ads && data.ads.accounts && data.ads.accounts.length > 0) {
+        adsTable.innerHTML = data.ads.accounts.map(acc => `
+          <tr class="hover:bg-slate-800/40 transition-colors">
+            <td class="py-3.5 px-4 md:px-6">
+              <div class="font-semibold text-white tracking-wide">${acc.name}</div>
+              <div class="text-[11px] text-slate-500 font-mono mt-0.5">${acc.id}</div>
+            </td>
+            <td class="py-3.5 px-4 font-mono font-bold text-sky-400">$${acc.spend}</td>
+            <td class="py-3.5 px-4">
+              <div class="font-mono font-bold text-emerald-400">${Number(acc.messages).toLocaleString()} msgs</div>
+              <div class="text-[11px] text-slate-400 font-mono mt-0.5">Spend: $${acc.msg_spend}</div>
+            </td>
+            <td class="py-3.5 px-4">
+              <span class="inline-block bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-mono font-bold px-2 py-0.5 rounded text-xs">
+                ${acc.cost_per_msg_cents}¢
+              </span>
+            </td>
+            <td class="py-3.5 px-4">
+              <div class="font-mono font-bold text-purple-400">${Number(acc.orders).toLocaleString()} orders</div>
+              <div class="text-[11px] text-slate-400 font-mono mt-0.5">Spend: $${acc.sales_spend}</div>
+            </td>
+            <td class="py-3.5 px-4">
+              <span class="inline-block bg-purple-500/10 border border-purple-500/20 text-purple-400 font-mono font-bold px-2 py-0.5 rounded text-xs">
+                $${acc.cost_per_order_usd}
+              </span>
+            </td>
+          </tr>
+        `).join("");
+      } else {
+        adsTable.innerHTML = `<tr><td colspan="6" class="text-center py-8 text-slate-500 font-mono">No ad insights data found for selected date.</td></tr>`;
+      }
+
+      // 4. Moderator Table
+      const modTable = document.getElementById("modTableBody");
+      if (data.moderators && data.moderators.length > 0) {
+        modTable.innerHTML = data.moderators.map(m => `
+          <tr class="hover:bg-slate-800/40 transition-colors">
+            <td class="py-3.5 px-4 md:px-6 font-semibold text-slate-200">
+              ${m.name}
+            </td>
+            <td class="py-3.5 px-4 font-mono font-bold text-emerald-400 text-base">
+              ${m.total_conversations.toLocaleString()}
+            </td>
+          </tr>
+        `).join("");
+      } else {
+        modTable.innerHTML = `<tr><td colspan="2" class="text-center py-8 text-slate-500 font-mono">No conversations resolved by moderators today yet.</td></tr>`;
+      }
     }
 
-    setInterval(() => {
-      if (currentMod && modPass) {
-        fetchBatch(false);
-        if (selectedCustomer) loadChatMessages();
-      }
-    }, 10000);
+    checkAuth();
+    setInterval(loadDashboard, 30000);
   </script>
 </body>
 </html>
