@@ -319,6 +319,9 @@ function extractPhoneNumber(text) {
   return match ? match[0] : null;
 }
 
+// Keep-Alive HTTPS Agent যাতে মেসেজ পাঠাতে কোনো কানেকশন ডিলে না হয়
+const fbAgent = new https.Agent({ keepAlive: true, maxSockets: 20 });
+
 function sendFacebookPayload(pageId, bodyObj) {
   return new Promise((resolve, reject) => {
     const token = getPageToken(pageId);
@@ -331,6 +334,7 @@ function sendFacebookPayload(pageId, bodyObj) {
       hostname: "graph.facebook.com",
       path: `/${META_API_VERSION}/me/messages?access_token=${token}`,
       method: "POST",
+      agent: fbAgent,
       headers: {
         "Content-Type": "application/json",
         "Content-Length": Buffer.byteLength(payload)
@@ -352,6 +356,7 @@ function sendFacebookPayload(pageId, bodyObj) {
     });
 
     req.on("error", (err) => reject(err));
+    req.setTimeout(8000, () => req.destroy(new Error("Meta API timeout")));
     req.write(payload);
     req.end();
   });
@@ -378,7 +383,7 @@ async function syncCustomerAndAdFromGraph(pageId, senderId) {
       }
     }
 
-    const convUrl = `https://graph.facebook.com/${META_API_VERSION}/me/conversations?user_id=${senderId}&fields=participants,messages.limit(5){message,attachments,from}&access_token=${token}`;
+    const convUrl = `https://graph.facebook.com/${META_API_VERSION}/me/conversations?user_id=${senderId}&fields=participants,messages.limit(6){message,attachments,from}&access_token=${token}`;
     const conv = await httpsGetJson(convUrl);
     if (conv && conv.data && conv.data[0]) {
       const thread = conv.data[0];
@@ -734,14 +739,14 @@ app.post("/api/mod/batch", requireModAuth, async (req, res) => {
 
     let currentList = activeBucket === "pending" ? pendingQueue : getBucketCustomers(activeBucket);
 
+    // নন-ব্লকিং ব্যাকগ্রাউন্ড প্রোফাইল সিঙ্ক যাতে ব্যাচ লোড ফাস্ট হয়
     const missingProfiles = currentList.filter(
       (q) => !q.profile_pic || q.customer_name.startsWith("Customer_")
     );
     if (missingProfiles.length > 0) {
-      await Promise.all(
-        missingProfiles.map((q) => syncCustomerAndAdFromGraph(q.page_id, q.sender_id))
-      );
-      currentList = activeBucket === "pending" ? getBucketCustomers("pending") : getBucketCustomers(activeBucket);
+      Promise.all(
+        missingProfiles.slice(0, 5).map((q) => syncCustomerAndAdFromGraph(q.page_id, q.sender_id))
+      ).catch(() => {});
     }
 
     const countRows = db.prepare(`
@@ -836,9 +841,7 @@ app.get("/api/mod/chat", requireModAuth, async (req, res) => {
     }
 
     if (!adData || !custRow || !custRow.profile_pic) {
-      const synced = await syncCustomerAndAdFromGraph(page_id, sender_id);
-      if (!adData && synced) adData = synced;
-      custRow = db.prepare(`SELECT name, profile_pic, ad_info FROM customers WHERE page_id = ? AND sender_id = ?`).get(page_id, sender_id);
+      syncCustomerAndAdFromGraph(page_id, sender_id).catch(() => {});
     }
 
     const merged = [...incoming, ...outgoing].sort((a, b) => (a.time || 0) - (b.time || 0));
@@ -855,6 +858,7 @@ app.get("/api/mod/chat", requireModAuth, async (req, res) => {
   }
 });
 
+// দ্রুত মেসেজ ও ছবি পাঠানো (ডাটাবেসে ইনস্ট্যান্ট সেভ + Facebook Graph API-তে দ্রুত সেন্ড)
 app.post("/api/mod/send", requireModAuth, async (req, res) => {
   try {
     const { page_id, sender_id, text, imageBase64, moderator } = req.body;
@@ -865,7 +869,7 @@ app.post("/api/mod/send", requireModAuth, async (req, res) => {
     const now = Date.now();
     const today = dhakaDate();
     let savedImageUrl = null;
-    let lastMid = `local_${now}`;
+    const mid = `mod_${now}_${crypto.randomBytes(3).toString("hex")}`;
 
     if (imageBase64) {
       const match = imageBase64.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
@@ -878,36 +882,16 @@ app.post("/api/mod/send", requireModAuth, async (req, res) => {
       const host = req.get("host");
       const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
       savedImageUrl = `${protocol}://${host}/uploads/${filename}`;
-
-      const imgRes = await sendFacebookPayload(page_id, {
-        recipient: { id: sender_id },
-        message: {
-          attachment: {
-            type: "image",
-            payload: { url: savedImageUrl, is_reusable: true }
-          }
-        },
-        messaging_type: "RESPONSE"
-      });
-      if (imgRes.message_id) lastMid = imgRes.message_id;
-    }
-
-    if (text && text.trim()) {
-      const txtRes = await sendFacebookPayload(page_id, {
-        recipient: { id: sender_id },
-        message: { text: text.trim() },
-        messaging_type: "RESPONSE"
-      });
-      if (txtRes.message_id) lastMid = txtRes.message_id;
     }
 
     const cleanText = (text || "").trim();
     const isConfirm = cleanText.toLowerCase().includes("your order confirm") ? 1 : 0;
 
+    // ১. ডাটাবেসে সাথে সাথেই সেভ করা যাতে ড্যাশবোর্ড ও চ্যাটে সাথে সাথে আপডেট হয়
     stmts.insertReply.run(
       page_id,
       sender_id,
-      lastMid,
+      mid,
       cleanText || "[ছবি পাঠানো হয়েছে]",
       savedImageUrl,
       now,
@@ -917,7 +901,29 @@ app.post("/api/mod/send", requireModAuth, async (req, res) => {
     stmts.assignModerator.run(page_id, sender_id, today, moderator, now);
     stmts.markReplied.run(page_id, sender_id, today);
 
-    res.json({ success: true, message_id: lastMid, image_url: savedImageUrl });
+    // ২. Facebook Graph API-তে পাঠিয়ে কাস্টমার ও Meta Business Suite-এ পৌঁছে দেওয়া
+    if (savedImageUrl) {
+      await sendFacebookPayload(page_id, {
+        recipient: { id: sender_id },
+        message: {
+          attachment: {
+            type: "image",
+            payload: { url: savedImageUrl, is_reusable: true }
+          }
+        },
+        messaging_type: "RESPONSE"
+      });
+    }
+
+    if (cleanText) {
+      await sendFacebookPayload(page_id, {
+        recipient: { id: sender_id },
+        message: { text: cleanText },
+        messaging_type: "RESPONSE"
+      });
+    }
+
+    res.json({ success: true, message_id: mid, image_url: savedImageUrl });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -928,7 +934,7 @@ app.post("/api/mod/send", requireModAuth, async (req, res) => {
 /* ------------------------------------------------------------------ */
 function httpsGetJson(url) {
   return new Promise((resolve) => {
-    const req = https.get(url, { timeout: 20000 }, (res) => {
+    const req = https.get(url, { timeout: 12000, agent: fbAgent }, (res) => {
       let raw = "";
       res.setEncoding("utf8");
       res.on("data", (chunk) => { raw += chunk; });
