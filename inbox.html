@@ -199,6 +199,26 @@
     let selectedCustomer = null;
     let selectedImageBase64 = "";
     let currentMessagesCache = [];
+    let isSendingMessage = false;
+
+    function deduplicateMessages(list) {
+      const result = [];
+      for (const item of (list || [])) {
+        const txt = (item.text || "").trim();
+        const t = Number(item.time || 0);
+        const isDup = result.some(existing => {
+          const exTxt = (existing.text || "").trim();
+          const exT = Number(existing.time || 0);
+          const sameSender = existing.sender === item.sender;
+          const sameText = exTxt && txt && exTxt === txt;
+          const sameImg = Boolean(existing.image_url) === Boolean(item.image_url);
+          const closeInTime = (!t || !exT) || Math.abs(t - exT) <= 15000;
+          return sameSender && sameText && sameImg && closeInTime;
+        });
+        if (!isDup) result.push(item);
+      }
+      return result;
+    }
 
     function renderCustomerIdentity(customer, sizeClass = "w-10 h-10") {
       const displayName = (customer && customer.name) || (customer && customer.customer_name) || "Customer";
@@ -356,7 +376,9 @@
       const thumbLink = document.getElementById("adThumbLink");
       const link = document.getElementById("adPostLink");
 
-      if (!adData) {
+      const badUrl = adData && (adData.photo_url || adData.post_url || "").includes("39178562_1505197616293642");
+
+      if (!adData || badUrl) {
         titleEl.innerText = `${customer ? customer.page_name : 'Page'} — Customer Message`;
         idEl.innerText = "Ad referral না থাকলে প্রোডাক্ট ছবি পাঠিয়ে বা ছবির কালার/ডিজাইন দেখে রিপ্লাই দিন";
         thumb.classList.add("hidden");
@@ -384,9 +406,9 @@
     }
 
     function paintMessages(msgs) {
-      currentMessagesCache = msgs;
+      currentMessagesCache = deduplicateMessages(msgs);
       const box = document.getElementById("messagesContainer");
-      box.innerHTML = msgs.map(m => {
+      box.innerHTML = currentMessagesCache.map(m => {
         const isPage = m.sender === "page";
         const cleanTxt = (m.text && m.text !== "[ছবি পাঠিয়েছেন]" && m.text !== "[ছবি পাঠানো হয়েছে]") ? m.text : "";
         if (!cleanTxt && !m.image_url) return "";
@@ -441,11 +463,12 @@
     }
 
     async function loadChatMessages() {
-      if (!selectedCustomer) return;
+      if (!selectedCustomer || isSendingMessage) return;
       const res = await fetch(`/api/mod/chat?page_id=${selectedCustomer.page_id}&sender_id=${selectedCustomer.sender_id}`, {
         headers: { "x-mod-pass": modPass }
       });
       const data = await res.json();
+      if (isSendingMessage) return;
       showAdBanner(data.ad_data, selectedCustomer);
       if (data.customer) {
         document.getElementById("chatCustomerName").innerText = data.customer.name;
@@ -480,17 +503,17 @@
       input.focus();
     }
 
-    // ইনস্ট্যান্ট মেসেজ সেন্ডিং
     async function sendReply() {
-      if (!selectedCustomer) return;
+      if (!selectedCustomer || isSendingMessage) return;
       const input = document.getElementById("replyInput");
       const text = input.value.trim();
       const imgToSend = selectedImageBase64;
       if (!text && !imgToSend) return;
 
+      isSendingMessage = true;
       const targetCust = { ...selectedCustomer };
+      const sendTime = Date.now();
 
-      // সাথে সাথে চ্যাটে দেখানো
       paintMessages([
         ...currentMessagesCache,
         {
@@ -498,7 +521,7 @@
           text: text || "[ছবি পাঠানো হয়েছে]",
           image_url: imgToSend || null,
           moderator: currentMod,
-          time: Date.now()
+          time: sendTime
         }
       ]);
 
@@ -525,6 +548,8 @@
         }
       } catch (e) {
         alert("নেটওয়ার্ক সমস্যা: মেসেজ পাঠানো যায়নি।");
+      } finally {
+        isSendingMessage = false;
       }
     }
 
@@ -537,11 +562,11 @@
     }
 
     setInterval(() => {
-      if (currentMod && modPass) {
+      if (currentMod && modPass && !isSendingMessage) {
         fetchBatch(false);
         if (selectedCustomer) loadChatMessages();
       }
-    }, 12000);
+    }, 15000);
   </script>
 </body>
 </html>
