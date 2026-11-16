@@ -149,18 +149,18 @@
         </div>
 
         <!-- Ad Referral Banner -->
-        <div id="adBanner" class="hidden bg-amber-500/10 border-b border-amber-500/30 px-4 py-2.5 flex items-center justify-between gap-3">
+        <div id="adBanner" class="bg-amber-500/10 border-b border-amber-500/30 px-4 py-2 flex items-center justify-between gap-3">
           <div class="flex items-center gap-3">
             <a id="adThumbLink" href="#" target="_blank">
-              <img id="adThumb" src="" alt="Ad" class="w-14 h-14 rounded-lg object-cover border border-amber-500/50 hidden">
+              <img id="adThumb" src="" alt="Ad" class="w-12 h-12 rounded-lg object-cover border border-amber-500/50 hidden">
             </a>
             <div>
-              <div class="text-[11px] font-bold text-amber-400 uppercase tracking-wider">📢 যে অ্যাড / প্রোডাক্ট দেখে মেসেজ দিয়েছেন:</div>
-              <div id="adTitleText" class="text-xs font-semibold text-white mt-0.5">Facebook Ad</div>
+              <div class="text-[11px] font-bold text-amber-400">📢 Ad / Product Source:</div>
+              <div id="adTitleText" class="text-xs font-semibold text-slate-200">Direct Messenger / Ad Query</div>
               <div id="adIdText" class="text-[10px] text-slate-400 font-mono"></div>
             </div>
           </div>
-          <a id="adPostLink" href="#" target="_blank" class="hidden bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold px-3.5 py-2 rounded-lg transition shrink-0">
+          <a id="adPostLink" href="#" target="_blank" class="hidden bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold px-3 py-1.5 rounded-lg transition shrink-0">
             🔗 প্রোডাক্ট / অ্যাড দেখুন
           </a>
         </div>
@@ -198,8 +198,8 @@
     let currentBucket = "pending";
     let selectedCustomer = null;
     let selectedImageBase64 = "";
+    let currentMessagesCache = [];
 
-    // ছবি (Picture) আগে, এরপর নাম/আইডি
     function renderCustomerIdentity(customer, sizeClass = "w-10 h-10") {
       const displayName = (customer && customer.name) || (customer && customer.customer_name) || "Customer";
       const picUrl = customer && customer.profile_pic;
@@ -349,18 +349,24 @@
       }).join("");
     }
 
-    function showAdBanner(adData) {
-      const banner = document.getElementById("adBanner");
-      if (!adData) {
-        banner.classList.add("hidden");
-        return;
-      }
-      banner.classList.remove("hidden");
-      document.getElementById("adTitleText").innerText = adData.ad_title || "Facebook Ad";
-      document.getElementById("adIdText").innerText = adData.ad_id ? `Ad ID: ${adData.ad_id}` : "";
-
+    function showAdBanner(adData, customer) {
+      const titleEl = document.getElementById("adTitleText");
+      const idEl = document.getElementById("adIdText");
       const thumb = document.getElementById("adThumb");
       const thumbLink = document.getElementById("adThumbLink");
+      const link = document.getElementById("adPostLink");
+
+      if (!adData) {
+        titleEl.innerText = `${customer ? customer.page_name : 'Page'} — Customer Message`;
+        idEl.innerText = "Ad referral না থাকলে প্রোডাক্ট ছবি পাঠিয়ে বা ছবির কালার/ডিজাইন দেখে রিপ্লাই দিন";
+        thumb.classList.add("hidden");
+        link.classList.add("hidden");
+        return;
+      }
+
+      titleEl.innerText = adData.ad_title || "Facebook Ad";
+      idEl.innerText = adData.ad_id ? `Ad ID: ${adData.ad_id}` : "Product / Ad Attachment";
+
       if (adData.photo_url) {
         thumb.src = adData.photo_url;
         thumbLink.href = adData.post_url || adData.photo_url;
@@ -369,13 +375,33 @@
         thumb.classList.add("hidden");
       }
 
-      const link = document.getElementById("adPostLink");
       if (adData.post_url || adData.photo_url) {
         link.href = adData.post_url || adData.photo_url;
         link.classList.remove("hidden");
       } else {
         link.classList.add("hidden");
       }
+    }
+
+    function paintMessages(msgs) {
+      currentMessagesCache = msgs;
+      const box = document.getElementById("messagesContainer");
+      box.innerHTML = msgs.map(m => {
+        const isPage = m.sender === "page";
+        const cleanTxt = (m.text && m.text !== "[ছবি পাঠিয়েছেন]" && m.text !== "[ছবি পাঠানো হয়েছে]") ? m.text : "";
+        if (!cleanTxt && !m.image_url) return "";
+
+        return `
+          <div class="flex flex-col ${isPage ? 'items-end' : 'items-start'}">
+            <div class="max-w-md px-4 py-2.5 rounded-2xl text-sm space-y-2 ${isPage ? 'bg-blue-600 text-white rounded-br-none' : 'bg-slate-800 text-slate-100 rounded-bl-none'}">
+              ${m.image_url ? `<a href="${m.image_url}" target="_blank"><img src="${m.image_url}" class="max-h-64 rounded-xl border border-white/10"></a>` : ''}
+              ${cleanTxt ? `<div>${cleanTxt}</div>` : ''}
+            </div>
+            ${isPage && m.moderator ? `<span class="text-[10px] text-slate-500 mt-0.5">Sent by ${m.moderator}</span>` : ''}
+          </div>
+        `;
+      }).join("");
+      box.scrollTop = box.scrollHeight;
     }
 
     async function openChat(customer) {
@@ -388,10 +414,9 @@
       document.getElementById("headerAvatarBox").innerHTML = customer.profile_pic
         ? `<img src="${customer.profile_pic}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" class="w-11 h-11 rounded-full object-cover"><span style="display:none">👤</span>`
         : `<span>👤</span>`;
-      showAdBanner(customer.ad_data);
+      showAdBanner(customer.ad_data, customer);
 
       await loadChatMessages();
-      fetchBatch(false);
     }
 
     async function classifyCustomer(targetBucket) {
@@ -421,32 +446,14 @@
         headers: { "x-mod-pass": modPass }
       });
       const data = await res.json();
-      if (data.ad_data) showAdBanner(data.ad_data);
+      showAdBanner(data.ad_data, selectedCustomer);
       if (data.customer) {
         document.getElementById("chatCustomerName").innerText = data.customer.name;
         document.getElementById("headerAvatarBox").innerHTML = data.customer.profile_pic
           ? `<img src="${data.customer.profile_pic}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" class="w-11 h-11 rounded-full object-cover"><span style="display:none">👤</span>`
           : `<span>👤</span>`;
       }
-
-      const box = document.getElementById("messagesContainer");
-      box.innerHTML = data.messages.map(m => {
-        const isPage = m.sender === "page";
-        const cleanTxt = (m.text && m.text !== "[ছবি পাঠিয়েছেন]" && m.text !== "[ছবি পাঠানো হয়েছে]") ? m.text : "";
-        if (!cleanTxt && !m.image_url) return "";
-
-        return `
-          <div class="flex flex-col ${isPage ? 'items-end' : 'items-start'}">
-            <div class="max-w-md px-4 py-2.5 rounded-2xl text-sm space-y-2 ${isPage ? 'bg-blue-600 text-white rounded-br-none' : 'bg-slate-800 text-slate-100 rounded-bl-none'}">
-              ${m.image_url ? `<a href="${m.image_url}" target="_blank"><img src="${m.image_url}" class="max-h-64 rounded-xl border border-white/10"></a>` : ''}
-              ${cleanTxt ? `<div>${cleanTxt}</div>` : ''}
-            </div>
-            ${isPage && m.moderator ? `<span class="text-[10px] text-slate-500 mt-0.5">Sent by ${m.moderator}</span>` : ''}
-          </div>
-        `;
-      }).join("");
-
-      box.scrollTop = box.scrollHeight;
+      paintMessages(data.messages || []);
     }
 
     function handleImageSelect(event) {
@@ -473,41 +480,51 @@
       input.focus();
     }
 
+    // ইনস্ট্যান্ট মেসেজ সেন্ডিং
     async function sendReply() {
       if (!selectedCustomer) return;
       const input = document.getElementById("replyInput");
       const text = input.value.trim();
-      if (!text && !selectedImageBase64) return;
+      const imgToSend = selectedImageBase64;
+      if (!text && !imgToSend) return;
 
-      const btn = document.getElementById("sendBtn");
-      btn.disabled = true;
-      btn.innerText = "Sending...";
+      const targetCust = { ...selectedCustomer };
+
+      // সাথে সাথে চ্যাটে দেখানো
+      paintMessages([
+        ...currentMessagesCache,
+        {
+          sender: "page",
+          text: text || "[ছবি পাঠানো হয়েছে]",
+          image_url: imgToSend || null,
+          moderator: currentMod,
+          time: Date.now()
+        }
+      ]);
+
+      input.value = "";
+      clearSelectedImage();
+      input.focus();
 
       try {
         const res = await fetch("/api/mod/send", {
           method: "POST",
           headers: { "Content-Type": "application/json", "x-mod-pass": modPass },
           body: JSON.stringify({
-            page_id: selectedCustomer.page_id,
-            sender_id: selectedCustomer.sender_id,
+            page_id: targetCust.page_id,
+            sender_id: targetCust.sender_id,
             text,
-            imageBase64: selectedImageBase64,
+            imageBase64: imgToSend,
             moderator: currentMod
           })
         });
 
         const result = await res.json();
         if (result.error) {
-          alert("Error: " + result.error);
-        } else {
-          input.value = "";
-          clearSelectedImage();
-          await loadChatMessages();
-          await fetchBatch(false);
+          alert("মেসেজ পাঠাতে সমস্যা হয়েছে: " + result.error);
         }
-      } finally {
-        btn.disabled = false;
-        btn.innerText = "Send";
+      } catch (e) {
+        alert("নেটওয়ার্ক সমস্যা: মেসেজ পাঠানো যায়নি।");
       }
     }
 
@@ -524,7 +541,7 @@
         fetchBatch(false);
         if (selectedCustomer) loadChatMessages();
       }
-    }, 10000);
+    }, 12000);
   </script>
 </body>
 </html>
