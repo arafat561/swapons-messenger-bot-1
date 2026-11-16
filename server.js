@@ -251,6 +251,33 @@ try { db.exec(`ALTER TABLE customers ADD COLUMN ad_info TEXT;`); } catch (e) {}
 try { db.exec(`ALTER TABLE customers ADD COLUMN profile_pic TEXT;`); } catch (e) {}
 try { db.exec(`ALTER TABLE moderator_assignments ADD COLUMN bucket TEXT DEFAULT 'pending';`); } catch (e) {}
 
+// পুরোনো ডাটাবেসে সেভ হয়ে থাকা ভুল 👍 ছবির ad_info পরিষ্কার করা
+try {
+  db.prepare(`UPDATE customers SET ad_info = NULL WHERE ad_info LIKE '%39178562_1505197616293642%'`).run();
+  db.prepare(`UPDATE messages SET ad_info = NULL WHERE ad_info LIKE '%39178562_1505197616293642%'`).run();
+} catch (e) {}
+
+function isBlockedStickerUrl(url) {
+  if (!url) return false;
+  const u = String(url);
+  return u.includes("39178562_1505197616293642") || u.includes("/stickers/");
+}
+
+function isValidProductAttachment(att) {
+  if (!att) return null;
+  if (att.mime_type && String(att.mime_type).includes("sticker")) return null;
+  const imgData = att.image_data || {};
+  const imgUrl = imgData.url || att.file_url || "";
+  if (!imgUrl || isBlockedStickerUrl(imgUrl)) return null;
+
+  const w = Number(imgData.width || 0);
+  const h = Number(imgData.height || 0);
+  // 👍 বা ছোট ইমোজি/স্টিকার সাধারণত ১২০px বা তার কম হয়; আসল প্রোডাক্ট ছবি বড় হয়
+  if ((w > 0 && w <= 120) || (h > 0 && h <= 120)) return null;
+
+  return imgUrl;
+}
+
 function createdAtToDay(createdAt) {
   const ms = Date.parse(String(createdAt).replace(" ", "T") + "Z");
   return Number.isNaN(ms) ? null : dhakaDate(ms);
@@ -319,7 +346,6 @@ function extractPhoneNumber(text) {
   return match ? match[0] : null;
 }
 
-// Keep-Alive HTTPS Agent যাতে মেসেজ পাঠাতে কোনো কানেকশন ডিলে না হয়
 const fbAgent = new https.Agent({ keepAlive: true, maxSockets: 20 });
 
 function sendFacebookPayload(pageId, bodyObj) {
@@ -371,6 +397,16 @@ async function syncCustomerAndAdFromGraph(pageId, senderId) {
     let fullName = (existing && existing.name && !existing.name.startsWith("Customer_")) ? existing.name : "";
     let picUrl = (existing && existing.profile_pic) ? existing.profile_pic : "";
 
+    let parsedExistingAd = null;
+    if (existing && existing.ad_info) {
+      try {
+        const tmp = JSON.parse(existing.ad_info);
+        if (tmp && !isBlockedStickerUrl(tmp.photo_url) && !isBlockedStickerUrl(tmp.post_url)) {
+          parsedExistingAd = tmp;
+        }
+      } catch (e) {}
+    }
+
     if (!fullName || !picUrl) {
       const profile = await httpsGetJson(`https://graph.facebook.com/${META_API_VERSION}/${senderId}?fields=first_name,last_name,name,profile_pic&access_token=${token}`);
       if (profile && !profile.error) {
@@ -383,7 +419,7 @@ async function syncCustomerAndAdFromGraph(pageId, senderId) {
       }
     }
 
-    const convUrl = `https://graph.facebook.com/${META_API_VERSION}/me/conversations?user_id=${senderId}&fields=participants,messages.limit(6){message,attachments,from}&access_token=${token}`;
+    const convUrl = `https://graph.facebook.com/${META_API_VERSION}/me/conversations?user_id=${senderId}&fields=participants,messages.limit(8){message,attachments,sticker,from}&access_token=${token}`;
     const conv = await httpsGetJson(convUrl);
     if (conv && conv.data && conv.data[0]) {
       const thread = conv.data[0];
@@ -395,17 +431,18 @@ async function syncCustomerAndAdFromGraph(pageId, senderId) {
         }
       }
 
-      if ((!existing || !existing.ad_info) && thread.messages && thread.messages.data) {
+      // আসল Ad Referral বা বড় Product Photo থাকলে সেটিকে প্রাধান্য দেওয়া
+      if (!parsedExistingAd && thread.messages && thread.messages.data) {
         for (const m of thread.messages.data) {
-          if (m.attachments && m.attachments.data && m.attachments.data.length > 0) {
-            const att = m.attachments.data[0];
-            const imgUrl = (att.image_data && att.image_data.url) || att.file_url || "";
-            if (imgUrl && m.from && String(m.from.id) === String(senderId)) {
+          if (m.sticker) continue;
+          if (m.attachments && m.attachments.data && m.attachments.data.length > 0 && m.from && String(m.from.id) === String(senderId)) {
+            const validImg = isValidProductAttachment(m.attachments.data[0]);
+            if (validImg) {
               const adObj = {
                 ad_id: "",
                 ad_title: m.message || "Customer Sent Product Photo",
-                post_url: imgUrl,
-                photo_url: imgUrl
+                post_url: validImg,
+                photo_url: validImg
               };
               db.prepare(`
                 INSERT INTO customers (page_id, sender_id, name, profile_pic, ad_info) VALUES (?, ?, ?, ?, ?)
@@ -430,7 +467,7 @@ async function syncCustomerAndAdFromGraph(pageId, senderId) {
       `).run(pageId, senderId, fullName || `Customer_${senderId.slice(-4)}`, picUrl);
     }
 
-    if (existing && existing.ad_info) return JSON.parse(existing.ad_info);
+    return parsedExistingAd;
   } catch (e) {}
   return null;
 }
@@ -566,11 +603,14 @@ function extractAdReferral(event) {
   const ctx = ref.ads_context_data || {};
   const adId = ref.ad_id || "";
   const postUrl = ctx.post_url || (adId ? `https://www.facebook.com/ads/library/?id=${adId}` : "");
+  const photoUrl = ctx.photo_url || ctx.video_url || "";
+  if (isBlockedStickerUrl(photoUrl) || isBlockedStickerUrl(postUrl)) return null;
+
   return JSON.stringify({
     ad_id: adId,
     ad_title: ctx.ad_title || ref.ref || (adId ? `Facebook Ad #${adId}` : "Facebook Ad"),
     post_url: postUrl,
-    photo_url: ctx.photo_url || ctx.video_url || ""
+    photo_url: photoUrl
   });
 }
 
@@ -589,9 +629,11 @@ async function handleMessagingEvent(pageId, event) {
   if (event.message && !event.message.is_echo) {
     const rawText = event.message.text || "";
     let imageUrl = null;
-    if (event.message.attachments && event.message.attachments.length > 0) {
+    if (!event.message.sticker && event.message.attachments && event.message.attachments.length > 0) {
       const att = event.message.attachments[0];
-      if (att.payload && att.payload.url) imageUrl = att.payload.url;
+      if (att.payload && att.payload.url && !isBlockedStickerUrl(att.payload.url)) {
+        imageUrl = att.payload.url;
+      }
     }
 
     const displayText = rawText || (imageUrl ? "[ছবি পাঠিয়েছেন]" : "👍");
@@ -633,7 +675,9 @@ async function handleMessagingEvent(pageId, event) {
     let replyImg = null;
     if (event.message.attachments && event.message.attachments.length > 0) {
       const att = event.message.attachments[0];
-      if (att.payload && att.payload.url) replyImg = att.payload.url;
+      if (att.payload && att.payload.url && !isBlockedStickerUrl(att.payload.url)) {
+        replyImg = att.payload.url;
+      }
     }
 
     const replyTime = event.timestamp || Date.now();
@@ -739,7 +783,6 @@ app.post("/api/mod/batch", requireModAuth, async (req, res) => {
 
     let currentList = activeBucket === "pending" ? pendingQueue : getBucketCustomers(activeBucket);
 
-    // নন-ব্লকিং ব্যাকগ্রাউন্ড প্রোফাইল সিঙ্ক যাতে ব্যাচ লোড ফাস্ট হয়
     const missingProfiles = currentList.filter(
       (q) => !q.profile_pic || q.customer_name.startsWith("Customer_")
     );
@@ -780,7 +823,12 @@ app.post("/api/mod/batch", requireModAuth, async (req, res) => {
       queue: currentList.map((q) => {
         let parsedAd = null;
         if (q.ad_info) {
-          try { parsedAd = JSON.parse(q.ad_info); } catch (e) {}
+          try {
+            const tmp = JSON.parse(q.ad_info);
+            if (tmp && !isBlockedStickerUrl(tmp.photo_url) && !isBlockedStickerUrl(tmp.post_url)) {
+              parsedAd = tmp;
+            }
+          } catch (e) {}
         }
         return {
           ...q,
@@ -837,7 +885,12 @@ app.get("/api/mod/chat", requireModAuth, async (req, res) => {
     let adData = null;
     const rawAd = (custRow && custRow.ad_info) || (incoming.find((i) => i.ad_info) || {}).ad_info;
     if (rawAd) {
-      try { adData = JSON.parse(rawAd); } catch (e) {}
+      try {
+        const tmp = JSON.parse(rawAd);
+        if (tmp && !isBlockedStickerUrl(tmp.photo_url) && !isBlockedStickerUrl(tmp.post_url)) {
+          adData = tmp;
+        }
+      } catch (e) {}
     }
 
     if (!adData || !custRow || !custRow.profile_pic) {
@@ -858,7 +911,6 @@ app.get("/api/mod/chat", requireModAuth, async (req, res) => {
   }
 });
 
-// দ্রুত মেসেজ ও ছবি পাঠানো (ডাটাবেসে ইনস্ট্যান্ট সেভ + Facebook Graph API-তে দ্রুত সেন্ড)
 app.post("/api/mod/send", requireModAuth, async (req, res) => {
   try {
     const { page_id, sender_id, text, imageBase64, moderator } = req.body;
@@ -887,7 +939,6 @@ app.post("/api/mod/send", requireModAuth, async (req, res) => {
     const cleanText = (text || "").trim();
     const isConfirm = cleanText.toLowerCase().includes("your order confirm") ? 1 : 0;
 
-    // ১. ডাটাবেসে সাথে সাথেই সেভ করা যাতে ড্যাশবোর্ড ও চ্যাটে সাথে সাথে আপডেট হয়
     stmts.insertReply.run(
       page_id,
       sender_id,
@@ -901,7 +952,6 @@ app.post("/api/mod/send", requireModAuth, async (req, res) => {
     stmts.assignModerator.run(page_id, sender_id, today, moderator, now);
     stmts.markReplied.run(page_id, sender_id, today);
 
-    // ২. Facebook Graph API-তে পাঠিয়ে কাস্টমার ও Meta Business Suite-এ পৌঁছে দেওয়া
     if (savedImageUrl) {
       await sendFacebookPayload(page_id, {
         recipient: { id: sender_id },
