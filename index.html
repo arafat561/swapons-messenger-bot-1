@@ -186,11 +186,15 @@
     th { text-align: left; font-weight: 600; font-size: .82rem; color: var(--faint); padding: 10px 16px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--raised); white-space: nowrap; }
     th:first-child, td:first-child { padding-left: 24px; }
     td { padding: 14px 16px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+    tbody tr.acc-row { cursor: pointer; transition: background .15s; }
+    tbody tr.acc-row:hover td { background: var(--raised); }
+    tbody tr.acc-row.expanded td { background: var(--raised); border-bottom-color: transparent; }
     tbody tr:last-child td { border-bottom: 0; }
-    tbody tr:hover td { background: var(--raised); }
     tfoot td { font-weight: 700; background: var(--raised); border-top: 1px solid var(--line); border-bottom: 0; }
-    .acc-name { font-weight: 600; }
-    .acc-id { color: var(--faint); font-size: .78rem; font-family: "Bricolage Grotesque", sans-serif; }
+    .acc-name { font-weight: 600; display: flex; align-items: center; gap: 8px; }
+    .chev { display: inline-block; font-size: .78rem; color: var(--msg); transition: transform .2s; }
+    tr.expanded .chev { transform: rotate(90deg); }
+    .acc-id { color: var(--faint); font-size: .78rem; font-family: "Bricolage Grotesque", sans-serif; margin-left: 16px; }
     .share { height: 5px; border-radius: 3px; background: var(--raised); margin-top: 7px; width: 120px; overflow: hidden; }
     .share i { display: block; height: 100%; background: var(--invert); border-radius: 3px; }
     .strong { font-weight: 700; }
@@ -202,6 +206,20 @@
     .warn-flag { color: var(--bad); font-size: .78rem; display: block; margin-top: 3px; max-width: 34ch; }
     .empty { padding: 36px 24px; text-align: center; color: var(--muted); }
     .empty b { display: block; color: var(--text); margin-bottom: 4px; }
+
+    /* ---------- campaign / ads dropdown ---------- */
+    .sub-drop-row td { padding: 0 !important; background: var(--bg) !important; border-bottom: 2px solid var(--line); }
+    .sub-drop-box { padding: 16px 24px 20px; background: rgba(0, 0, 0, .18); }
+    [data-theme="light"] .sub-drop-box { background: rgba(15, 36, 48, .03); }
+    .sub-drop-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+    .sub-drop-title { font-size: .95rem; font-weight: 700; color: var(--msg); }
+    .sub-drop-badge { font-size: .78rem; color: var(--muted); background: var(--surface); border: 1px solid var(--line); padding: 3px 10px; border-radius: 999px; }
+    .sub-table { width: 100%; min-width: 720px; border-collapse: collapse; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+    .sub-table th { background: var(--raised); font-size: .76rem; padding: 8px 14px; color: var(--faint); border-top: 0; }
+    .sub-table td { padding: 10px 14px; font-size: .86rem; border-bottom: 1px solid var(--line); }
+    .sub-table tr:last-child td { border-bottom: 0; }
+    .camp-name { font-weight: 600; color: var(--text); }
+    .camp-obj { font-size: .72rem; color: var(--faint); margin-top: 2px; }
 
     /* ---------- moderator board ---------- */
     .mrow { display: grid; grid-template-columns: 38px minmax(100px, 1.1fr) minmax(60px, 1.3fr) 80px 88px 76px 100px 100px; gap: 12px; align-items: center; padding: 12px 24px; }
@@ -474,6 +492,7 @@
           <h2 class="display">Ad accounts</h2>
           <span id="accountsMeta">—</span>
         </div>
+        <p class="hint">যেকোনো অ্যাড অ্যাকাউন্টে ক্লিক করলে নিচে ড্রপডাউনে ওই অ্যাকাউন্টের সব Ads / Campaigns ড্যাশবোর্ড খুলে যাবে।</p>
         <div class="scroll">
           <table>
             <thead>
@@ -553,6 +572,8 @@
         expiresAt: 0,
         scope: safeGet("dash_scope") || "all",
         shift: safeGet("dash_shift") || "all",
+        expandedAccountId: "",
+        accountsMap: {},
         reqId: 0,
         countdown: REFRESH_SECONDS,
         lastOk: 0
@@ -934,6 +955,35 @@
         $("gapText").textContent = text;
       }
 
+      function buildCampaignsSubHtml(acc) {
+        var camps = acc.campaigns || [];
+        if (!camps.length) {
+          return '<div class="sub-drop-box"><div class="sub-drop-head"><span class="sub-drop-title">' + esc(acc.name) + ' — Ads / Campaigns</span><span class="sub-drop-badge">0 Ads</span></div><div class="empty" style="padding:18px">এই অ্যাড অ্যাকাউন্টে আজকের তারিখে কোনো অ্যাকটিভ অ্যাড/ক্যাম্পেইন পাওয়া যায়নি।</div></div>';
+        }
+
+        var rowsHtml = camps.map(function (c) {
+          return '<tr>' +
+            '<td><div class="camp-name">' + esc(c.name) + '</div><div class="camp-obj">' + esc(c.objective || "Ad Campaign") + (c.id ? ' · #' + esc(c.id) : '') + '</div></td>' +
+            '<td class="num strong">' + money(c.spend) + '</td>' +
+            '<td><span class="num strong c-msg">' + fmt(c.messages) + '</span><div class="detail num">spend ' + money(c.msg_spend) + '</div></td>' +
+            '<td><span class="pill msg num">' + esc(c.cost_per_msg_cents) + '¢</span></td>' +
+            '<td><span class="num strong c-sale">' + fmt(c.orders) + '</span><div class="detail num">spend ' + money(c.sales_spend) + '</div></td>' +
+            '<td><span class="pill sale num">' + money(c.cost_per_order_usd) + '</span></td>' +
+          '</tr>';
+        }).join("");
+
+        return '<div class="sub-drop-box">' +
+          '<div class="sub-drop-head">' +
+            '<span class="sub-drop-title">📊 ' + esc(acc.name) + ' — Ads / Campaigns Dashboard</span>' +
+            '<span class="sub-drop-badge">' + camps.length + ' Ads / Campaigns</span>' +
+          '</div>' +
+          '<div class="scroll"><table class="sub-table">' +
+            '<thead><tr><th>Ad / Campaign</th><th>Spend</th><th>Messages</th><th>Cost / msg</th><th>Orders</th><th>Cost / order</th></tr></thead>' +
+            '<tbody>' + rowsHtml + '</tbody>' +
+          '</table></div>' +
+        '</div>';
+      }
+
       function renderAccounts(accounts, sum, scopeLabel) {
         var body = $("adsTableBody");
         var foot = $("adsTableFoot");
@@ -945,21 +995,37 @@
           return;
         }
 
+        state.accountsMap = {};
         var totalSpend = parseFloat(sum.total_spend || 0) || 0;
         var rows = accounts.slice().sort(function (a, b) { return parseFloat(b.spend) - parseFloat(a.spend); });
 
-        body.innerHTML = rows.map(function (a) {
+        var htmlParts = [];
+        rows.forEach(function (a) {
+          state.accountsMap[a.id] = a;
+          var isOpen = state.expandedAccountId === a.id;
           var share = totalSpend > 0 ? Math.round(parseFloat(a.spend) / totalSpend * 100) : 0;
-          return '<tr>' +
-            '<td><div class="acc-name">' + esc(a.name) + '</div><div class="acc-id">' + esc(a.id) + '</div>' +
-              (a.error ? '<span class="warn-flag">Could not load: ' + esc(a.error) + '</span>' : '') + '</td>' +
-            '<td><div class="num strong">' + money(a.spend) + '</div><div class="share" title="' + share + '% of spend"><i style="width:' + share + '%"></i></div></td>' +
-            '<td><div class="num strong c-msg">' + fmt(a.messages) + '</div><div class="detail num">spend ' + money(a.msg_spend) + '</div></td>' +
-            '<td><span class="pill msg num">' + esc(a.cost_per_msg_cents) + '¢</span></td>' +
-            '<td><div class="num strong c-sale">' + fmt(a.orders) + '</div><div class="detail num">spend ' + money(a.sales_spend) + '</div></td>' +
-            '<td><span class="pill sale num">' + money(a.cost_per_order_usd) + '</span></td>' +
-          '</tr>';
-        }).join("");
+          var campCount = (a.campaigns && a.campaigns.length) || 0;
+
+          htmlParts.push(
+            '<tr class="acc-row' + (isOpen ? ' expanded' : '') + '" data-acc-id="' + esc(a.id) + '" title="ক্লিক করে ভেতরের Ads দেখুন">' +
+              '<td><div class="acc-name"><span class="chev">▸</span><span>' + esc(a.name) + '</span><span class="sub-drop-badge" style="padding:1px 7px;font-size:.72rem">' + campCount + ' ads</span></div><div class="acc-id">' + esc(a.id) + '</div>' +
+                (a.error ? '<span class="warn-flag">Could not load: ' + esc(a.error) + '</span>' : '') + '</td>' +
+              '<td><div class="num strong">' + money(a.spend) + '</div><div class="share" title="' + share + '% of spend"><i style="width:' + share + '%"></i></div></td>' +
+              '<td><div class="num strong c-msg">' + fmt(a.messages) + '</div><div class="detail num">spend ' + money(a.msg_spend) + '</div></td>' +
+              '<td><span class="pill msg num">' + esc(a.cost_per_msg_cents) + '¢</span></td>' +
+              '<td><div class="num strong c-sale">' + fmt(a.orders) + '</div><div class="detail num">spend ' + money(a.sales_spend) + '</div></td>' +
+              '<td><span class="pill sale num">' + money(a.cost_per_order_usd) + '</span></td>' +
+            '</tr>'
+          );
+
+          if (isOpen) {
+            htmlParts.push(
+              '<tr class="sub-drop-row"><td colspan="6">' + buildCampaignsSubHtml(a) + '</td></tr>'
+            );
+          }
+        });
+
+        body.innerHTML = htmlParts.join("");
 
         foot.innerHTML = '<tr>' +
           '<td>Total</td>' +
@@ -970,6 +1036,36 @@
           '<td class="num">' + money(sum.avg_cost_per_order_usd) + '</td>' +
         '</tr>';
       }
+
+      $("adsTableBody").addEventListener("click", function (e) {
+        var row = e.target.closest("tr.acc-row");
+        if (!row) return;
+        var accId = row.getAttribute("data-acc-id");
+        if (!accId) return;
+
+        if (state.expandedAccountId === accId) {
+          state.expandedAccountId = "";
+          var nextRow = row.nextElementSibling;
+          if (nextRow && nextRow.classList.contains("sub-drop-row")) nextRow.remove();
+          row.classList.remove("expanded");
+          return;
+        }
+
+        var prevOpen = $("adsTableBody").querySelector("tr.acc-row.expanded");
+        if (prevOpen) {
+          prevOpen.classList.remove("expanded");
+          var prevDrop = prevOpen.nextElementSibling;
+          if (prevDrop && prevDrop.classList.contains("sub-drop-row")) prevDrop.remove();
+        }
+
+        state.expandedAccountId = accId;
+        row.classList.add("expanded");
+        var accObj = state.accountsMap[accId];
+        var dropTr = document.createElement("tr");
+        dropTr.className = "sub-drop-row";
+        dropTr.innerHTML = '<td colspan="6">' + buildCampaignsSubHtml(accObj || { name: accId, campaigns: [] }) + '</td>';
+        row.parentNode.insertBefore(dropTr, row.nextSibling);
+      });
 
       function renderModerators(mods, shift) {
         var board = $("modBoard");
