@@ -1023,7 +1023,7 @@ async function fetchMetaAdsMetrics(targetDate, brand) {
       const params = new URLSearchParams({
         access_token: META_ACCESS_TOKEN,
         level: "campaign",
-        fields: "campaign_id,campaign_name,objective,spend,actions",
+        fields: "campaign_id,campaign_name,objective,status,spend,actions",
         time_range: JSON.stringify({ since: targetDate, until: targetDate }),
         use_unified_attribution_setting: "true",
         limit: "500"
@@ -1092,6 +1092,7 @@ async function fetchMetaAdsMetrics(targetDate, brand) {
           id: camp.campaign_id || "",
           name: camp.campaign_name || "Unnamed Ad Campaign",
           objective: camp.objective || "",
+          status: String(camp.status || "ACTIVE").toUpperCase(),
           spend: campSpend.toFixed(2),
           messages: campMsgs,
           msg_spend: cMsgSpend.toFixed(2),
@@ -1186,6 +1187,64 @@ async function getAdsMetrics(date, brand) {
   if (adsCache.size > 100) adsCache.clear();
   return v;
 }
+
+function postMetaCampaignStatus(campaignId, status) {
+  return new Promise((resolve, reject) => {
+    if (!META_ACCESS_TOKEN) return reject(new Error("META_ACCESS_TOKEN সেট করা নেই"));
+    const body = new URLSearchParams({
+      status: status,
+      access_token: META_ACCESS_TOKEN
+    }).toString();
+
+    const options = {
+      hostname: "graph.facebook.com",
+      path: `/${META_API_VERSION}/${encodeURIComponent(campaignId)}`,
+      method: "POST",
+      agent: fbAgent,
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Content-Length": Buffer.byteLength(body)
+      }
+    };
+
+    const req = https.request(options, (res) => {
+      let raw = "";
+      res.setEncoding("utf8");
+      res.on("data", (chunk) => { raw += chunk; });
+      res.on("end", () => {
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed.error) reject(new Error(parsed.error.message || "Meta API error"));
+          else resolve(parsed);
+        } catch (e) {
+          reject(e);
+        }
+      });
+    });
+
+    req.on("error", (err) => reject(err));
+    req.setTimeout(10000, () => req.destroy(new Error("Meta API timeout")));
+    req.write(body);
+    req.end();
+  });
+}
+
+app.post("/api/ads/toggle", requireAuth, async (req, res) => {
+  try {
+    const campaignId = String((req.body && req.body.campaign_id) || "").trim();
+    const targetStatus = String((req.body && req.body.status) || "").toUpperCase();
+
+    if (!campaignId || !["ACTIVE", "PAUSED"].includes(targetStatus)) {
+      return res.status(400).json({ error: "Invalid campaign_id or status (ACTIVE / PAUSED)" });
+    }
+
+    await postMetaCampaignStatus(campaignId, targetStatus);
+    adsCache.clear();
+    res.json({ ok: true, campaign_id: campaignId, status: targetStatus });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 app.get("/api/daily-report", requireAuth, async (req, res) => {
   try {
