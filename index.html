@@ -80,7 +80,6 @@
 
     .wrap { max-width: 1240px; margin: 0 auto; padding: 28px 24px 56px; display: grid; gap: 20px; }
 
-    /* ---------- top bar ---------- */
     .top { display: flex; flex-wrap: wrap; gap: 16px 24px; align-items: flex-end; justify-content: space-between; }
     .brand h1 { font-size: clamp(1.35rem, 2.4vw, 1.9rem); font-weight: 700; letter-spacing: -.02em; line-height: 1.15; }
     .brand p { color: var(--muted); font-size: .92rem; margin-top: 4px; }
@@ -113,7 +112,6 @@
     .btn.icon { padding: 0; width: 40px; justify-content: center; }
     .count { color: var(--faint); font-weight: 500; font-variant-numeric: tabular-nums; min-width: 2.2ch; }
 
-    /* ---------- hero ---------- */
     .hero { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 20px; }
     .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); }
     .hero-main { border-radius: 24px; padding: 28px 30px 26px; }
@@ -150,7 +148,6 @@
     .cost small { display: block; color: var(--faint); font-size: .76rem; margin-top: 3px; }
     .notice { margin-top: 6px; padding: 10px 12px; border-radius: 10px; background: var(--bad-soft); color: var(--bad); font-size: .84rem; }
 
-    /* ---------- tiles ---------- */
     .tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; }
     .tile { padding: 16px 18px; position: relative; overflow: hidden; }
     .tile::before { content: ""; position: absolute; left: 0; top: 14px; bottom: 14px; width: 4px; border-radius: 0 4px 4px 0; background: var(--tone, var(--line)); }
@@ -164,7 +161,6 @@
     .tile.sale { --tone: var(--sale); }
     .tile.msg { --tone: var(--msg); }
 
-    /* ---------- reconcile ---------- */
     .reconcile { padding: 20px 24px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 20px 40px; align-items: center; }
     .reconcile h2 { font-size: 1.05rem; font-weight: 600; }
     .reconcile p { color: var(--muted); font-size: .88rem; margin-top: 6px; max-width: 60ch; }
@@ -176,7 +172,6 @@
     .fill.i { background: var(--invert); }
     .bar-row b { color: var(--text); font-size: 1.05rem; min-width: 5ch; text-align: right; }
 
-    /* ---------- tables ---------- */
     .block-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 20px 24px 14px; flex-wrap: wrap; }
     .block-head h2 { font-size: 1.1rem; font-weight: 700; }
     .block-head span { color: var(--muted); font-size: .86rem; }
@@ -207,7 +202,7 @@
     .empty { padding: 36px 24px; text-align: center; color: var(--muted); }
     .empty b { display: block; color: var(--text); margin-bottom: 4px; }
 
-    /* ---------- campaign / ads dropdown ---------- */
+    /* ---------- campaign / ads dropdown + Off/On switch ---------- */
     .sub-drop-row td { padding: 0 !important; background: var(--bg) !important; border-bottom: 2px solid var(--line); }
     .sub-drop-box { padding: 16px 24px 20px; background: rgba(0, 0, 0, .18); }
     [data-theme="light"] .sub-drop-box { background: rgba(15, 36, 48, .03); }
@@ -222,14 +217,44 @@
       padding: 4px 11px; border-radius: 999px; transition: background .15s, border-color .15s, color .15s;
     }
     .close-drop-btn:hover { background: var(--invert); color: var(--on-invert); border-color: var(--invert); }
-    .sub-table { width: 100%; min-width: 720px; border-collapse: collapse; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+    .sub-table { width: 100%; min-width: 780px; border-collapse: collapse; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
     .sub-table th { background: var(--raised); font-size: .76rem; padding: 8px 14px; color: var(--faint); border-top: 0; }
     .sub-table td { padding: 10px 14px; font-size: .86rem; border-bottom: 1px solid var(--line); }
     .sub-table tr:last-child td { border-bottom: 0; }
     .camp-name { font-weight: 600; color: var(--text); }
     .camp-obj { font-size: .72rem; color: var(--faint); margin-top: 2px; }
 
-    /* ---------- moderator board ---------- */
+    .ad-toggle-wrap { display: inline-flex; align-items: center; gap: 8px; }
+    .ad-switch {
+      position: relative;
+      display: inline-block;
+      width: 42px;
+      height: 22px;
+      border: 0;
+      border-radius: 999px;
+      background: #475569;
+      transition: background .2s;
+      padding: 0;
+    }
+    .ad-switch[data-active="true"] { background: #1877f2; }
+    .ad-switch::after {
+      content: "";
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #ffffff;
+      transition: transform .2s;
+      box-shadow: 0 1px 3px rgba(0,0,0,.35);
+    }
+    .ad-switch[data-active="true"]::after { transform: translateX(20px); }
+    .ad-switch:disabled { opacity: .45; cursor: wait; }
+    .ad-state-txt { font-size: .72rem; font-weight: 700; min-width: 24px; }
+    .ad-state-txt.on { color: var(--ok); }
+    .ad-state-txt.off { color: var(--bad); }
+
     .mrow { display: grid; grid-template-columns: 38px minmax(100px, 1.1fr) minmax(60px, 1.3fr) 80px 88px 76px 100px 100px; gap: 12px; align-items: center; padding: 12px 24px; }
     .mhead { background: var(--raised); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: .8rem; font-weight: 600; color: var(--faint); padding-top: 10px; padding-bottom: 10px; }
     .mhead span:nth-child(n+4), .board .mrow > span:nth-child(n+4) { text-align: right; }
@@ -251,7 +276,6 @@
 
     footer { color: var(--faint); font-size: .82rem; }
 
-    /* ---------- loading & toast ---------- */
     main.is-loading .hero-number, main.is-loading .val { opacity: .55; }
     main[data-ready="false"] .num { color: transparent !important; background: linear-gradient(90deg, var(--raised), var(--line), var(--raised)); background-size: 200% 100%; border-radius: 8px; animation: shimmer 1.4s infinite; }
     main[data-ready="false"] .cost .num, main[data-ready="false"] .fill { animation: none; background: var(--raised); }
@@ -259,7 +283,6 @@
     .toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); opacity: 0; pointer-events: none; background: var(--invert); color: var(--on-invert); padding: 11px 18px; border-radius: 12px; font-weight: 500; font-size: .92rem; transition: all .3s; z-index: 40; max-width: calc(100vw - 32px); }
     .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
-    /* ---------- login ---------- */
     .gate {
       position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 20px; overflow: auto;
       background:
@@ -295,7 +318,6 @@
     body.locked .wrap, body.locked .toast { visibility: hidden; }
     #sessionLeft { font-variant-numeric: tabular-nums; }
 
-    /* ---------- responsive ---------- */
     @media (max-width: 1060px) {
       .hero { grid-template-columns: 1fr; }
       .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -328,7 +350,6 @@
 </head>
 <body>
 
-  <!-- Login -->
   <div id="loginModal" class="gate" hidden>
     <form id="authForm" autocomplete="on">
       <h2 class="display">Sign in</h2>
@@ -398,7 +419,6 @@
 
     <main id="main" data-ready="false" style="display:grid;gap:20px">
 
-      <!-- Hero: inbox + ads -->
       <section class="hero" aria-label="Today at a glance">
         <div class="panel hero-main">
           <h2>Total inbox customers</h2>
@@ -453,7 +473,6 @@
         </aside>
       </section>
 
-      <!-- Status tiles -->
       <section class="tiles" aria-label="Inbox status">
         <div class="panel tile ok">
           <div class="lbl">Replied</div>
@@ -482,7 +501,6 @@
         </div>
       </section>
 
-      <!-- Meta vs inbox -->
       <section class="panel reconcile" aria-label="Meta conversations compared with inbox customers">
         <div>
           <h2 class="display">Meta vs inbox</h2>
@@ -494,13 +512,12 @@
         </div>
       </section>
 
-      <!-- Ad accounts -->
       <section class="panel" style="padding:0;overflow:hidden" aria-label="Ad accounts">
         <div class="block-head">
           <h2 class="display">Ad accounts</h2>
           <span id="accountsMeta">—</span>
         </div>
-        <p class="hint">যেকোনো অ্যাড অ্যাকাউন্টে ক্লিক করলে নিচে ড্রপডাউনে ওই অ্যাকাউন্টের সব Ads / Campaigns ড্যাশবোর্ড খুলে যাবে।</p>
+        <p class="hint">যেকোনো অ্যাড অ্যাকাউন্টে ক্লিক করলে নিচে ড্রপডাউনে ওই অ্যাকাউন্টের সব Ads দেখুন এবং খারাপ পারফরম্যান্স করলে Off/On সুইচে চাপ দিন।</p>
         <div class="scroll">
           <table>
             <thead>
@@ -521,7 +538,6 @@
         </div>
       </section>
 
-      <!-- Moderators -->
       <section class="panel" style="padding:0;overflow:hidden" aria-label="Moderator workload">
         <div class="block-head">
           <h2 class="display">Moderators</h2>
@@ -990,7 +1006,13 @@
         }
 
         var rowsHtml = camps.map(function (c) {
+          var isOn = String(c.status || "ACTIVE").toUpperCase() === "ACTIVE";
+          var nextStatus = isOn ? "PAUSED" : "ACTIVE";
           return '<tr>' +
+            '<td><div class="ad-toggle-wrap">' +
+              '<button type="button" class="ad-switch" data-camp-toggle="1" data-acc-id="' + esc(acc.id) + '" data-camp-id="' + esc(c.id) + '" data-next-status="' + nextStatus + '" data-active="' + (isOn ? "true" : "false") + '" title="' + (isOn ? "অ্যাড অফ করতে ক্লিক করুন" : "অ্যাড অন করতে ক্লিক করুন") + '"></button>' +
+              '<span class="ad-state-txt ' + (isOn ? "on" : "off") + '">' + (isOn ? "ON" : "OFF") + '</span>' +
+            '</div></td>' +
             '<td><div class="camp-name">' + esc(c.name) + '</div><div class="camp-obj">' + esc(c.objective || "Ad Campaign") + (c.id ? ' · #' + esc(c.id) : '') + '</div></td>' +
             '<td class="num strong">' + money(c.spend) + '</td>' +
             '<td><span class="num strong c-msg">' + fmt(c.messages) + '</span><div class="detail num">spend ' + money(c.msg_spend) + '</div></td>' +
@@ -1002,7 +1024,7 @@
 
         return '<div class="sub-drop-box">' + headerHtml +
           '<div class="scroll"><table class="sub-table">' +
-            '<thead><tr><th>Ad / Campaign</th><th>Spend</th><th>Messages</th><th>Cost / msg</th><th>Orders</th><th>Cost / order</th></tr></thead>' +
+            '<thead><tr><th>Off / On</th><th>Ad / Campaign</th><th>Spend</th><th>Messages</th><th>Cost / msg</th><th>Orders</th><th>Cost / order</th></tr></thead>' +
             '<tbody>' + rowsHtml + '</tbody>' +
           '</table></div>' +
         '</div>';
@@ -1062,6 +1084,44 @@
       }
 
       $("adsTableBody").addEventListener("click", function (e) {
+        var toggleBtn = e.target.closest("[data-camp-toggle]");
+        if (toggleBtn) {
+          var accId = toggleBtn.getAttribute("data-acc-id");
+          var campId = toggleBtn.getAttribute("data-camp-id");
+          var nextStatus = toggleBtn.getAttribute("data-next-status");
+          if (!campId || !nextStatus) return;
+
+          toggleBtn.disabled = true;
+          fetch("/api/ads/toggle", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: state.auth },
+            body: JSON.stringify({ campaign_id: campId, status: nextStatus })
+          }).then(function (res) {
+            return res.json().catch(function () { return {}; }).then(function (d) {
+              return { ok: res.ok, data: d };
+            });
+          }).then(function (r) {
+            if (!r.ok) {
+              toast(r.data.error || "অ্যাড স্ট্যাটাস পরিবর্তন করা যায়নি");
+              toggleBtn.disabled = false;
+              return;
+            }
+            var accObj = state.accountsMap[accId];
+            if (accObj && Array.isArray(accObj.campaigns)) {
+              accObj.campaigns.forEach(function (c) {
+                if (String(c.id) === String(campId)) c.status = nextStatus;
+              });
+              var dropBox = toggleBtn.closest(".sub-drop-row");
+              if (dropBox) dropBox.innerHTML = '<td colspan="6">' + buildCampaignsSubHtml(accObj) + '</td>';
+            }
+            toast(nextStatus === "PAUSED" ? "অ্যাডটি OFF (Paused) করা হয়েছে" : "অ্যাডটি ON (Active) করা হয়েছে");
+          }).catch(function () {
+            toast("নেটওয়ার্ক সমস্যা: স্ট্যাটাস আপডেট হয়নি");
+            toggleBtn.disabled = false;
+          });
+          return;
+        }
+
         if (e.target.closest("[data-close-drop]")) {
           collapseAccountDropdown();
           return;
@@ -1069,21 +1129,21 @@
 
         var row = e.target.closest("tr.acc-row");
         if (!row) return;
-        var accId = row.getAttribute("data-acc-id");
-        if (!accId) return;
+        var rowAccId = row.getAttribute("data-acc-id");
+        if (!rowAccId) return;
 
-        if (state.expandedAccountId === accId) {
+        if (state.expandedAccountId === rowAccId) {
           collapseAccountDropdown();
           return;
         }
 
         collapseAccountDropdown();
-        state.expandedAccountId = accId;
+        state.expandedAccountId = rowAccId;
         row.classList.add("expanded");
-        var accObj = state.accountsMap[accId];
+        var accObj = state.accountsMap[rowAccId];
         var dropTr = document.createElement("tr");
         dropTr.className = "sub-drop-row";
-        dropTr.innerHTML = '<td colspan="6">' + buildCampaignsSubHtml(accObj || { name: accId, campaigns: [] }) + '</td>';
+        dropTr.innerHTML = '<td colspan="6">' + buildCampaignsSubHtml(accObj || { name: rowAccId, campaigns: [] }) + '</td>';
         row.parentNode.insertBefore(dropTr, row.nextSibling);
       });
 
