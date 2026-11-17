@@ -251,7 +251,6 @@ try { db.exec(`ALTER TABLE customers ADD COLUMN ad_info TEXT;`); } catch (e) {}
 try { db.exec(`ALTER TABLE customers ADD COLUMN profile_pic TEXT;`); } catch (e) {}
 try { db.exec(`ALTER TABLE moderator_assignments ADD COLUMN bucket TEXT DEFAULT 'pending';`); } catch (e) {}
 
-// পুরোনো ডাটাবেসে সেভ হয়ে থাকা ভুল 👍 ছবির ad_info পরিষ্কার করা
 try {
   db.prepare(`UPDATE customers SET ad_info = NULL WHERE ad_info LIKE '%39178562_1505197616293642%'`).run();
   db.prepare(`UPDATE messages SET ad_info = NULL WHERE ad_info LIKE '%39178562_1505197616293642%'`).run();
@@ -272,7 +271,6 @@ function isValidProductAttachment(att) {
 
   const w = Number(imgData.width || 0);
   const h = Number(imgData.height || 0);
-  // 👍 বা ছোট ইমোজি/স্টিকার সাধারণত ১২০px বা তার কম হয়; আসল প্রোডাক্ট ছবি বড় হয়
   if ((w > 0 && w <= 120) || (h > 0 && h <= 120)) return null;
 
   return imgUrl;
@@ -431,7 +429,6 @@ async function syncCustomerAndAdFromGraph(pageId, senderId) {
         }
       }
 
-      // আসল Ad Referral বা বড় Product Photo থাকলে সেটিকে প্রাধান্য দেওয়া
       if (!parsedExistingAd && thread.messages && thread.messages.data) {
         for (const m of thread.messages.data) {
           if (m.sticker) continue;
@@ -1026,7 +1023,7 @@ async function fetchMetaAdsMetrics(targetDate, brand) {
       const params = new URLSearchParams({
         access_token: META_ACCESS_TOKEN,
         level: "campaign",
-        fields: "campaign_name,objective,spend,actions",
+        fields: "campaign_id,campaign_name,objective,spend,actions",
         time_range: JSON.stringify({ since: targetDate, until: targetDate }),
         use_unified_attribution_setting: "true",
         limit: "500"
@@ -1039,6 +1036,7 @@ async function fetchMetaAdsMetrics(targetDate, brand) {
       let totalOrders = 0;
       let msgSpend = 0;
       let salesSpend = 0;
+      const campaignList = [];
 
       rows.forEach((camp) => {
         const campSpend = parseFloat(camp.spend || 0);
@@ -1066,19 +1064,45 @@ async function fetchMetaAdsMetrics(targetDate, brand) {
         const isMsgObj = obj.includes("MESSAGES") || obj.includes("ENGAGEMENT");
         const isSalesObj = obj.includes("OUTCOME_SALES") || obj.includes("CONVERSIONS");
 
+        let cMsgSpend = 0;
+        let cSalesSpend = 0;
+
         if (campMsgs > 0 && campOrders === 0) {
-          msgSpend += campSpend;
+          cMsgSpend = campSpend;
         } else if (campOrders > 0 && campMsgs === 0) {
-          salesSpend += campSpend;
+          cSalesSpend = campSpend;
         } else if (isMsgObj && !isSalesObj) {
-          msgSpend += campSpend;
+          cMsgSpend = campSpend;
         } else if (isSalesObj && !isMsgObj) {
-          salesSpend += campSpend;
+          cSalesSpend = campSpend;
         } else {
-          if (campMsgs > 0) msgSpend += campSpend / 2;
-          if (campOrders > 0) salesSpend += campSpend / 2;
+          if (campMsgs > 0) cMsgSpend = campSpend / 2;
+          if (campOrders > 0) cSalesSpend = campSpend / 2;
         }
+
+        msgSpend += cMsgSpend;
+        salesSpend += cSalesSpend;
+
+        const cCostPerMsg =
+          campMsgs > 0 && cMsgSpend > 0 ? ((cMsgSpend / campMsgs) * 100).toFixed(1) : "0.0";
+        const cCostPerOrder =
+          campOrders > 0 && cSalesSpend > 0 ? (cSalesSpend / campOrders).toFixed(2) : "0.00";
+
+        campaignList.push({
+          id: camp.campaign_id || "",
+          name: camp.campaign_name || "Unnamed Ad Campaign",
+          objective: camp.objective || "",
+          spend: campSpend.toFixed(2),
+          messages: campMsgs,
+          msg_spend: cMsgSpend.toFixed(2),
+          cost_per_msg_cents: cCostPerMsg,
+          orders: campOrders,
+          sales_spend: cSalesSpend.toFixed(2),
+          cost_per_order_usd: cCostPerOrder
+        });
       });
+
+      campaignList.sort((a, b) => parseFloat(b.spend) - parseFloat(a.spend));
 
       let costPerMsgCents = "0.0";
       if (totalMessages > 0) {
@@ -1103,6 +1127,7 @@ async function fetchMetaAdsMetrics(targetDate, brand) {
         orders: totalOrders,
         sales_spend: salesSpend.toFixed(2),
         cost_per_order_usd: costPerOrderUsd,
+        campaigns: campaignList,
         error: error || null
       };
     } catch (err) {
@@ -1117,6 +1142,7 @@ async function fetchMetaAdsMetrics(targetDate, brand) {
         orders: 0,
         sales_spend: "0.00",
         cost_per_order_usd: "0.00",
+        campaigns: [],
         error: err.message
       };
     }
