@@ -1023,13 +1023,30 @@ async function fetchMetaAdsMetrics(targetDate, brand) {
       const params = new URLSearchParams({
         access_token: META_ACCESS_TOKEN,
         level: "campaign",
-        fields: "campaign_id,campaign_name,objective,status,spend,actions",
+        fields: "campaign_id,campaign_name,objective,spend,actions",
         time_range: JSON.stringify({ since: targetDate, until: targetDate }),
         use_unified_attribution_setting: "true",
         limit: "500"
       });
       const url = `https://graph.facebook.com/${META_API_VERSION}/${cleanId}/insights?${params.toString()}`;
       const { rows, error } = await fetchAllInsights(url);
+
+      const statusMap = new Map();
+      try {
+        const campParams = new URLSearchParams({
+          access_token: META_ACCESS_TOKEN,
+          fields: "id,status",
+          limit: "500"
+        });
+        const campRes = await httpsGetJson(
+          `https://graph.facebook.com/${META_API_VERSION}/${cleanId}/campaigns?${campParams.toString()}`
+        );
+        if (campRes && Array.isArray(campRes.data)) {
+          campRes.data.forEach((c) => {
+            if (c && c.id) statusMap.set(String(c.id), String(c.status || "ACTIVE").toUpperCase());
+          });
+        }
+      } catch (e) {}
 
       let totalSpend = 0;
       let totalMessages = 0;
@@ -1088,11 +1105,12 @@ async function fetchMetaAdsMetrics(targetDate, brand) {
         const cCostPerOrder =
           campOrders > 0 && cSalesSpend > 0 ? (cSalesSpend / campOrders).toFixed(2) : "0.00";
 
+        const campIdStr = String(camp.campaign_id || "");
         campaignList.push({
-          id: camp.campaign_id || "",
+          id: campIdStr,
           name: camp.campaign_name || "Unnamed Ad Campaign",
           objective: camp.objective || "",
-          status: String(camp.status || "ACTIVE").toUpperCase(),
+          status: statusMap.get(campIdStr) || "ACTIVE",
           spend: campSpend.toFixed(2),
           messages: campMsgs,
           msg_spend: cMsgSpend.toFixed(2),
