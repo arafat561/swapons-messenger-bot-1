@@ -213,7 +213,15 @@
     [data-theme="light"] .sub-drop-box { background: rgba(15, 36, 48, .03); }
     .sub-drop-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
     .sub-drop-title { font-size: .95rem; font-weight: 700; color: var(--msg); }
+    .sub-drop-actions { display: flex; align-items: center; gap: 8px; }
     .sub-drop-badge { font-size: .78rem; color: var(--muted); background: var(--surface); border: 1px solid var(--line); padding: 3px 10px; border-radius: 999px; }
+    .close-drop-btn {
+      display: inline-flex; align-items: center; gap: 5px;
+      background: var(--raised); border: 1px solid var(--line);
+      color: var(--text); font-size: .78rem; font-weight: 600;
+      padding: 4px 11px; border-radius: 999px; transition: background .15s, border-color .15s, color .15s;
+    }
+    .close-drop-btn:hover { background: var(--invert); color: var(--on-invert); border-color: var(--invert); }
     .sub-table { width: 100%; min-width: 720px; border-collapse: collapse; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
     .sub-table th { background: var(--raised); font-size: .76rem; padding: 8px 14px; color: var(--faint); border-top: 0; }
     .sub-table td { padding: 10px 14px; font-size: .86rem; border-bottom: 1px solid var(--line); }
@@ -955,10 +963,30 @@
         $("gapText").textContent = text;
       }
 
+      function collapseAccountDropdown() {
+        if (!state.expandedAccountId) return;
+        var openRow = $("adsTableBody").querySelector('tr.acc-row[data-acc-id="' + state.expandedAccountId + '"]');
+        if (openRow) {
+          openRow.classList.remove("expanded");
+          var nextRow = openRow.nextElementSibling;
+          if (nextRow && nextRow.classList.contains("sub-drop-row")) nextRow.remove();
+        }
+        state.expandedAccountId = "";
+      }
+
       function buildCampaignsSubHtml(acc) {
         var camps = acc.campaigns || [];
+        var headerHtml =
+          '<div class="sub-drop-head">' +
+            '<span class="sub-drop-title">📊 ' + esc(acc.name) + ' — Ads / Campaigns Dashboard</span>' +
+            '<div class="sub-drop-actions">' +
+              '<span class="sub-drop-badge">' + camps.length + ' Ads / Campaigns</span>' +
+              '<button type="button" class="close-drop-btn" data-close-drop="1" title="Ad accounts লিস্টে ফিরে যান">▴ বন্ধ করুন</button>' +
+            '</div>' +
+          '</div>';
+
         if (!camps.length) {
-          return '<div class="sub-drop-box"><div class="sub-drop-head"><span class="sub-drop-title">' + esc(acc.name) + ' — Ads / Campaigns</span><span class="sub-drop-badge">0 Ads</span></div><div class="empty" style="padding:18px">এই অ্যাড অ্যাকাউন্টে আজকের তারিখে কোনো অ্যাকটিভ অ্যাড/ক্যাম্পেইন পাওয়া যায়নি।</div></div>';
+          return '<div class="sub-drop-box">' + headerHtml + '<div class="empty" style="padding:18px">এই অ্যাড অ্যাকাউন্টে আজকের তারিখে কোনো অ্যাকটিভ অ্যাড/ক্যাম্পেইন পাওয়া যায়নি।</div></div>';
         }
 
         var rowsHtml = camps.map(function (c) {
@@ -972,11 +1000,7 @@
           '</tr>';
         }).join("");
 
-        return '<div class="sub-drop-box">' +
-          '<div class="sub-drop-head">' +
-            '<span class="sub-drop-title">📊 ' + esc(acc.name) + ' — Ads / Campaigns Dashboard</span>' +
-            '<span class="sub-drop-badge">' + camps.length + ' Ads / Campaigns</span>' +
-          '</div>' +
+        return '<div class="sub-drop-box">' + headerHtml +
           '<div class="scroll"><table class="sub-table">' +
             '<thead><tr><th>Ad / Campaign</th><th>Spend</th><th>Messages</th><th>Cost / msg</th><th>Orders</th><th>Cost / order</th></tr></thead>' +
             '<tbody>' + rowsHtml + '</tbody>' +
@@ -1038,26 +1062,22 @@
       }
 
       $("adsTableBody").addEventListener("click", function (e) {
+        if (e.target.closest("[data-close-drop]")) {
+          collapseAccountDropdown();
+          return;
+        }
+
         var row = e.target.closest("tr.acc-row");
         if (!row) return;
         var accId = row.getAttribute("data-acc-id");
         if (!accId) return;
 
         if (state.expandedAccountId === accId) {
-          state.expandedAccountId = "";
-          var nextRow = row.nextElementSibling;
-          if (nextRow && nextRow.classList.contains("sub-drop-row")) nextRow.remove();
-          row.classList.remove("expanded");
+          collapseAccountDropdown();
           return;
         }
 
-        var prevOpen = $("adsTableBody").querySelector("tr.acc-row.expanded");
-        if (prevOpen) {
-          prevOpen.classList.remove("expanded");
-          var prevDrop = prevOpen.nextElementSibling;
-          if (prevDrop && prevDrop.classList.contains("sub-drop-row")) prevDrop.remove();
-        }
-
+        collapseAccountDropdown();
         state.expandedAccountId = accId;
         row.classList.add("expanded");
         var accObj = state.accountsMap[accId];
