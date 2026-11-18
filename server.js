@@ -116,96 +116,24 @@ function pageClause(ids, col) {
 }
 
 const MODERATORS = [
-  {
-    name: "mony",
-    fb_link: "https://www.facebook.com/profile.php?id=61594030833722",
-    aliases: ["mony", "61594030833722"]
-  },
-  {
-    name: "shuvro",
-    fb_link: "https://www.facebook.com/profile.php?id=61594801244167",
-    aliases: ["shuvro", "শুভ্র", "61594801244167"]
-  },
-  {
-    name: "shihab",
-    fb_link: "https://www.facebook.com/share/19iBuYADbj/?mibextid=wwXIfr",
-    aliases: ["shihab", "19iBuYADbj"]
-  },
-  {
-    name: "Faria",
-    fb_link: "https://www.facebook.com/faria.rahman.800321",
-    aliases: ["Faria", "faria", "faria.rahman.800321"]
-  },
-  {
-    name: "Sanjana",
-    fb_link: "https://www.facebook.com/share/1PHGk91SEz/",
-    aliases: ["Sanjana", "sanjana", "সানজানা", "1PHGk91SEz"]
-  },
-  {
-    name: "ashraful",
-    fb_link: "https://www.facebook.com/profile.php?id=61592130331098&sk=about",
-    aliases: ["ashraful", "আশরাফুল", "61592130331098"]
-  },
-  {
-    name: "tania",
-    fb_link: "https://www.facebook.com/profile.php?id=61591664456446",
-    aliases: ["tania", "তানিয়া", "61591664456446"]
-  },
-  {
-    name: "eram",
-    fb_link: "https://www.facebook.com/share/1CRG2mozpQ/",
-    aliases: ["eram", "ইরাম", "1CRG2mozpQ"]
-  },
-  {
-    name: "fahim",
-    fb_link: "https://www.facebook.com/ferdous.fahim.921",
-    aliases: ["fahim", "ফাহিম", "ferdous.fahim.921"]
-  },
-  {
-    name: "jaber",
-    fb_link: "https://www.facebook.com/share/19kYfdY2fr/",
-    aliases: ["jaber", "জাবের", "19kYfdY2fr"]
-  },
-  {
-    name: "apon",
-    fb_link: "https://www.facebook.com/profile.php?id=61593951013042&mibextid=ZbWKwL",
-    aliases: ["apon", "আপন", "61593951013042"]
-  },
-  {
-    name: "rifat",
-    fb_link: "https://www.facebook.com/profile.php?id=61594203401850",
-    aliases: ["rifat", "রিফাত", "Muhammad Rifat Molla", "61594203401850"]
-  },
-  {
-    name: "halim",
-    fb_link: "https://www.facebook.com/profile.php?id=61594028540149",
-    aliases: ["halim", "হালিম", "61594028540149"]
-  },
-  {
-    name: "farjana",
-    fb_link: "https://www.facebook.com/share/1PoAchCNQh/",
-    aliases: ["farjana", "ফারজানা", "1PoAchCNQh"]
-  },
-  {
-    name: "apurbo",
-    fb_link: "https://www.facebook.com/profile.php?id=61592804760356",
-    aliases: ["apurbo", "অপুর্ব", "অপূর্ব", "61592804760356"]
-  },
-  {
-    name: "ruman",
-    fb_link: "https://www.facebook.com/ruman.hossen.342329",
-    aliases: ["ruman", "রুমান", "Ruman Hossen", "ruman.hossen.342329"]
-  },
-  {
-    name: "saidul",
-    fb_link: "https://www.facebook.com/profile.php?id=61592488485671",
-    aliases: ["saidul", "সাইদুল", "61592488485671"]
-  },
-  {
-    name: "সামির",
-    fb_link: "",
-    aliases: ["সামির", "samir"]
-  }
+  { name: "mony", fb_link: "https://www.facebook.com/profile.php?id=61594030833722", aliases: ["mony", "61594030833722"] },
+  { name: "shuvro", fb_link: "https://www.facebook.com/profile.php?id=61594801244167", aliases: ["shuvro", "শুভ্র", "61594801244167"] },
+  { name: "shihab", fb_link: "https://www.facebook.com/share/19iBuYADbj/?mibextid=wwXIfr", aliases: ["shihab", "19iBuYADbj"] },
+  { name: "Faria", fb_link: "https://www.facebook.com/faria.rahman.800321", aliases: ["Faria", "faria", "faria.rahman.800321"] },
+  { name: "Sanjana", fb_link: "https://www.facebook.com/share/1PHGk91SEz/", aliases: ["Sanjana", "sanjana", "সানজানা", "1PHGk91SEz"] },
+  { name: "ashraful", fb_link: "https://www.facebook.com/profile.php?id=61592130331098&sk=about", aliases: ["ashraful", "আশরাফুল", "61592130331098"] },
+  { name: "tania", fb_link: "https://www.facebook.com/profile.php?id=61591664456446", aliases: ["tania", "তানিয়া", "61591664456446"] },
+  { name: "eram", fb_link: "https://www.facebook.com/share/1CRG2mozpQ/", aliases: ["eram", "ইরাম", "1CRG2mozpQ"] },
+  { name: "fahim", fb_link: "https://www.facebook.com/ferdous.fahim.921", aliases: ["fahim", "ফাহিম", "ferdous.fahim.921"] },
+  { name: "jaber", fb_link: "https://www.facebook.com/share/19kYfdY2fr/", aliases: ["jaber", "জাবের", "19kYfdY2fr"] },
+  { name: "apon", fb_link: "https://www.facebook.com/profile.php?id=61593951013042&mibextid=ZbWKwL", aliases: ["apon", "আপন", "61593951013042"] },
+  { name: "rifat", fb_link: "https://www.facebook.com/profile.php?id=61594203401850", aliases: ["rifat", "রিফাত", "Muhammad Rifat Molla", "61594203401850"] },
+  { name: "halim", fb_link: "https://www.facebook.com/profile.php?id=61594028540149", aliases: ["halim", "হালিম", "61594028540149"] },
+  { name: "farjana", fb_link: "https://www.facebook.com/share/1PoAchCNQh/", aliases: ["farjana", "ফারজানা", "1PoAchCNQh"] },
+  { name: "apurbo", fb_link: "https://www.facebook.com/profile.php?id=61592804760356", aliases: ["apurbo", "অপুর্ব", "অপূর্ব", "61592804760356"] },
+  { name: "ruman", fb_link: "https://www.facebook.com/ruman.hossen.342329", aliases: ["ruman", "রুমান", "Ruman Hossen", "ruman.hossen.342329"] },
+  { name: "saidul", fb_link: "https://www.facebook.com/profile.php?id=61592488485671", aliases: ["saidul", "সাইদুল", "61592488485671"] },
+  { name: "সামির", fb_link: "", aliases: ["সামির", "samir"] }
 ];
 
 function extractFbIdentifier(raw) {
@@ -273,7 +201,6 @@ function detectModeratorByFbLink(rawOrText) {
 }
 
 const BN_RANGE = "\\u0980-\\u09FF";
-
 function escapeRegex(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -374,12 +301,22 @@ db.exec(`
     created_at INTEGER NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS saved_replies (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    reply_text TEXT NOT NULL,
+    source TEXT DEFAULT 'local',
+    created_by TEXT,
+    updated_at INTEGER NOT NULL
+  );
+
   CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
   CREATE INDEX IF NOT EXISTS idx_messages_status ON messages(status);
   CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(page_id, sender_id);
   CREATE INDEX IF NOT EXISTS idx_replies_sender ON replies(page_id, sender_id);
   CREATE INDEX IF NOT EXISTS idx_replies_created_at ON replies(created_at);
   CREATE INDEX IF NOT EXISTS idx_assign_day ON moderator_assignments(day);
+  CREATE INDEX IF NOT EXISTS idx_saved_replies_updated ON saved_replies(updated_at);
 `);
 
 try { db.exec(`ALTER TABLE messages ADD COLUMN read_time INTEGER;`); } catch (e) {}
@@ -394,10 +331,16 @@ try { db.exec(`ALTER TABLE customers ADD COLUMN ad_info TEXT;`); } catch (e) {}
 try { db.exec(`ALTER TABLE customers ADD COLUMN profile_pic TEXT;`); } catch (e) {}
 try { db.exec(`ALTER TABLE moderator_assignments ADD COLUMN bucket TEXT DEFAULT 'pending';`); } catch (e) {}
 
-try {
-  db.prepare(`UPDATE customers SET ad_info = NULL WHERE ad_info LIKE '%39178562_1505197616293642%'`).run();
-  db.prepare(`UPDATE messages SET ad_info = NULL WHERE ad_info LIKE '%39178562_1505197616293642%'`).run();
-} catch (e) {}
+// Seed default shared saved replies once if empty
+const existingSrCount = db.prepare(`SELECT COUNT(*) as cnt FROM saved_replies`).get().cnt;
+if (existingSrCount === 0) {
+  const seedStmt = db.prepare(`INSERT OR IGNORE INTO saved_replies (id, title, reply_text, source, created_by, updated_at) VALUES (?, ?, ?, 'default', 'system', ?)`);
+  const nowSeed = Date.now();
+  seedStmt.run("sr_default_1", "number", "📞 বিস্তারিত জানতে অনুগ্রহ করে আপনার মোবাইল নাম্বারটি দিন। চ্যাটে অনেক সময় লাগতে পারে, তাই আমাদের প্রতিনিধি আপনাকে ফোন করে বিস্তারিত জানিয়ে দেবে। 😊", nowSeed - 4000);
+  seedStmt.run("sr_default_2", "kon", "স্যার, আপনি কি এমন কোনো প্রোডাক্ট খুঁজছিলেন? আপনার পছন্দের কালার বা ডিজাইনটি জানালে আমি বিস্তারিত জানাচ্ছি। 😊", nowSeed - 3000);
+  seedStmt.run("sr_default_3", "kon", "কোন সাইজ লাগবে জানাবেন স্যার / ম্যাম ?", nowSeed - 2000);
+  seedStmt.run("sr_default_4", "mark", "কোন কালার টি চাচ্ছেন স্যার ছবির উপর মার্ক করে দিন", nowSeed - 1000);
+}
 
 function isBlockedStickerUrl(url) {
   if (!url) return false;
@@ -448,7 +391,19 @@ const stmts = {
   insertSession: db.prepare(`INSERT INTO sessions (token_hash, created_at) VALUES (?, ?)`),
   getSession: db.prepare(`SELECT created_at FROM sessions WHERE token_hash = ?`),
   deleteSession: db.prepare(`DELETE FROM sessions WHERE token_hash = ?`),
-  purgeSessions: db.prepare(`DELETE FROM sessions WHERE created_at < ?`)
+  purgeSessions: db.prepare(`DELETE FROM sessions WHERE created_at < ?`),
+  upsertSavedReply: db.prepare(`
+    INSERT INTO saved_replies (id, title, reply_text, source, created_by, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      title = excluded.title,
+      reply_text = excluded.reply_text,
+      source = COALESCE(excluded.source, saved_replies.source),
+      created_by = COALESCE(excluded.created_by, saved_replies.created_by),
+      updated_at = excluded.updated_at
+  `),
+  deleteSavedReply: db.prepare(`DELETE FROM saved_replies WHERE id = ?`),
+  listSavedReplies: db.prepare(`SELECT id, title, reply_text, source, created_by, updated_at FROM saved_replies ORDER BY updated_at DESC`)
 };
 
 function extractPhoneNumber(text) {
@@ -697,6 +652,11 @@ function requireModAuth(req, res, next) {
   if (modPass === MOD_PASS || modPass === DASHBOARD_PASS || modPass === "swapon123") {
     return next();
   }
+  const authHeader = req.headers.authorization || "";
+  const [scheme, token] = authHeader.split(" ");
+  if (scheme === "Bearer" && sessionValid(token)) {
+    return next();
+  }
   return res.status(401).json({ error: "ভুল মডারেটর পাসওয়ার্ড!" });
 }
 
@@ -903,6 +863,92 @@ app.post("/webhook", (req, res) => {
   }
 
   return res.status(200).send("EVENT_RECEIVED");
+});
+
+/* ------------------------------------------------------------------ */
+/* Shared Saved Replies (Railway Backend + Meta Business Page Sync)   */
+/* ------------------------------------------------------------------ */
+app.get("/api/saved-replies", requireModAuth, (req, res) => {
+  const rows = stmts.listSavedReplies.all().map((r) => ({
+    id: r.id,
+    title: r.title,
+    text: r.reply_text,
+    source: r.source,
+    created_by: r.created_by,
+    updated_at: r.updated_at
+  }));
+  res.json({ replies: rows });
+});
+
+app.post("/api/saved-replies", requireModAuth, (req, res) => {
+  const body = req.body || {};
+  const id = String(body.id || `sr_${Date.now()}_${crypto.randomBytes(2).toString("hex")}`).trim();
+  const title = String(body.title || "quick").trim() || "quick";
+  const text = String(body.text || "").trim();
+  const createdBy = String(body.created_by || "moderator").trim();
+  const now = Date.now();
+
+  if (!text && !title) {
+    return res.status(400).json({ error: "Title or reply text required" });
+  }
+
+  stmts.upsertSavedReply.run(id, title, text, "shared", createdBy, now);
+  res.json({
+    ok: true,
+    reply: { id, title, text, source: "shared", created_by: createdBy, updated_at: now }
+  });
+});
+
+app.delete("/api/saved-replies/:id", requireModAuth, (req, res) => {
+  const id = String(req.params.id || "").trim();
+  if (!id) return res.status(400).json({ error: "Invalid ID" });
+  stmts.deleteSavedReply.run(id);
+  res.json({ ok: true, id });
+});
+
+app.post("/api/saved-replies/sync-meta", requireModAuth, async (req, res) => {
+  try {
+    let imported = 0;
+    const errors = [];
+
+    for (const [pageId, token] of Object.entries(PAGE_TOKENS)) {
+      if (!token) continue;
+      const url = `https://graph.facebook.com/${META_API_VERSION}/${encodeURIComponent(pageId)}/saved_replies?fields=id,title,message&access_token=${encodeURIComponent(token)}`;
+      const data = await httpsGetJson(url);
+      if (data && Array.isArray(data.data)) {
+        const now = Date.now();
+        for (const item of data.data) {
+          const msgTxt = String(item.message || "").trim();
+          if (!msgTxt) continue;
+          const srId = `meta_${pageId}_${item.id}`;
+          stmts.upsertSavedReply.run(
+            srId,
+            String(item.title || PAGE_NAMES[pageId] || "Meta Reply").trim(),
+            msgTxt,
+            "meta",
+            PAGE_NAMES[pageId] || pageId,
+            now
+          );
+          imported += 1;
+        }
+      } else if (data && data.error) {
+        errors.push(`${PAGE_NAMES[pageId] || pageId}: ${data.error.message}`);
+      }
+    }
+
+    const replies = stmts.listSavedReplies.all().map((r) => ({
+      id: r.id,
+      title: r.title,
+      text: r.reply_text,
+      source: r.source,
+      created_by: r.created_by,
+      updated_at: r.updated_at
+    }));
+
+    res.json({ ok: true, imported, errors, replies });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get("/api/mod/list", (req, res) => {
@@ -1581,7 +1627,8 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
     const replyRows = db
       .prepare(
         `SELECT r.moderator AS raw_mod,
-                COUNT(r.id) AS total_messages
+                COUNT(r.id) AS total_messages,
+                SUM(CASE WHEN r.is_order_confirm = 1 THEN 1 ELSE 0 END) AS confirmed_messages
          FROM replies r
          WHERE ${DAY_R} = ?
            AND r.moderator IS NOT NULL${shiftReplySql}${pcR.sql}
@@ -1611,6 +1658,7 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
           name: modName,
           total_conversations: 0,
           total_messages: 0,
+          confirmed_orders: 0,
           phone_numbers: 0
         });
       }
@@ -1624,7 +1672,10 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
 
     for (const r of replyRows) {
       const cur = ensureMod(r.raw_mod);
-      if (cur) cur.total_messages += r.total_messages || 0;
+      if (cur) {
+        cur.total_messages += r.total_messages || 0;
+        cur.confirmed_orders += r.confirmed_messages || 0;
+      }
     }
 
     for (const p of phoneRows) {
@@ -1645,6 +1696,7 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       name: m.name,
       total_conversations: m.total_conversations,
       total_messages: m.total_messages,
+      confirmed_orders: m.confirmed_orders,
       phone_numbers: m.phone_numbers,
       msgs_per_customer: m.total_conversations
         ? Math.round((m.total_messages / m.total_conversations) * 10) / 10
