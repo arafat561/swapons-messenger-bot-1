@@ -17,6 +17,8 @@ const DASHBOARD_PASS = process.env.DASHBOARD_PASS || "swapon123";
 const MOD_PASS = process.env.MOD_PASS || "mod123";
 const META_ACCESS_TOKEN = process.env.META_ACCESS_TOKEN || "";
 const META_API_VERSION = process.env.META_API_VERSION || "v25.0";
+const TIKTOK_ACCESS_TOKEN = process.env.TIKTOK_ACCESS_TOKEN || "";
+const TIKTOK_API_VERSION = process.env.TIKTOK_API_VERSION || "v1.3";
 
 const SESSION_MINUTES = Number(process.env.SESSION_MINUTES || 0);
 const SESSION_MS = SESSION_MINUTES > 0 ? SESSION_MINUTES * 60 * 1000 : 0;
@@ -90,14 +92,16 @@ const PAGE_TO_GROUP = {
 };
 
 const AD_ACCOUNTS = [
-  { id: "act_846240430355170", name: "Swapons World-3", brand: "swapons" },
-  { id: "act_414594386485433", name: "Swapons World-2", brand: "swapons" },
-  { id: "act_705111815068714", name: "ZXC19 (Stone rose)", brand: "swapons" },
-  { id: "act_412119051932043", name: "ST-18 (Stone Rose)", brand: "swapons" },
-  { id: "act_7707351539304206", name: "ZXC20 (Stone Rose)", brand: "swapons" },
-  { id: "act_770104971706610", name: "ST-09 (Stone Rose)", brand: "swapons" },
-  { id: "act_722336793300354", name: "ST-07 (Stone Rose)", brand: "stone" },
-  { id: "act_3681717408727534", name: "ST-10 (Stone Rose)", brand: "stone" }
+  { id: "act_846240430355170", name: "Swapons World-3", brand: "swapons", platform: "meta" },
+  { id: "act_414594386485433", name: "Swapons World-2", brand: "swapons", platform: "meta" },
+  { id: "act_705111815068714", name: "ZXC19 (Stone rose)", brand: "swapons", platform: "meta" },
+  { id: "act_412119051932043", name: "ST-18 (Stone Rose)", brand: "swapons", platform: "meta" },
+  { id: "act_7707351539304206", name: "ZXC20 (Stone Rose)", brand: "swapons", platform: "meta" },
+  { id: "act_770104971706610", name: "ST-09 (Stone Rose)", brand: "swapons", platform: "meta" },
+  { id: "act_722336793300354", name: "ST-07 (Stone Rose)", brand: "stone", platform: "meta" },
+  { id: "act_3681717408727534", name: "ST-10 (Stone Rose)", brand: "stone", platform: "meta" },
+  { id: "7482192635537653776", name: "Swapons World (TikTok)", brand: "swapons", platform: "tiktok", statusNote: "Paused / Scheduled" },
+  { id: "7547244221146087432", name: "Swapon's World (TikTok)", brand: "swapons", platform: "tiktok", statusNote: "Upcoming / Scheduled" }
 ];
 
 function resolveScope(raw) {
@@ -569,7 +573,7 @@ function requireModAuth(req, res, next) {
   if (modPass === MOD_PASS || modPass === DASHBOARD_PASS || modPass === "swapon123") {
     return next();
   }
-  return res.status(401).json({ error: "ভুল মডারেটর পাসওয়ার্ড!" });
+  return res.status(401).json({ error: "ভুল মডারেটর পাসওয়ার্ড!" });
 }
 
 app.get("/", (req, res) => {
@@ -633,7 +637,7 @@ async function handleMessagingEvent(pageId, event) {
       }
     }
 
-    const displayText = rawText || (imageUrl ? "[ছবি পাঠিয়েছেন]" : "👍");
+    const displayText = rawText || (imageUrl ? "[ছবি পাঠিয়েছেন]" : "👍");
 
     stmts.insertMessage.run(
       pageId,
@@ -940,7 +944,7 @@ app.post("/api/mod/send", requireModAuth, async (req, res) => {
       page_id,
       sender_id,
       mid,
-      cleanText || "[ছবি পাঠানো হয়েছে]",
+      cleanText || "[ছবি পাঠানো হয়েছে]",
       savedImageUrl,
       now,
       moderator,
@@ -977,7 +981,7 @@ app.post("/api/mod/send", requireModAuth, async (req, res) => {
 });
 
 /* ------------------------------------------------------------------ */
-/* Meta Ads                                                            */
+/* Meta & TikTok Ads                                                   */
 /* ------------------------------------------------------------------ */
 function httpsGetJson(url) {
   return new Promise((resolve) => {
@@ -991,6 +995,33 @@ function httpsGetJson(url) {
     });
     req.on("timeout", () => req.destroy(new Error("timeout")));
     req.on("error", () => resolve(null));
+  });
+}
+
+function tiktokGetJson(urlPath) {
+  return new Promise((resolve) => {
+    if (!TIKTOK_ACCESS_TOKEN) return resolve(null);
+    const options = {
+      hostname: "business-api.tiktok.com",
+      path: urlPath,
+      method: "GET",
+      timeout: 12000,
+      headers: {
+        "Access-Token": TIKTOK_ACCESS_TOKEN,
+        "Content-Type": "application/json"
+      }
+    };
+    const req = https.request(options, (res) => {
+      let raw = "";
+      res.setEncoding("utf8");
+      res.on("data", (chunk) => { raw += chunk; });
+      res.on("end", () => {
+        try { resolve(JSON.parse(raw)); } catch (e) { resolve(null); }
+      });
+    });
+    req.on("timeout", () => req.destroy(new Error("timeout")));
+    req.on("error", () => resolve(null));
+    req.end();
   });
 }
 
@@ -1010,164 +1041,275 @@ async function fetchAllInsights(url) {
   return { rows, error: null };
 }
 
-async function fetchMetaAdsMetrics(targetDate, brand) {
-  if (!META_ACCESS_TOKEN) {
-    return { configured: false, has_error: false, accounts: [], summary: {} };
-  }
+async function fetchMetaAccountRow(acc, targetDate) {
+  const cleanId = acc.id.replace(/\s+/g, "");
+  let remainingUsd = null;
+  let spendingLimitUsd = null;
+  let accountError = null;
 
-  const accounts = AD_ACCOUNTS.filter((a) => brand === "all" || a.brand === brand);
+  try {
+    const accParams = new URLSearchParams({
+      access_token: META_ACCESS_TOKEN,
+      fields: "spend_cap,amount_spent"
+    });
+    const accInfo = await httpsGetJson(
+      `https://graph.facebook.com/${META_API_VERSION}/${cleanId}?${accParams.toString()}`
+    );
+    if (accInfo && !accInfo.error) {
+      const capRaw = parseFloat(accInfo.spend_cap || 0);
+      const spentRaw = parseFloat(accInfo.amount_spent || 0);
+      if (capRaw > 0) {
+        spendingLimitUsd = capRaw / 100;
+        remainingUsd = Math.max(0, (capRaw - spentRaw) / 100);
+      }
+    } else if (accInfo && accInfo.error) {
+      accountError = accInfo.error.message;
+    }
+  } catch (e) {}
 
-  const promises = accounts.map(async (acc) => {
-    const cleanId = acc.id.replace(/\s+/g, "");
+  try {
+    const params = new URLSearchParams({
+      access_token: META_ACCESS_TOKEN,
+      level: "campaign",
+      fields: "campaign_id,campaign_name,objective,spend,actions",
+      time_range: JSON.stringify({ since: targetDate, until: targetDate }),
+      use_unified_attribution_setting: "true",
+      limit: "500"
+    });
+    const url = `https://graph.facebook.com/${META_API_VERSION}/${cleanId}/insights?${params.toString()}`;
+    const { rows, error } = await fetchAllInsights(url);
+    if (error && !accountError) accountError = error;
+
+    const statusMap = new Map();
     try {
-      const params = new URLSearchParams({
+      const campParams = new URLSearchParams({
         access_token: META_ACCESS_TOKEN,
-        level: "campaign",
-        fields: "campaign_id,campaign_name,objective,spend,actions",
-        time_range: JSON.stringify({ since: targetDate, until: targetDate }),
-        use_unified_attribution_setting: "true",
+        fields: "id,status",
         limit: "500"
       });
-      const url = `https://graph.facebook.com/${META_API_VERSION}/${cleanId}/insights?${params.toString()}`;
-      const { rows, error } = await fetchAllInsights(url);
-
-      const statusMap = new Map();
-      try {
-        const campParams = new URLSearchParams({
-          access_token: META_ACCESS_TOKEN,
-          fields: "id,status",
-          limit: "500"
+      const campRes = await httpsGetJson(
+        `https://graph.facebook.com/${META_API_VERSION}/${cleanId}/campaigns?${campParams.toString()}`
+      );
+      if (campRes && Array.isArray(campRes.data)) {
+        campRes.data.forEach((c) => {
+          if (c && c.id) statusMap.set(String(c.id), String(c.status || "ACTIVE").toUpperCase());
         });
-        const campRes = await httpsGetJson(
-          `https://graph.facebook.com/${META_API_VERSION}/${cleanId}/campaigns?${campParams.toString()}`
+      }
+    } catch (e) {}
+
+    let totalSpend = 0;
+    let totalMessages = 0;
+    let totalOrders = 0;
+    let msgSpend = 0;
+    let salesSpend = 0;
+    const campaignList = [];
+
+    rows.forEach((camp) => {
+      const campSpend = parseFloat(camp.spend || 0);
+      totalSpend += campSpend;
+
+      let campMsgs = 0;
+      let campOrders = 0;
+
+      if (camp.actions) {
+        const msgAction = camp.actions.find(
+          (a) => a.action_type === "onsite_conversion.messaging_conversation_started_7d"
         );
-        if (campRes && Array.isArray(campRes.data)) {
-          campRes.data.forEach((c) => {
-            if (c && c.id) statusMap.set(String(c.id), String(c.status || "ACTIVE").toUpperCase());
-          });
-        }
-      } catch (e) {}
+        if (msgAction) campMsgs = parseInt(msgAction.value || 0, 10);
 
-      let totalSpend = 0;
-      let totalMessages = 0;
-      let totalOrders = 0;
-      let msgSpend = 0;
-      let salesSpend = 0;
-      const campaignList = [];
+        const orderAction = camp.actions.find(
+          (a) => a.action_type === "purchase" || a.action_type === "offsite_conversion.fb_pixel_purchase"
+        );
+        if (orderAction) campOrders = parseInt(orderAction.value || 0, 10);
+      }
 
-      rows.forEach((camp) => {
-        const campSpend = parseFloat(camp.spend || 0);
-        totalSpend += campSpend;
+      totalMessages += campMsgs;
+      totalOrders += campOrders;
 
-        let campMsgs = 0;
-        let campOrders = 0;
+      const obj = (camp.objective || "").toUpperCase();
+      const isMsgObj = obj.includes("MESSAGES") || obj.includes("ENGAGEMENT");
+      const isSalesObj = obj.includes("OUTCOME_SALES") || obj.includes("CONVERSIONS");
 
-        if (camp.actions) {
-          const msgAction = camp.actions.find(
-            (a) => a.action_type === "onsite_conversion.messaging_conversation_started_7d"
-          );
-          if (msgAction) campMsgs = parseInt(msgAction.value || 0, 10);
+      let cMsgSpend = 0;
+      let cSalesSpend = 0;
 
-          const orderAction = camp.actions.find(
-            (a) => a.action_type === "purchase" || a.action_type === "offsite_conversion.fb_pixel_purchase"
-          );
-          if (orderAction) campOrders = parseInt(orderAction.value || 0, 10);
-        }
+      if (campMsgs > 0 && campOrders === 0) {
+        cMsgSpend = campSpend;
+      } else if (campOrders > 0 && campMsgs === 0) {
+        cSalesSpend = campSpend;
+      } else if (isMsgObj && !isSalesObj) {
+        cMsgSpend = campSpend;
+      } else if (isSalesObj && !isMsgObj) {
+        cSalesSpend = campSpend;
+      } else {
+        if (campMsgs > 0) cMsgSpend = campSpend / 2;
+        if (campOrders > 0) cSalesSpend = campSpend / 2;
+      }
 
-        totalMessages += campMsgs;
-        totalOrders += campOrders;
+      msgSpend += cMsgSpend;
+      salesSpend += cSalesSpend;
 
-        const obj = (camp.objective || "").toUpperCase();
-        const isMsgObj = obj.includes("MESSAGES") || obj.includes("ENGAGEMENT");
-        const isSalesObj = obj.includes("OUTCOME_SALES") || obj.includes("CONVERSIONS");
+      const cCostPerMsg =
+        campMsgs > 0 && cMsgSpend > 0 ? ((cMsgSpend / campMsgs) * 100).toFixed(1) : "0.0";
+      const cCostPerOrder =
+        campOrders > 0 && cSalesSpend > 0 ? (cSalesSpend / campOrders).toFixed(2) : "0.00";
 
-        let cMsgSpend = 0;
-        let cSalesSpend = 0;
-
-        if (campMsgs > 0 && campOrders === 0) {
-          cMsgSpend = campSpend;
-        } else if (campOrders > 0 && campMsgs === 0) {
-          cSalesSpend = campSpend;
-        } else if (isMsgObj && !isSalesObj) {
-          cMsgSpend = campSpend;
-        } else if (isSalesObj && !isMsgObj) {
-          cSalesSpend = campSpend;
-        } else {
-          if (campMsgs > 0) cMsgSpend = campSpend / 2;
-          if (campOrders > 0) cSalesSpend = campSpend / 2;
-        }
-
-        msgSpend += cMsgSpend;
-        salesSpend += cSalesSpend;
-
-        const cCostPerMsg =
-          campMsgs > 0 && cMsgSpend > 0 ? ((cMsgSpend / campMsgs) * 100).toFixed(1) : "0.0";
-        const cCostPerOrder =
-          campOrders > 0 && cSalesSpend > 0 ? (cSalesSpend / campOrders).toFixed(2) : "0.00";
-
-        const campIdStr = String(camp.campaign_id || "");
-        campaignList.push({
-          id: campIdStr,
-          name: camp.campaign_name || "Unnamed Ad Campaign",
-          objective: camp.objective || "",
-          status: statusMap.get(campIdStr) || "ACTIVE",
-          spend: campSpend.toFixed(2),
-          messages: campMsgs,
-          msg_spend: cMsgSpend.toFixed(2),
-          cost_per_msg_cents: cCostPerMsg,
-          orders: campOrders,
-          sales_spend: cSalesSpend.toFixed(2),
-          cost_per_order_usd: cCostPerOrder
-        });
+      const campIdStr = String(camp.campaign_id || "");
+      campaignList.push({
+        id: campIdStr,
+        name: camp.campaign_name || "Unnamed Ad Campaign",
+        objective: camp.objective || "",
+        status: statusMap.get(campIdStr) || "ACTIVE",
+        spend: campSpend.toFixed(2),
+        messages: campMsgs,
+        msg_spend: cMsgSpend.toFixed(2),
+        cost_per_msg_cents: cCostPerMsg,
+        orders: campOrders,
+        sales_spend: cSalesSpend.toFixed(2),
+        cost_per_order_usd: cCostPerOrder
       });
+    });
 
-      campaignList.sort((a, b) => parseFloat(b.spend) - parseFloat(a.spend));
+    campaignList.sort((a, b) => parseFloat(b.spend) - parseFloat(a.spend));
 
-      let costPerMsgCents = "0.0";
-      if (totalMessages > 0) {
-        const costSpend = msgSpend > 0 ? msgSpend : totalOrders === 0 ? totalSpend : 0;
-        if (costSpend > 0) costPerMsgCents = ((costSpend / totalMessages) * 100).toFixed(1);
-      }
-
-      let costPerOrderUsd = "0.00";
-      if (totalOrders > 0) {
-        const costSpend = salesSpend > 0 ? salesSpend : totalMessages === 0 ? totalSpend : 0;
-        if (costSpend > 0) costPerOrderUsd = (costSpend / totalOrders).toFixed(2);
-      }
-
-      return {
-        id: cleanId,
-        name: acc.name,
-        brand: acc.brand,
-        spend: totalSpend.toFixed(2),
-        messages: totalMessages,
-        msg_spend: msgSpend.toFixed(2),
-        cost_per_msg_cents: costPerMsgCents,
-        orders: totalOrders,
-        sales_spend: salesSpend.toFixed(2),
-        cost_per_order_usd: costPerOrderUsd,
-        campaigns: campaignList,
-        error: error || null
-      };
-    } catch (err) {
-      return {
-        id: cleanId,
-        name: acc.name,
-        brand: acc.brand,
-        spend: "0.00",
-        messages: 0,
-        msg_spend: "0.00",
-        cost_per_msg_cents: "0.0",
-        orders: 0,
-        sales_spend: "0.00",
-        cost_per_order_usd: "0.00",
-        campaigns: [],
-        error: err.message
-      };
+    let costPerMsgCents = "0.0";
+    if (totalMessages > 0) {
+      const costSpend = msgSpend > 0 ? msgSpend : totalOrders === 0 ? totalSpend : 0;
+      if (costSpend > 0) costPerMsgCents = ((costSpend / totalMessages) * 100).toFixed(1);
     }
-  });
 
-  const results = await Promise.all(promises);
+    let costPerOrderUsd = "0.00";
+    if (totalOrders > 0) {
+      const costSpend = salesSpend > 0 ? salesSpend : totalMessages === 0 ? totalSpend : 0;
+      if (costSpend > 0) costPerOrderUsd = (costSpend / totalOrders).toFixed(2);
+    }
+
+    return {
+      id: cleanId,
+      name: acc.name,
+      brand: acc.brand,
+      platform: "meta",
+      remaining_usd: remainingUsd !== null ? remainingUsd.toFixed(2) : null,
+      spending_limit_usd: spendingLimitUsd !== null ? spendingLimitUsd.toFixed(2) : null,
+      spend: totalSpend.toFixed(2),
+      messages: totalMessages,
+      msg_spend: msgSpend.toFixed(2),
+      cost_per_msg_cents: costPerMsgCents,
+      orders: totalOrders,
+      sales_spend: salesSpend.toFixed(2),
+      cost_per_order_usd: costPerOrderUsd,
+      campaigns: campaignList,
+      error: accountError
+    };
+  } catch (err) {
+    return {
+      id: cleanId,
+      name: acc.name,
+      brand: acc.brand,
+      platform: "meta",
+      remaining_usd: remainingUsd !== null ? remainingUsd.toFixed(2) : null,
+      spending_limit_usd: spendingLimitUsd !== null ? spendingLimitUsd.toFixed(2) : null,
+      spend: "0.00",
+      messages: 0,
+      msg_spend: "0.00",
+      cost_per_msg_cents: "0.0",
+      orders: 0,
+      sales_spend: "0.00",
+      cost_per_order_usd: "0.00",
+      campaigns: [],
+      error: err.message
+    };
+  }
+}
+
+async function fetchTikTokAccountRow(acc, targetDate) {
+  const advId = String(acc.id).replace(/\s+/g, "");
+  let spend = 0;
+  let orders = 0;
+  let remainingUsd = null;
+  let errMsg = null;
+
+  if (TIKTOK_ACCESS_TOKEN) {
+    try {
+      const query = new URLSearchParams({
+        advertiser_id: advId,
+        report_type: "BASIC",
+        dimensions: JSON.stringify(["advertiser_id"]),
+        metrics: JSON.stringify(["spend", "conversion"]),
+        data_level: "AUCTION_ADVERTISER",
+        start_date: targetDate,
+        end_date: targetDate
+      }).toString();
+
+      const rep = await tiktokGetJson(`/open_api/${TIKTOK_API_VERSION}/report/integrated/get/?${query}`);
+      if (rep && rep.code === 0 && rep.data && Array.isArray(rep.data.list) && rep.data.list[0]) {
+        const m = rep.data.list[0].metrics || {};
+        spend = parseFloat(m.spend || 0);
+        orders = parseInt(m.conversion || 0, 10);
+      } else if (rep && rep.code !== 0 && rep.message) {
+        errMsg = rep.message;
+      }
+
+      const info = await tiktokGetJson(
+        `/open_api/${TIKTOK_API_VERSION}/advertiser/info/?advertiser_ids=${encodeURIComponent(JSON.stringify([advId]))}&fields=${encodeURIComponent(JSON.stringify(["balance"]))}`
+      );
+      if (info && info.code === 0 && info.data && info.data.list && info.data.list[advId]) {
+        const bal = parseFloat(info.data.list[advId].balance);
+        if (!Number.isNaN(bal)) remainingUsd = bal;
+      }
+    } catch (e) {
+      errMsg = e.message;
+    }
+  }
+
+  return {
+    id: advId,
+    name: acc.name,
+    brand: acc.brand,
+    platform: "tiktok",
+    status_note: acc.statusNote || "TikTok Ads",
+    remaining_usd: remainingUsd !== null ? remainingUsd.toFixed(2) : null,
+    spending_limit_usd: null,
+    spend: spend.toFixed(2),
+    messages: 0,
+    msg_spend: "0.00",
+    cost_per_msg_cents: "0.0",
+    orders: orders,
+    sales_spend: spend.toFixed(2),
+    cost_per_order_usd: orders > 0 && spend > 0 ? (spend / orders).toFixed(2) : "0.00",
+    campaigns: [],
+    error: errMsg
+  };
+}
+
+async function fetchAdsMetrics(targetDate, brand) {
+  const accounts = AD_ACCOUNTS.filter((a) => brand === "all" || a.brand === brand);
+
+  const results = await Promise.all(
+    accounts.map((acc) => {
+      if (acc.platform === "tiktok") return fetchTikTokAccountRow(acc, targetDate);
+      if (!META_ACCESS_TOKEN) {
+        return Promise.resolve({
+          id: acc.id,
+          name: acc.name,
+          brand: acc.brand,
+          platform: "meta",
+          remaining_usd: null,
+          spending_limit_usd: null,
+          spend: "0.00",
+          messages: 0,
+          msg_spend: "0.00",
+          cost_per_msg_cents: "0.0",
+          orders: 0,
+          sales_spend: "0.00",
+          cost_per_order_usd: "0.00",
+          campaigns: [],
+          error: null
+        });
+      }
+      return fetchMetaAccountRow(acc, targetDate);
+    })
+  );
 
   const sum = (key) => results.reduce((acc, cur) => acc + parseFloat(cur[key] || 0), 0);
   const totalSpendSum = sum("spend");
@@ -1176,12 +1318,24 @@ async function fetchMetaAdsMetrics(targetDate, brand) {
   const totalMsgSpendSum = sum("msg_spend");
   const totalSalesSpendSum = sum("sales_spend");
 
+  const hasAnyRemaining = results.some((r) => r.remaining_usd !== null && r.remaining_usd !== undefined);
+  const totalRemainingSum = results.reduce(
+    (acc, cur) => acc + (cur.remaining_usd !== null && cur.remaining_usd !== undefined ? parseFloat(cur.remaining_usd) : 0),
+    0
+  );
+
+  const metaResults = results.filter((r) => r.platform === "meta");
+
   return {
-    configured: true,
-    has_error: results.some((r) => r.error),
+    configured: Boolean(META_ACCESS_TOKEN || TIKTOK_ACCESS_TOKEN),
+    meta_configured: Boolean(META_ACCESS_TOKEN),
+    tiktok_configured: Boolean(TIKTOK_ACCESS_TOKEN),
+    has_error: metaResults.some((r) => r.error),
     accounts: results,
     summary: {
       total_spend: totalSpendSum.toFixed(2),
+      total_remaining_usd: hasAnyRemaining ? totalRemainingSum.toFixed(2) : null,
+      has_remaining: hasAnyRemaining,
       total_messages: totalMsgsSum,
       msg_spend: totalMsgSpendSum.toFixed(2),
       avg_cost_per_msg_cents:
@@ -1200,7 +1354,7 @@ async function getAdsMetrics(date, brand) {
   const hit = adsCache.get(key);
   if (hit && Date.now() - hit.t < 60 * 1000) return hit.v;
 
-  const v = await fetchMetaAdsMetrics(date, brand);
+  const v = await fetchAdsMetrics(date, brand);
   if (!v.has_error) adsCache.set(key, { t: Date.now(), v });
   if (adsCache.size > 100) adsCache.clear();
   return v;
