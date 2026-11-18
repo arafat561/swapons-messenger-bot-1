@@ -100,6 +100,7 @@
     .stepper button:hover:not(:disabled) { background: var(--raised); color: var(--text); }
     .stepper button:disabled { opacity: .35; cursor: not-allowed; }
     .stepper input { border: 0; background: transparent; padding: 0 6px; height: 40px; font-weight: 600; font-size: .92rem; min-width: 128px; text-align: center; color-scheme: inherit; }
+    .stepper input:focus-visible { outline-offset: -2px; }
 
     .btn { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; font-weight: 600; font-size: .9rem; transition: background .18s, border-color .18s; text-decoration: none; color: inherit; }
     .btn:hover { background: var(--raised); border-color: var(--faint); }
@@ -176,7 +177,7 @@
     .block-head span { color: var(--muted); font-size: .86rem; }
     .hint { color: var(--muted); font-size: .86rem; padding: 0 24px 14px; max-width: 90ch; }
     .scroll { overflow-x: auto; }
-    table { width: 100%; border-collapse: collapse; min-width: 860px; }
+    table { width: 100%; border-collapse: collapse; min-width: 820px; }
     th { text-align: left; font-weight: 600; font-size: .82rem; color: var(--faint); padding: 10px 16px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--raised); white-space: nowrap; }
     th:first-child, td:first-child { padding-left: 24px; }
     td { padding: 14px 16px; border-bottom: 1px solid var(--line); vertical-align: middle; }
@@ -194,7 +195,6 @@
     .strong { font-weight: 700; }
     .c-msg { color: var(--msg); }
     .c-sale { color: var(--sale); }
-    .rem-val { display: inline-block; padding: 2px 9px; border-radius: 8px; font-weight: 700; font-size: .88rem; background: rgba(116, 214, 154, .14); color: var(--ok); }
     .pill { display: inline-block; padding: 2px 9px; border-radius: 8px; font-weight: 700; font-size: .88rem; }
     .pill.msg { background: var(--msg-soft); color: var(--msg); }
     .pill.sale { background: var(--sale-soft); color: var(--sale); }
@@ -202,6 +202,7 @@
     .empty { padding: 36px 24px; text-align: center; color: var(--muted); }
     .empty b { display: block; color: var(--text); margin-bottom: 4px; }
 
+    /* ---------- campaign / ads dropdown + Off/On switch ---------- */
     .sub-drop-row td { padding: 0 !important; background: var(--bg) !important; border-bottom: 2px solid var(--line); }
     .sub-drop-box { padding: 16px 24px 20px; background: rgba(0, 0, 0, .18); }
     [data-theme="light"] .sub-drop-box { background: rgba(15, 36, 48, .03); }
@@ -209,18 +210,47 @@
     .sub-drop-title { font-size: .95rem; font-weight: 700; color: var(--msg); }
     .sub-drop-actions { display: flex; align-items: center; gap: 8px; }
     .sub-drop-badge { font-size: .78rem; color: var(--muted); background: var(--surface); border: 1px solid var(--line); padding: 3px 10px; border-radius: 999px; }
-    .close-drop-btn { display: inline-flex; align-items: center; gap: 5px; background: var(--raised); border: 1px solid var(--line); color: var(--text); font-size: .78rem; font-weight: 600; padding: 4px 11px; border-radius: 999px; }
+    .close-drop-btn {
+      display: inline-flex; align-items: center; gap: 5px;
+      background: var(--raised); border: 1px solid var(--line);
+      color: var(--text); font-size: .78rem; font-weight: 600;
+      padding: 4px 11px; border-radius: 999px; transition: background .15s, border-color .15s, color .15s;
+    }
+    .close-drop-btn:hover { background: var(--invert); color: var(--on-invert); border-color: var(--invert); }
     .sub-table { width: 100%; min-width: 780px; border-collapse: collapse; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
     .sub-table th { background: var(--raised); font-size: .76rem; padding: 8px 14px; color: var(--faint); border-top: 0; }
     .sub-table td { padding: 10px 14px; font-size: .86rem; border-bottom: 1px solid var(--line); }
     .sub-table tr:last-child td { border-bottom: 0; }
     .camp-name { font-weight: 600; color: var(--text); }
     .camp-obj { font-size: .72rem; color: var(--faint); margin-top: 2px; }
+
     .ad-toggle-wrap { display: inline-flex; align-items: center; gap: 8px; }
-    .ad-switch { position: relative; display: inline-block; width: 42px; height: 22px; border: 0; border-radius: 999px; background: #475569; transition: background .2s; padding: 0; }
+    .ad-switch {
+      position: relative;
+      display: inline-block;
+      width: 42px;
+      height: 22px;
+      border: 0;
+      border-radius: 999px;
+      background: #475569;
+      transition: background .2s;
+      padding: 0;
+    }
     .ad-switch[data-active="true"] { background: #1877f2; }
-    .ad-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #ffffff; transition: transform .2s; }
+    .ad-switch::after {
+      content: "";
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #ffffff;
+      transition: transform .2s;
+      box-shadow: 0 1px 3px rgba(0,0,0,.35);
+    }
     .ad-switch[data-active="true"]::after { transform: translateX(20px); }
+    .ad-switch:disabled { opacity: .45; cursor: wait; }
     .ad-state-txt { font-size: .72rem; font-weight: 700; min-width: 24px; }
     .ad-state-txt.on { color: var(--ok); }
     .ad-state-txt.off { color: var(--bad); }
@@ -245,19 +275,77 @@
     .board .avg.na { color: var(--faint); font-weight: 500; }
 
     footer { color: var(--faint); font-size: .82rem; }
-    .toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); opacity: 0; pointer-events: none; background: var(--invert); color: var(--on-invert); padding: 11px 18px; border-radius: 12px; font-weight: 500; font-size: .92rem; transition: all .3s; z-index: 40; }
+
+    main.is-loading .hero-number, main.is-loading .val { opacity: .55; }
+    main[data-ready="false"] .num { color: transparent !important; background: linear-gradient(90deg, var(--raised), var(--line), var(--raised)); background-size: 200% 100%; border-radius: 8px; animation: shimmer 1.4s infinite; }
+    main[data-ready="false"] .cost .num, main[data-ready="false"] .fill { animation: none; background: var(--raised); }
+    @keyframes shimmer { to { background-position: -200% 0; } }
+    .toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); opacity: 0; pointer-events: none; background: var(--invert); color: var(--on-invert); padding: 11px 18px; border-radius: 12px; font-weight: 500; font-size: .92rem; transition: all .3s; z-index: 40; max-width: calc(100vw - 32px); }
     .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
     .gate {
       position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 20px; overflow: auto;
-      background: #132a39;
+      background:
+        radial-gradient(55% 65% at 14% 62%, #2512b5 0%, rgba(37,18,181,0) 62%),
+        radial-gradient(45% 55% at 88% 10%, #3b49dc 0%, rgba(59,73,220,0) 66%),
+        radial-gradient(50% 60% at 72% 88%, #9171d8 0%, rgba(145,113,216,0) 66%),
+        radial-gradient(60% 55% at 32% 8%, #a08be0 0%, rgba(160,139,224,0) 66%),
+        radial-gradient(40% 50% at 96% 62%, #5b43d2 0%, rgba(91,67,210,0) 70%),
+        #5f43cf;
+      background-size: 140% 140%;
+      animation: drift 22s ease-in-out infinite alternate;
     }
+    @keyframes drift { from { background-position: 0% 0%; } to { background-position: 100% 100%; } }
     .gate form { width: min(330px, 100%); display: grid; gap: 14px; color: #fff; }
-    .gate h2 { text-align: center; font-size: 1.3rem; font-weight: 500; margin-bottom: 8px; }
-    .pill-field { display: flex; align-items: center; gap: 12px; height: 46px; padding: 0 18px; border-radius: 999px; background: rgba(255,255,255,.16); }
-    .pill-field input { flex: 1; border: 0; outline: 0; background: transparent; color: #fff; font-size: .95rem; }
-    .signin-btn { height: 48px; border: 0; border-radius: 999px; background: var(--msg); color: #07131a; font-weight: 700; font-size: 1rem; }
+    .gate h2 { text-align: center; font-size: 1.3rem; font-weight: 500; letter-spacing: .01em; margin-bottom: 8px; }
+    .pill-field { display: flex; align-items: center; gap: 12px; height: 46px; padding: 0 18px; border-radius: 999px; background: rgba(255,255,255,.28); transition: background .18s, box-shadow .18s; }
+    .pill-field:focus-within { background: rgba(255,255,255,.38); box-shadow: 0 0 0 2px rgba(255,255,255,.75); }
+    .pill-field svg { width: 18px; height: 18px; flex: none; stroke: #fff; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .pill-field input { flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; background: transparent; color: #fff; font-size: .95rem; }
+    .pill-field input::placeholder { color: rgba(255,255,255,.78); }
+    .pill-field input:-webkit-autofill { -webkit-text-fill-color: #fff; transition: background-color 9999s ease-in-out 0s; caret-color: #fff; }
+    .login-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 4px; font-size: .8rem; }
+    .remember { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+    .remember input { width: 14px; height: 14px; accent-color: #fff; cursor: pointer; }
+    .login-row a { color: #fff; text-decoration: none; opacity: .95; }
+    .login-row a:hover { text-decoration: underline; }
+    .gate .err { text-align: center; color: #ffe1dd; background: rgba(120, 20, 40, .35); padding: 8px 12px; border-radius: 12px; font-size: .86rem; }
+    .signin-btn { height: 48px; border: 0; border-radius: 999px; background: rgba(255,255,255,.55); color: #3a2a9c; font-weight: 600; font-size: 1rem; margin-top: 6px; transition: background .18s, transform .18s; }
+    .signin-btn:hover:not(:disabled) { background: rgba(255,255,255,.78); }
+    .signin-btn:active:not(:disabled) { transform: scale(.985); }
+    .signin-btn:disabled { opacity: .65; cursor: wait; }
+    .gate :focus-visible { outline-color: #fff; }
     body.locked .wrap, body.locked .toast { visibility: hidden; }
+    #sessionLeft { font-variant-numeric: tabular-nums; }
+
+    @media (max-width: 1060px) {
+      .hero { grid-template-columns: 1fr; }
+      .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .reconcile { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 860px) {
+      .mrow { grid-template-columns: 28px minmax(70px, 1fr) 56px 62px 52px 60px; gap: 10px; padding: 12px 16px; }
+      .mrow .hide-sm { display: none; }
+    }
+    @media (max-width: 720px) {
+      .mhead span:nth-child(n+4), .board .mrow > span:nth-child(n+4) { text-align: right; }
+      .hint { padding: 0 16px 14px; }
+      .block-head { padding: 18px 16px 12px; }
+    }
+    @media (max-width: 640px) {
+      .wrap { padding: 18px 14px 48px; }
+      .hero-main { padding: 22px 20px; }
+      .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .seg { width: 100%; }
+      .seg button { flex: 1; padding: 8px 6px; font-size: .84rem; }
+      .seg.sm button { padding: 6px 4px; font-size: .78rem; }
+      .bar-row { grid-template-columns: 1fr auto; }
+      .bar-row .track { grid-column: 1 / -1; order: 3; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; }
+      html { scroll-behavior: auto; }
+    }
   </style>
 </head>
 <body>
@@ -265,23 +353,34 @@
   <div id="loginModal" class="gate" hidden>
     <form id="authForm" autocomplete="on">
       <h2 class="display">Sign in</h2>
+
       <label class="pill-field">
-        <input type="text" id="loginUser" name="username" placeholder="Username" required>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.2 3.6-7 8-7s8 2.8 8 7"/></svg>
+        <input type="text" id="loginUser" name="username" placeholder="Username" autocomplete="username" autocapitalize="off" spellcheck="false" required>
       </label>
+
       <label class="pill-field">
-        <input type="password" id="loginPass" name="password" placeholder="Password" required>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="12" r="4"/><path d="M12 12h9M18 12v3M15 12v2"/></svg>
+        <input type="password" id="loginPass" name="password" placeholder="Password" autocomplete="current-password" required>
       </label>
-      <div id="loginError" style="color:#ff9b8e;font-size:.86rem;text-align:center;" hidden></div>
+
+      <div class="login-row">
+        <label class="remember"><input type="checkbox" id="loginRemember" checked> Remember Me</label>
+        <a href="#" id="forgotLink">Forgot Password?</a>
+      </div>
+
+      <div id="loginError" class="err" role="alert" hidden></div>
       <button type="submit" class="signin-btn" id="loginBtn">Sign in</button>
     </form>
   </div>
 
   <div class="wrap">
+
     <header class="top">
       <div class="brand">
         <h1 class="display">Live Analytics &amp; Operations Dashboard</h1>
         <p>Messenger inbox, Meta ad spend and moderator workload in one view.</p>
-        <div class="live" id="liveBadge"><i></i><span id="liveText">Connecting…</span></div>
+        <div class="live" id="liveBadge"><i></i><span id="liveText">Connecting…</span><span id="sessionLeft" title="Time left before you must sign in again"></span></div>
       </div>
 
       <div class="controls">
@@ -298,25 +397,39 @@
         </div>
 
         <button type="button" class="btn" id="todayBtn">Today</button>
-        <button type="button" class="btn" id="refreshBtn">Refresh <span class="count" id="countdown">30</span></button>
-        <a href="/inbox" target="_blank" class="btn inbox-link">💬 Moderator Inbox</a>
-        <button type="button" class="btn icon" id="themeBtn" aria-label="Switch theme">☀</button>
-        <button type="button" class="btn icon" id="logoutBtn" aria-label="Sign out">⎋</button>
+
+        <button type="button" class="btn" id="refreshBtn" aria-label="Refresh now">
+          <svg id="refreshIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v5h.58M20 20v-5h-.58M5.1 9a8 8 0 0113.8-1.9M18.9 15a8 8 0 01-13.8 1.9"/></svg>
+          Refresh <span class="count" id="countdown">30</span>
+        </button>
+
+        <a href="/inbox" target="_blank" class="btn inbox-link" title="Open Moderator Batch Inbox">
+          💬 Moderator Inbox
+        </a>
+
+        <button type="button" class="btn icon" id="themeBtn" aria-label="Switch light or dark theme">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        </button>
+
+        <button type="button" class="btn icon" id="logoutBtn" aria-label="Sign out" title="Sign out">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
+        </button>
       </div>
     </header>
 
-    <main id="main" style="display:grid;gap:20px">
-      <section class="hero">
+    <main id="main" data-ready="false" style="display:grid;gap:20px">
+
+      <section class="hero" aria-label="Today at a glance">
         <div class="panel hero-main">
           <h2>Total inbox customers</h2>
           <div class="num hero-number" id="statReceived">0</div>
-          <p class="hero-sub">Unique people who wrote to the page on this date, from ads, direct visits and returning customers.</p>
+          <p class="hero-sub">Unique people who wrote to the page on this date, from ads, direct visits and returning customers. Ten messages from one person count once.</p>
           <div class="facts">
             <div><b class="num" id="statNew">0</b> new</div>
             <div><b class="num" id="statReturning">0</b> returning from earlier days</div>
             <div><b class="num" id="statRawMsgs">0</b> messages received</div>
           </div>
-          <div class="funnel" id="funnel">
+          <div class="funnel" id="funnel" role="img" aria-label="Reply status of customers">
             <span class="f-ok" style="flex-grow:0"></span>
             <span class="f-bad" style="flex-grow:0"></span>
             <span class="f-warn" style="flex-grow:0"></span>
@@ -324,11 +437,12 @@
           </div>
         </div>
 
-        <aside class="panel ads">
+        <aside class="panel ads" aria-label="Meta ads">
           <div class="ads-head">
             <h2>Meta ads</h2>
             <small id="adsScope">—</small>
           </div>
+
           <div class="adrow">
             <div>
               <div class="lbl">Ad spend</div>
@@ -336,6 +450,7 @@
             </div>
             <div class="cost"></div>
           </div>
+
           <div class="adrow msg">
             <div>
               <div class="lbl">Messaging campaigns</div>
@@ -344,6 +459,7 @@
             </div>
             <div class="cost"><span class="num" id="costPerMsg">0.0¢</span><small>per message</small></div>
           </div>
+
           <div class="adrow sale">
             <div>
               <div class="lbl">Website purchases</div>
@@ -352,10 +468,12 @@
             </div>
             <div class="cost"><span class="num" id="costPerOrder">$0.00</span><small>per order</small></div>
           </div>
+
+          <div class="notice" id="adsNotice" hidden></div>
         </aside>
       </section>
 
-      <section class="tiles">
+      <section class="tiles" aria-label="Inbox status">
         <div class="panel tile ok">
           <div class="lbl">Replied</div>
           <span class="num val" id="statReplied">0</span>
@@ -383,7 +501,7 @@
         </div>
       </section>
 
-      <section class="panel reconcile">
+      <section class="panel reconcile" aria-label="Meta conversations compared with inbox customers">
         <div>
           <h2 class="display">Meta vs inbox</h2>
           <p id="gapText">Meta counts conversations started by ads. The inbox counts unique people who wrote.</p>
@@ -394,17 +512,17 @@
         </div>
       </section>
 
-      <section class="panel" style="padding:0;overflow:hidden">
+      <section class="panel" style="padding:0;overflow:hidden" aria-label="Ad accounts">
         <div class="block-head">
           <h2 class="display">Ad accounts</h2>
           <span id="accountsMeta">—</span>
         </div>
+        <p class="hint">যেকোনো অ্যাড অ্যাকাউন্টে ক্লিক করলে নিচে ড্রপডাউনে ওই অ্যাকাউন্টের সব Ads দেখুন এবং খারাপ পারফরম্যান্স করলে Off/On সুইচে চাপ দিন।</p>
         <div class="scroll">
           <table>
             <thead>
               <tr>
                 <th>Account</th>
-                <th>Remaining</th>
                 <th>Total spend</th>
                 <th>Messages</th>
                 <th>Cost / message</th>
@@ -413,13 +531,14 @@
               </tr>
             </thead>
             <tbody id="adsTableBody">
-              <tr><td colspan="7" class="empty">Loading ad accounts…</td></tr>
+              <tr><td colspan="6" class="empty">Loading ad accounts…</td></tr>
             </tbody>
+            <tfoot id="adsTableFoot"></tfoot>
           </table>
         </div>
       </section>
 
-      <section class="panel" style="padding:0;overflow:hidden">
+      <section class="panel" style="padding:0;overflow:hidden" aria-label="Moderator workload">
         <div class="block-head">
           <h2 class="display">Moderators</h2>
           <div class="seg sm" id="shiftSeg" role="group" aria-label="Shift">
@@ -444,17 +563,28 @@
           <li style="display:block"><div class="empty">Loading moderators…</div></li>
         </ol>
       </section>
+
     </main>
 
-    <footer>Times follow Bangladesh time (UTC+6). Dashboard refreshes every 30 seconds.</footer>
+    <footer>Times follow Bangladesh time (UTC+6). Page, date and shift changes load instantly; the dashboard also refreshes every 30 seconds.</footer>
   </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script>
     (function () {
       "use strict";
+
       var REFRESH_SECONDS = 30;
       var $ = function (id) { return document.getElementById(id); };
-      function dhakaToday() { return new Date(Date.now() + 6 * 3600 * 1000).toISOString().slice(0, 10); }
+      var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+      function safeGet(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
+      function safeSet(key, val) { try { localStorage.setItem(key, val); } catch (e) {} }
+
+      function dhakaToday() {
+        return new Date(Date.now() + 6 * 3600 * 1000).toISOString().slice(0, 10);
+      }
       function shiftDate(dateStr, days) {
         var d = new Date(dateStr + "T00:00:00Z");
         d.setUTCDate(d.getUTCDate() + days);
@@ -462,11 +592,18 @@
       }
 
       var state = {
-        auth: localStorage.getItem("dashboard_token") || "",
-        scope: localStorage.getItem("dash_scope") || "all",
-        shift: localStorage.getItem("dash_shift") || "all",
-        countdown: REFRESH_SECONDS
+        auth: "",
+        expiresAt: 0,
+        scope: safeGet("dash_scope") || "all",
+        shift: safeGet("dash_shift") || "all",
+        expandedAccountId: "",
+        accountsMap: {},
+        reqId: 0,
+        countdown: REFRESH_SECONDS,
+        lastOk: 0
       };
+      if (["all", "swapons", "stone"].indexOf(state.scope) === -1) state.scope = "all";
+      if (["all", "morning", "evening"].indexOf(state.shift) === -1) state.shift = "all";
 
       function esc(v) {
         return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
@@ -474,149 +611,575 @@
         });
       }
       function fmt(n) { return Number(n || 0).toLocaleString("en-US"); }
-      function money(n) { return "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+      function money(n) {
+        return "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      }
       function pct(n, total) { return total > 0 ? Math.round((n / total) * 100) : 0; }
 
-      function showLogin(msg) {
-        document.body.classList.add("locked");
-        $("loginModal").hidden = false;
-        if (msg) { $("loginError").textContent = msg; $("loginError").hidden = false; }
-      }
-      function hideLogin() {
-        $("loginModal").hidden = true;
-        document.body.classList.remove("locked");
+      function toast(msg) {
+        var t = $("toast");
+        t.textContent = msg;
+        t.classList.add("show");
+        clearTimeout(toast._t);
+        toast._t = setTimeout(function () { t.classList.remove("show"); }, 4200);
       }
 
-      $("authForm").addEventListener("submit", function (e) {
+      var shown = {};
+      function setNum(id, value) {
+        var el = $(id);
+        var target = Number(value) || 0;
+        var from = shown[id] == null ? 0 : shown[id];
+        shown[id] = target;
+        if (reduceMotion || from === target) { el.textContent = fmt(target); return; }
+        var start = null;
+        function step(ts) {
+          if (start === null) start = ts;
+          var p = Math.min(1, (ts - start) / 520);
+          var eased = 1 - Math.pow(1 - p, 3);
+          el.textContent = fmt(Math.round(from + (target - from) * eased));
+          if (p < 1) requestAnimationFrame(step);
+        }
+        requestAnimationFrame(step);
+      }
+
+      $("themeBtn").addEventListener("click", function () {
+        var root = document.documentElement;
+        var next = root.getAttribute("data-theme") === "dark" ? "light" : "dark";
+        root.setAttribute("data-theme", next);
+        safeSet("dash_theme", next);
+      });
+
+      function paintScope() {
+        var buttons = document.querySelectorAll("#scopeSeg button");
+        for (var i = 0; i < buttons.length; i++) {
+          buttons[i].setAttribute("aria-pressed", buttons[i].getAttribute("data-scope") === state.scope ? "true" : "false");
+        }
+      }
+      function paintShift() {
+        var buttons = document.querySelectorAll("#shiftSeg button");
+        for (var i = 0; i < buttons.length; i++) {
+          buttons[i].setAttribute("aria-pressed", buttons[i].getAttribute("data-shift") === state.shift ? "true" : "false");
+        }
+      }
+      function paintDateButtons() {
+        $("nextDay").disabled = $("datePicker").value >= dhakaToday();
+      }
+
+      $("scopeSeg").addEventListener("click", function (e) {
+        var btn = e.target.closest("button[data-scope]");
+        if (!btn) return;
+        state.scope = btn.getAttribute("data-scope");
+        safeSet("dash_scope", state.scope);
+        paintScope();
+        loadDashboard();
+      });
+      $("shiftSeg").addEventListener("click", function (e) {
+        var btn = e.target.closest("button[data-shift]");
+        if (!btn) return;
+        state.shift = btn.getAttribute("data-shift");
+        safeSet("dash_shift", state.shift);
+        paintShift();
+        loadDashboard();
+      });
+      $("datePicker").addEventListener("change", function () {
+        if (!$("datePicker").value) $("datePicker").value = dhakaToday();
+        paintDateButtons();
+        loadDashboard();
+      });
+      $("prevDay").addEventListener("click", function () {
+        $("datePicker").value = shiftDate($("datePicker").value, -1);
+        paintDateButtons();
+        loadDashboard();
+      });
+      $("nextDay").addEventListener("click", function () {
+        var next = shiftDate($("datePicker").value, 1);
+        if (next > dhakaToday()) return;
+        $("datePicker").value = next;
+        paintDateButtons();
+        loadDashboard();
+      });
+      $("todayBtn").addEventListener("click", function () {
+        $("datePicker").value = dhakaToday();
+        paintDateButtons();
+        loadDashboard();
+      });
+      $("refreshBtn").addEventListener("click", function () { loadDashboard(); });
+
+      var TOKEN_KEY = "dashboard_token";
+      var EXP_KEY = "dashboard_exp";
+      var expiryTimer = null;
+
+      function clearStored() {
+        try {
+          localStorage.removeItem(TOKEN_KEY);
+          localStorage.removeItem(EXP_KEY);
+          sessionStorage.removeItem(TOKEN_KEY);
+          sessionStorage.removeItem(EXP_KEY);
+          sessionStorage.removeItem("dashboard_auth");
+        } catch (e) {}
+      }
+      function fmtLeft(ms) {
+        var s = Math.max(0, Math.ceil(ms / 1000));
+        var m = Math.floor(s / 60), r = s % 60;
+        return m + ":" + (r < 10 ? "0" : "") + r;
+      }
+      function paintSession() {
+        var el = $("sessionLeft");
+        el.textContent = state.auth && state.expiresAt ? " · session " + fmtLeft(state.expiresAt - Date.now()) : "";
+      }
+      function startSession(token, expiresAt, remember) {
+        state.auth = "Bearer " + token;
+        state.expiresAt = Number(expiresAt) || 0;
+        if (remember !== undefined) {
+          clearStored();
+          try {
+            var box = remember ? localStorage : sessionStorage;
+            box.setItem(TOKEN_KEY, token);
+            if (state.expiresAt) box.setItem(EXP_KEY, String(state.expiresAt));
+          } catch (e) {}
+        }
+        clearTimeout(expiryTimer);
+        if (state.expiresAt) {
+          expiryTimer = setTimeout(function () {
+            expireSession("Your session is over. Please sign in again.");
+          }, Math.max(0, state.expiresAt - Date.now()));
+        }
+        paintSession();
+      }
+      function restoreSession() {
+        try {
+          var box = null;
+          var t = localStorage.getItem(TOKEN_KEY);
+          if (t) { box = localStorage; }
+          else { t = sessionStorage.getItem(TOKEN_KEY); if (t) box = sessionStorage; }
+          if (t) {
+            var e = Number(box.getItem(EXP_KEY)) || 0;
+            if (!e || e > Date.now()) { startSession(t, e); return true; }
+          }
+          clearStored();
+        } catch (err) {}
+        return false;
+      }
+      function expireSession(message) {
+        var had = !!state.auth;
+        clearTimeout(expiryTimer);
+        state.auth = "";
+        state.expiresAt = 0;
+        state.reqId++;
+        clearStored();
+        paintSession();
+        showLogin(had ? message : "");
+      }
+
+      function showLoginError(msg) {
+        var err = $("loginError");
+        if (msg) { err.textContent = msg; err.hidden = false; } else { err.hidden = true; }
+      }
+      function showLogin(message) {
+        document.body.classList.add("locked");
+        $("loginModal").hidden = false;
+        var saved = safeGet("dash_user");
+        if (saved && !$("loginUser").value) $("loginUser").value = saved;
+        $("loginPass").value = "";
+        showLoginError(message || "");
+        setTimeout(function () { ($("loginUser").value ? $("loginPass") : $("loginUser")).focus(); }, 30);
+      }
+
+      $("forgotLink").addEventListener("click", function (e) {
         e.preventDefault();
-        fetch("/api/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username: $("loginUser").value.trim(), password: $("loginPass").value })
-        }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
-          .then(function (x) {
-            if (!x.ok) return showLogin(x.d.error || "Login failed");
-            state.auth = "Bearer " + x.d.token;
-            localStorage.setItem("dashboard_token", x.d.token);
-            hideLogin();
-            loadDashboard();
-          });
+        showLoginError("Please ask the admin to reset the password.");
       });
 
       $("logoutBtn").addEventListener("click", function () {
-        localStorage.removeItem("dashboard_token");
-        state.auth = "";
-        showLogin("");
+        var header = state.auth;
+        expireSession("");
+        if (header) {
+          fetch("/api/logout", { method: "POST", headers: { Authorization: header } }).catch(function () {});
+        }
       });
 
-      $("themeBtn").addEventListener("click", function () {
-        var next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
-        document.documentElement.setAttribute("data-theme", next);
-        localStorage.setItem("dash_theme", next);
+      $("authForm").addEventListener("submit", function (e) {
+        e.preventDefault();
+        var btn = $("loginBtn");
+        var username = $("loginUser").value.trim();
+        var password = $("loginPass").value;
+        var remember = $("loginRemember").checked;
+        showLoginError("");
+        btn.disabled = true;
+
+        fetch("/api/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: username, password: password })
+        }).then(function (res) {
+          return res.json().catch(function () { return {}; }).then(function (data) {
+            return { res: res, data: data };
+          });
+        }).then(function (r) {
+          if (!r.res.ok) {
+            var fallback = r.res.status === 401 ? "Wrong username or password." : "The server returned an error. Try again in a moment.";
+            showLoginError(r.data.error || fallback);
+            $("loginPass").value = "";
+            $("loginPass").focus();
+            return;
+          }
+          if (remember) safeSet("dash_user", username);
+          else { try { localStorage.removeItem("dash_user"); } catch (x) {} }
+
+          startSession(r.data.token, r.data.expires_at, remember);
+          $("loginPass").value = "";
+          showLoginError("");
+          $("loginModal").hidden = true;
+          document.body.classList.remove("locked");
+          loadDashboard();
+        }).catch(function () {
+          showLoginError("Could not reach the server. Check your connection.");
+        }).then(function () {
+          btn.disabled = false;
+        });
       });
 
-      $("scopeSeg").addEventListener("click", function (e) {
-        var b = e.target.closest("button[data-scope]");
-        if (!b) return;
-        state.scope = b.getAttribute("data-scope");
-        localStorage.setItem("dash_scope", state.scope);
-        document.querySelectorAll("#scopeSeg button").forEach(function (x) { x.setAttribute("aria-pressed", x === b); });
-        loadDashboard();
-      });
-
-      $("shiftSeg").addEventListener("click", function (e) {
-        var b = e.target.closest("button[data-shift]");
-        if (!b) return;
-        state.shift = b.getAttribute("data-shift");
-        localStorage.setItem("dash_shift", state.shift);
-        document.querySelectorAll("#shiftSeg button").forEach(function (x) { x.setAttribute("aria-pressed", x === b); });
-        loadDashboard();
-      });
-
-      $("datePicker").addEventListener("change", loadDashboard);
-      $("prevDay").addEventListener("click", function () { $("datePicker").value = shiftDate($("datePicker").value, -1); loadDashboard(); });
-      $("nextDay").addEventListener("click", function () {
-        var next = shiftDate($("datePicker").value, 1);
-        if (next <= dhakaToday()) { $("datePicker").value = next; loadDashboard(); }
-      });
-      $("todayBtn").addEventListener("click", function () { $("datePicker").value = dhakaToday(); loadDashboard(); });
-      $("refreshBtn").addEventListener("click", loadDashboard);
-
-      function loadDashboard() {
-        if (!state.auth) { showLogin(""); return; }
-        state.countdown = REFRESH_SECONDS;
+      function fetchReport(header) {
         var qs = "date=" + encodeURIComponent($("datePicker").value) +
           "&page_id=" + encodeURIComponent(state.scope) +
           "&shift=" + encodeURIComponent(state.shift);
+        return fetch("/api/daily-report?" + qs, { headers: { Authorization: header } });
+      }
 
-        fetch("/api/daily-report?" + qs, { headers: { Authorization: state.auth } })
-          .then(function (res) {
-            if (res.status === 401) { showLogin("Session expired"); return null; }
-            return res.json();
-          })
-          .then(function (data) {
-            if (!data) return;
-            renderData(data);
-            $("liveText").textContent = "Live · updated " + new Date(Date.now() + 6 * 3600 * 1000).toISOString().slice(11, 16);
-          });
+      function markLive(ok) {
+        var badge = $("liveBadge");
+        badge.classList.toggle("stale", !ok);
+        if (ok) {
+          state.lastOk = Date.now();
+          var t = new Date(state.lastOk + 6 * 3600 * 1000).toISOString().slice(11, 16);
+          $("liveText").textContent = "Live · updated " + t;
+        } else {
+          $("liveText").textContent = "Offline · showing last data";
+        }
+      }
+
+      function loadDashboard() {
+        if (!state.auth) { showLogin(); return Promise.resolve(); }
+
+        var myReq = ++state.reqId;
+        var main = $("main");
+        main.classList.add("is-loading");
+        $("refreshIcon").classList.add("spin");
+        state.countdown = REFRESH_SECONDS;
+
+        return fetchReport(state.auth).then(function (res) {
+          if (res.status === 401 || res.status === 403) {
+            expireSession("Your session ended. Please sign in again.");
+            return null;
+          }
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          return res.json();
+        }).then(function (data) {
+          if (!data || myReq !== state.reqId) return;
+          renderData(data);
+          markLive(true);
+        }).catch(function (err) {
+          if (myReq !== state.reqId) return;
+          console.error("Dashboard load error:", err);
+          markLive(false);
+          toast("Could not load the report. Retrying automatically.");
+        }).then(function () {
+          if (myReq === state.reqId) {
+            main.classList.remove("is-loading");
+            setTimeout(function () { $("refreshIcon").classList.remove("spin"); }, 300);
+          }
+        });
       }
 
       function renderData(data) {
         var st = data.stats || {};
         var total = st.total_received || 0;
-        $("statReceived").textContent = fmt(total);
-        $("statNew").textContent = fmt(st.new_customers);
-        $("statReturning").textContent = fmt(st.returning_customers);
-        $("statRawMsgs").textContent = fmt(st.total_raw_messages);
+        $("main").setAttribute("data-ready", "true");
 
-        $("statReplied").textContent = fmt(st.total_replied);
-        $("statUnread").textContent = fmt(st.unread_pending);
-        $("statReadNoReply").textContent = fmt(st.read_without_reply);
-        $("statOrders").textContent = fmt(st.total_confirmed_orders);
-        $("statPhones").textContent = fmt(st.total_phone_numbers);
+        setNum("statReceived", total);
+        setNum("statNew", st.new_customers);
+        setNum("statReturning", st.returning_customers);
+        setNum("statRawMsgs", st.total_raw_messages);
+
+        setNum("statReplied", st.total_replied);
+        setNum("statUnread", st.unread_pending);
+        setNum("statReadNoReply", st.read_without_reply);
+        setNum("statOrders", st.total_confirmed_orders);
+        setNum("statPhones", st.total_phone_numbers);
         $("pctReplied").textContent = pct(st.total_replied, total) + "% of customers";
         $("pctUnread").textContent = pct(st.unread_pending, total) + "% waiting";
         $("pctSeen").textContent = (st.read_without_reply || 0) > 0 ? pct(st.read_without_reply, total) + "% · follow up first" : "Nobody left waiting";
 
+        var r = st.total_replied || 0, s = st.read_without_reply || 0, u = st.unread_pending || 0;
+        var used = r + s + u;
+        var denom = Math.max(total, used, 1);
+        var parts = $("funnel").children;
+        parts[0].style.flexGrow = r / denom;
+        parts[1].style.flexGrow = s / denom;
+        parts[2].style.flexGrow = u / denom;
+        parts[3].style.flexGrow = Math.max(0, denom - used) / denom;
+        $("funnel").setAttribute("aria-label",
+          "Replied " + r + ", seen without reply " + s + ", unread " + u + " out of " + total + " customers");
+
         var ads = data.ads || {};
         var sum = ads.summary || {};
         var accounts = ads.accounts || [];
+        var scopeLabel = (data.scope && data.scope.label) || "All Pages";
+
         $("totalSpend").textContent = money(sum.total_spend);
-        $("totalMessages").textContent = fmt(sum.total_messages);
+        setNum("totalMessages", sum.total_messages);
         $("msgSpend").textContent = money(sum.msg_spend);
         $("costPerMsg").textContent = (sum.avg_cost_per_msg_cents || "0.0") + "¢";
-        $("totalOrders").textContent = fmt(sum.total_orders);
+        setNum("totalOrders", sum.total_orders);
         $("salesSpend").textContent = money(sum.sales_spend);
         $("costPerOrder").textContent = money(sum.avg_cost_per_order_usd);
-        $("adsScope").textContent = accounts.length + " ad accounts · " + ((data.scope && data.scope.label) || "All Pages");
-        $("accountsMeta").textContent = accounts.length + " accounts";
+        $("adsScope").textContent = accounts.length + (accounts.length === 1 ? " ad account" : " ad accounts") + " · " + scopeLabel;
 
-        var maxBar = Math.max(sum.total_messages || 0, total, 1);
-        $("valMeta").textContent = fmt(sum.total_messages || 0);
-        $("valInbox").textContent = fmt(total);
-        $("barMeta").style.width = ((sum.total_messages || 0) / maxBar * 100) + "%";
-        $("barInbox").style.width = (total / maxBar * 100) + "%";
+        var notice = $("adsNotice");
+        if (ads.configured === false) {
+          notice.textContent = "Meta access token is not set on the server, so ad numbers are empty.";
+          notice.hidden = false;
+        } else if (ads.has_error) {
+          var bad = accounts.filter(function (a) { return a.error; }).length;
+          notice.textContent = bad + " ad account" + (bad === 1 ? "" : "s") + " failed to load. Numbers may be lower than the real total.";
+          notice.hidden = false;
+        } else {
+          notice.hidden = true;
+        }
 
-        $("adsTableBody").innerHTML = accounts.map(function (a) {
-          var remDisplay = (a.remaining_usd !== null && a.remaining_usd !== undefined)
-            ? '<span class="rem-val num">' + money(a.remaining_usd) + '</span>'
-            : '<span class="detail">—</span>';
-          return '<tr class="acc-row">' +
-            '<td><div class="acc-name"><span>' + esc(a.name) + '</span></div><div class="acc-id">' + esc(a.id) + '</div></td>' +
-            '<td>' + remDisplay + '</td>' +
-            '<td class="num strong">' + money(a.spend) + '</td>' +
-            '<td class="num strong c-msg">' + fmt(a.messages) + '</td>' +
-            '<td><span class="pill msg num">' + esc(a.cost_per_msg_cents) + '¢</span></td>' +
-            '<td class="num strong c-sale">' + fmt(a.orders) + '</td>' +
-            '<td><span class="pill sale num">' + money(a.cost_per_order_usd) + '</span></td>' +
+        renderReconcile(sum.total_messages || 0, total);
+        renderAccounts(accounts, sum, scopeLabel);
+        renderModerators(data.moderators || [], data.shift || null);
+
+        $("datePicker").value = data.date || $("datePicker").value;
+        paintDateButtons();
+      }
+
+      function renderReconcile(metaMsgs, inbox) {
+        setNum("valMeta", metaMsgs);
+        setNum("valInbox", inbox);
+        var max = Math.max(metaMsgs, inbox, 1);
+        $("barMeta").style.width = (metaMsgs / max * 100) + "%";
+        $("barInbox").style.width = (inbox / max * 100) + "%";
+
+        var text;
+        if (!metaMsgs) {
+          text = "No ad conversations reported by Meta for this selection.";
+        } else {
+          var diff = metaMsgs - inbox;
+          var share = Math.abs(diff) / metaMsgs;
+          if (share <= 0.1) {
+            text = "Both numbers are close. Meta counts conversations started by ads; the inbox counts unique people who wrote.";
+          } else if (diff > 0) {
+            text = "Meta reports " + fmt(diff) + " more conversations than the inbox shows. Small gaps are normal (7-day attribution, Instagram or WhatsApp chats). A large gap usually means a connected page is missing from the webhook.";
+          } else {
+            text = "The inbox has " + fmt(-diff) + " more customers than Meta counted. Direct visitors and returning customers add to the inbox but not to ad conversations.";
+          }
+        }
+        $("gapText").textContent = text;
+      }
+
+      function collapseAccountDropdown() {
+        if (!state.expandedAccountId) return;
+        var openRow = $("adsTableBody").querySelector('tr.acc-row[data-acc-id="' + state.expandedAccountId + '"]');
+        if (openRow) {
+          openRow.classList.remove("expanded");
+          var nextRow = openRow.nextElementSibling;
+          if (nextRow && nextRow.classList.contains("sub-drop-row")) nextRow.remove();
+        }
+        state.expandedAccountId = "";
+      }
+
+      function buildCampaignsSubHtml(acc) {
+        var camps = acc.campaigns || [];
+        var headerHtml =
+          '<div class="sub-drop-head">' +
+            '<span class="sub-drop-title">📊 ' + esc(acc.name) + ' — Ads / Campaigns Dashboard</span>' +
+            '<div class="sub-drop-actions">' +
+              '<span class="sub-drop-badge">' + camps.length + ' Ads / Campaigns</span>' +
+              '<button type="button" class="close-drop-btn" data-close-drop="1" title="Ad accounts লিস্টে ফিরে যান">▴ বন্ধ করুন</button>' +
+            '</div>' +
+          '</div>';
+
+        if (!camps.length) {
+          return '<div class="sub-drop-box">' + headerHtml + '<div class="empty" style="padding:18px">এই অ্যাড অ্যাকাউন্টে আজকের তারিখে কোনো অ্যাকটিভ অ্যাড/ক্যাম্পেইন পাওয়া যায়নি।</div></div>';
+        }
+
+        var rowsHtml = camps.map(function (c) {
+          var isOn = String(c.status || "ACTIVE").toUpperCase() === "ACTIVE";
+          var nextStatus = isOn ? "PAUSED" : "ACTIVE";
+          return '<tr>' +
+            '<td><div class="ad-toggle-wrap">' +
+              '<button type="button" class="ad-switch" data-camp-toggle="1" data-acc-id="' + esc(acc.id) + '" data-camp-id="' + esc(c.id) + '" data-next-status="' + nextStatus + '" data-active="' + (isOn ? "true" : "false") + '" title="' + (isOn ? "অ্যাড অফ করতে ক্লিক করুন" : "অ্যাড অন করতে ক্লিক করুন") + '"></button>' +
+              '<span class="ad-state-txt ' + (isOn ? "on" : "off") + '">' + (isOn ? "ON" : "OFF") + '</span>' +
+            '</div></td>' +
+            '<td><div class="camp-name">' + esc(c.name) + '</div><div class="camp-obj">' + esc(c.objective || "Ad Campaign") + (c.id ? ' · #' + esc(c.id) : '') + '</div></td>' +
+            '<td class="num strong">' + money(c.spend) + '</td>' +
+            '<td><span class="num strong c-msg">' + fmt(c.messages) + '</span><div class="detail num">spend ' + money(c.msg_spend) + '</div></td>' +
+            '<td><span class="pill msg num">' + esc(c.cost_per_msg_cents) + '¢</span></td>' +
+            '<td><span class="num strong c-sale">' + fmt(c.orders) + '</span><div class="detail num">spend ' + money(c.sales_spend) + '</div></td>' +
+            '<td><span class="pill sale num">' + money(c.cost_per_order_usd) + '</span></td>' +
           '</tr>';
         }).join("");
 
-        var mods = data.moderators || [];
-        var maxM = (mods[0] && mods[0].total_conversations) || 1;
-        $("modHint").textContent = mods.length + " active FB profiles.";
-        $("modBoard").innerHTML = mods.map(function (m, i) {
-          var w = Math.round((m.total_conversations / maxM) * 100);
+        return '<div class="sub-drop-box">' + headerHtml +
+          '<div class="scroll"><table class="sub-table">' +
+            '<thead><tr><th>Off / On</th><th>Ad / Campaign</th><th>Spend</th><th>Messages</th><th>Cost / msg</th><th>Orders</th><th>Cost / order</th></tr></thead>' +
+            '<tbody>' + rowsHtml + '</tbody>' +
+          '</table></div>' +
+        '</div>';
+      }
+
+      function renderAccounts(accounts, sum, scopeLabel) {
+        var body = $("adsTableBody");
+        var foot = $("adsTableFoot");
+        $("accountsMeta").textContent = scopeLabel + " · " + accounts.length + (accounts.length === 1 ? " account" : " accounts");
+
+        if (!accounts.length) {
+          body.innerHTML = '<tr><td colspan="6" class="empty"><b>No ad data for this selection</b>Pick another date or channel.</td></tr>';
+          foot.innerHTML = "";
+          return;
+        }
+
+        state.accountsMap = {};
+        var totalSpend = parseFloat(sum.total_spend || 0) || 0;
+        var rows = accounts.slice().sort(function (a, b) { return parseFloat(b.spend) - parseFloat(a.spend); });
+
+        var htmlParts = [];
+        rows.forEach(function (a) {
+          state.accountsMap[a.id] = a;
+          var isOpen = state.expandedAccountId === a.id;
+          var share = totalSpend > 0 ? Math.round(parseFloat(a.spend) / totalSpend * 100) : 0;
+          var campCount = (a.campaigns && a.campaigns.length) || 0;
+
+          htmlParts.push(
+            '<tr class="acc-row' + (isOpen ? ' expanded' : '') + '" data-acc-id="' + esc(a.id) + '" title="ক্লিক করে ভেতরের Ads দেখুন">' +
+              '<td><div class="acc-name"><span class="chev">▸</span><span>' + esc(a.name) + '</span><span class="sub-drop-badge" style="padding:1px 7px;font-size:.72rem">' + campCount + ' ads</span></div><div class="acc-id">' + esc(a.id) + '</div>' +
+                (a.error ? '<span class="warn-flag">Could not load: ' + esc(a.error) + '</span>' : '') + '</td>' +
+              '<td><div class="num strong">' + money(a.spend) + '</div><div class="share" title="' + share + '% of spend"><i style="width:' + share + '%"></i></div></td>' +
+              '<td><div class="num strong c-msg">' + fmt(a.messages) + '</div><div class="detail num">spend ' + money(a.msg_spend) + '</div></td>' +
+              '<td><span class="pill msg num">' + esc(a.cost_per_msg_cents) + '¢</span></td>' +
+              '<td><div class="num strong c-sale">' + fmt(a.orders) + '</div><div class="detail num">spend ' + money(a.sales_spend) + '</div></td>' +
+              '<td><span class="pill sale num">' + money(a.cost_per_order_usd) + '</span></td>' +
+            '</tr>'
+          );
+
+          if (isOpen) {
+            htmlParts.push(
+              '<tr class="sub-drop-row"><td colspan="6">' + buildCampaignsSubHtml(a) + '</td></tr>'
+            );
+          }
+        });
+
+        body.innerHTML = htmlParts.join("");
+
+        foot.innerHTML = '<tr>' +
+          '<td>Total</td>' +
+          '<td class="num">' + money(sum.total_spend) + '</td>' +
+          '<td class="num c-msg">' + fmt(sum.total_messages) + '</td>' +
+          '<td class="num">' + esc(sum.avg_cost_per_msg_cents || "0.0") + '¢</td>' +
+          '<td class="num c-sale">' + fmt(sum.total_orders) + '</td>' +
+          '<td class="num">' + money(sum.avg_cost_per_order_usd) + '</td>' +
+        '</tr>';
+      }
+
+      $("adsTableBody").addEventListener("click", function (e) {
+        var toggleBtn = e.target.closest("[data-camp-toggle]");
+        if (toggleBtn) {
+          var accId = toggleBtn.getAttribute("data-acc-id");
+          var campId = toggleBtn.getAttribute("data-camp-id");
+          var nextStatus = toggleBtn.getAttribute("data-next-status");
+          if (!campId || !nextStatus) return;
+
+          toggleBtn.disabled = true;
+          fetch("/api/ads/toggle", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: state.auth },
+            body: JSON.stringify({ campaign_id: campId, status: nextStatus })
+          }).then(function (res) {
+            return res.json().catch(function () { return {}; }).then(function (d) {
+              return { ok: res.ok, data: d };
+            });
+          }).then(function (r) {
+            if (!r.ok) {
+              toast(r.data.error || "অ্যাড স্ট্যাটাস পরিবর্তন করা যায়নি");
+              toggleBtn.disabled = false;
+              return;
+            }
+            var accObj = state.accountsMap[accId];
+            if (accObj && Array.isArray(accObj.campaigns)) {
+              accObj.campaigns.forEach(function (c) {
+                if (String(c.id) === String(campId)) c.status = nextStatus;
+              });
+              var dropBox = toggleBtn.closest(".sub-drop-row");
+              if (dropBox) dropBox.innerHTML = '<td colspan="6">' + buildCampaignsSubHtml(accObj) + '</td>';
+            }
+            toast(nextStatus === "PAUSED" ? "অ্যাডটি OFF (Paused) করা হয়েছে" : "অ্যাডটি ON (Active) করা হয়েছে");
+          }).catch(function () {
+            toast("নেটওয়ার্ক সমস্যা: স্ট্যাটাস আপডেট হয়নি");
+            toggleBtn.disabled = false;
+          });
+          return;
+        }
+
+        if (e.target.closest("[data-close-drop]")) {
+          collapseAccountDropdown();
+          return;
+        }
+
+        var row = e.target.closest("tr.acc-row");
+        if (!row) return;
+        var rowAccId = row.getAttribute("data-acc-id");
+        if (!rowAccId) return;
+
+        if (state.expandedAccountId === rowAccId) {
+          collapseAccountDropdown();
+          return;
+        }
+
+        collapseAccountDropdown();
+        state.expandedAccountId = rowAccId;
+        row.classList.add("expanded");
+        var accObj = state.accountsMap[rowAccId];
+        var dropTr = document.createElement("tr");
+        dropTr.className = "sub-drop-row";
+        dropTr.innerHTML = '<td colspan="6">' + buildCampaignsSubHtml(accObj || { name: rowAccId, campaigns: [] }) + '</td>';
+        row.parentNode.insertBefore(dropTr, row.nextSibling);
+      });
+
+      function renderModerators(mods, shift) {
+        var board = $("modBoard");
+        var totalC = 0, totalM = 0, totalP = 0;
+        mods.forEach(function (m) {
+          totalC += m.total_conversations || 0;
+          totalM += m.total_messages || 0;
+          totalP += m.phone_numbers || 0;
+        });
+
+        var hint;
+        var common = "A customer counts once, however many messages were sent. A phone number goes to the moderator who sent that customer's first welcome message.";
+        if (shift && shift.minutes) {
+          var done = shift.elapsed_minutes || 0;
+          var dur = done < shift.minutes
+            ? Math.round(done) + " of " + shift.minutes + " minutes so far"
+            : shift.minutes + " minutes";
+          hint = shift.label + " · " + dur + ". Min / message = duty minutes ÷ messages sent. " + common;
+        } else {
+          hint = "Whole day. Pick Morning or Evening to see minutes per message. " + common;
+        }
+        if (totalM || totalP) hint = fmt(totalC) + " customers · " + fmt(totalM) + " messages sent · " + fmt(totalP) + " phone numbers. " + hint;
+        $("modHint").textContent = hint;
+
+        if (!mods.length) {
+          board.innerHTML = '<li style="display:block"><div class="empty"><b>No moderator messages in this period</b>' +
+            'A customer is credited to the moderator whose welcome message says “আমি &lt;name&gt;” first.</div></li>';
+          return;
+        }
+
+        var max = mods[0].total_conversations || 1;
+        board.innerHTML = mods.map(function (m, i) {
+          var w = Math.round((m.total_conversations / max) * 100);
+          var hasAvg = m.avg_minutes_per_message !== null && m.avg_minutes_per_message !== undefined;
           return '<li class="mrow">' +
             '<span class="rank num">' + (i + 1) + '</span>' +
             '<span class="who">' + esc(m.name) + '</span>' +
@@ -625,20 +1188,38 @@
             '<span class="msgs num">' + fmt(m.total_messages) + '</span>' +
             '<span class="ph num">' + fmt(m.phone_numbers) + '</span>' +
             '<span class="per num hide-sm">' + (m.msgs_per_customer || 0) + '</span>' +
-            '<span class="avg num">' + (m.avg_minutes_per_message != null ? m.avg_minutes_per_message : '—') + '</span>' +
+            '<span class="avg num' + (hasAvg ? '' : ' na') + '">' + (hasAvg ? m.avg_minutes_per_message : '—') + '</span>' +
           '</li>';
         }).join("");
       }
 
       setInterval(function () {
-        if (!state.auth || document.hidden) return;
+        if (state.auth && state.expiresAt && Date.now() >= state.expiresAt) {
+          expireSession("Your session is over. Please sign in again.");
+          return;
+        }
+        paintSession();
+        if (document.hidden || !state.auth) return;
         state.countdown -= 1;
         if (state.countdown <= 0) { loadDashboard(); state.countdown = REFRESH_SECONDS; }
         $("countdown").textContent = Math.max(0, state.countdown);
+        if (state.lastOk && Date.now() - state.lastOk > 90000) markLive(false);
       }, 1000);
 
+      document.addEventListener("visibilitychange", function () {
+        if (document.hidden) return;
+        if (state.auth && state.expiresAt && Date.now() >= state.expiresAt) {
+          expireSession("Your session is over. Please sign in again.");
+          return;
+        }
+        if (state.auth && Date.now() - state.lastOk > 15000) loadDashboard();
+      });
+
       $("datePicker").value = dhakaToday();
-      if (state.auth) { hideLogin(); loadDashboard(); } else { showLogin(""); }
+      paintScope();
+      paintShift();
+      paintDateButtons();
+      if (restoreSession()) { loadDashboard(); } else { showLogin(""); }
     })();
   </script>
 </body>
