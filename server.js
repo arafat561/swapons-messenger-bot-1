@@ -702,9 +702,12 @@ async function resolveEchoModeratorByFbLink(pageId, customerId, event) {
   }
 
   const token = getPageToken(pageId);
-  if (token && event.message && event.message.mid) {
+  const mid = event.message && event.message.mid;
+  const replyText = String((event.message && event.message.text) || "").trim();
+
+  if (token && mid) {
     try {
-      const msgUrl = `https://graph.facebook.com/${META_API_VERSION}/${encodeURIComponent(event.message.mid)}?fields=from&access_token=${encodeURIComponent(token)}`;
+      const msgUrl = `https://graph.facebook.com/${META_API_VERSION}/${encodeURIComponent(mid)}?fields=from&access_token=${encodeURIComponent(token)}`;
       const msgInfo = await httpsGetJson(msgUrl);
       if (msgInfo && msgInfo.from && String(msgInfo.from.id) !== String(pageId)) {
         const matchById = detectModeratorByFbLink(msgInfo.from.id);
@@ -712,6 +715,27 @@ async function resolveEchoModeratorByFbLink(pageId, customerId, event) {
         if (msgInfo.from.name) {
           const matchByName = detectModeratorByFbLink(msgInfo.from.name);
           if (matchByName) return matchByName;
+        }
+      }
+    } catch (e) {}
+  }
+
+  if (token && customerId) {
+    try {
+      const convUrl = `https://graph.facebook.com/${META_API_VERSION}/me/conversations?user_id=${encodeURIComponent(customerId)}&fields=messages.limit(6){id,message,from}&access_token=${encodeURIComponent(token)}`;
+      const conv = await httpsGetJson(convUrl);
+      const msgs = conv && conv.data && conv.data[0] && conv.data[0].messages && conv.data[0].messages.data;
+      if (Array.isArray(msgs)) {
+        const exactMid = mid && msgs.find((m) => String(m.id) === String(mid));
+        const byText = !exactMid && replyText && msgs.find((m) => String(m.message || "").trim() === replyText && m.from && String(m.from.id) !== String(pageId));
+        const matchedMsg = exactMid || byText;
+        if (matchedMsg && matchedMsg.from && String(matchedMsg.from.id) !== String(pageId)) {
+          const idHit = detectModeratorByFbLink(matchedMsg.from.id);
+          if (idHit) return idHit;
+          if (matchedMsg.from.name) {
+            const nameHit = detectModeratorByFbLink(matchedMsg.from.name);
+            if (nameHit) return nameHit;
+          }
         }
       }
     } catch (e) {}
