@@ -82,7 +82,7 @@
 
   <!-- Main Chat Layout -->
   <div class="flex-1 flex overflow-hidden">
-    
+
     <!-- Left Sidebar: 4 Dashboard Tabs + Customer List -->
     <aside class="w-80 md:w-96 bg-slate-900/60 border-r border-slate-800 flex flex-col">
       <div class="grid grid-cols-4 gap-1 p-2 bg-slate-950/60 border-b border-slate-800 text-center">
@@ -148,43 +148,50 @@
           </div>
         </div>
 
-        <!-- Ad Referral Banner -->
-        <div id="adBanner" class="bg-amber-500/10 border-b border-amber-500/30 px-4 py-2 flex items-center justify-between gap-3">
-          <div class="flex items-center gap-3">
-            <a id="adThumbLink" href="#" target="_blank">
+        <!-- Ad Referral Banner with View Ad Button -->
+        <div id="adBanner" class="bg-amber-500/10 border-b border-amber-500/30 px-4 py-2.5 flex items-center justify-between gap-3">
+          <div class="flex items-center gap-3 min-w-0">
+            <a id="adThumbLink" href="#" target="_blank" rel="noopener noreferrer" class="shrink-0">
               <img id="adThumb" src="" alt="Ad" class="w-12 h-12 rounded-lg object-cover border border-amber-500/50 hidden">
             </a>
-            <div>
+            <div class="min-w-0">
               <div class="text-[11px] font-bold text-amber-400">📢 Ad / Product Source:</div>
-              <div id="adTitleText" class="text-xs font-semibold text-slate-200">Direct Messenger / Ad Query</div>
-              <div id="adIdText" class="text-[10px] text-slate-400 font-mono"></div>
+              <div id="adTitleText" class="text-xs font-semibold text-slate-200 truncate">Direct Messenger / Ad Query</div>
+              <div id="adIdText" class="text-[10px] text-slate-400 font-mono truncate"></div>
             </div>
           </div>
-          <a id="adPostLink" href="#" target="_blank" class="hidden bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold px-3 py-1.5 rounded-lg transition shrink-0">
-            🔗 প্রোডাক্ট / অ্যাড দেখুন
+          <a id="adPostLink" href="#" target="_blank" rel="noopener noreferrer" class="bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold px-3.5 py-2 rounded-lg transition shrink-0 flex items-center gap-1.5">
+            <span>🔗</span>
+            <span id="adPostBtnLabel">অ্যাড দেখুন</span>
           </a>
         </div>
 
         <!-- Messages Stream -->
         <div id="messagesContainer" class="flex-1 overflow-y-auto p-4 space-y-3"></div>
 
-        <!-- Selected Image Preview Bar -->
+        <!-- Selected Multiple Images Preview Bar -->
         <div id="imagePreviewBar" class="hidden px-4 py-2 bg-slate-900 border-t border-slate-800 flex items-center gap-3">
-          <img id="previewImgEl" src="" class="h-14 w-14 object-cover rounded-lg border border-blue-500">
-          <span class="text-xs text-slate-300 flex-1">ছবি সিলেক্ট করা হয়েছে (Send চাপলে কাস্টমারের কাছে চলে যাবে)</span>
-          <button type="button" onclick="clearSelectedImage()" class="text-xs text-rose-400 hover:underline px-2 py-1 cursor-pointer">✕ বাতিল</button>
+          <div id="previewThumbList" class="flex items-center gap-2 overflow-x-auto max-w-md py-0.5"></div>
+          <span id="previewCountLabel" class="text-xs text-slate-300 flex-1">ছবি সিলেক্ট করা হয়েছে</span>
+          <button type="button" onclick="clearSelectedImage()" class="text-xs text-rose-400 hover:underline px-2 py-1 cursor-pointer shrink-0">✕ বাতিল</button>
         </div>
 
-        <!-- Reply Input with Picture Upload -->
-        <form onsubmit="event.preventDefault(); sendReply();" class="p-3 bg-slate-900 border-t border-slate-800 flex items-center gap-2">
-          <input type="file" id="imageFileInput" accept="image/*" class="hidden" onchange="handleImageSelect(event)">
-          <button type="button" onclick="document.getElementById('imageFileInput').click()" title="ছবি পাঠান" class="bg-slate-800 hover:bg-slate-700 text-slate-200 p-3 rounded-xl border border-slate-700 transition cursor-pointer">
-            📷
-          </button>
-          <input type="text" id="replyInput" placeholder="এখানে রিপ্লাই লিখুন..." autocomplete="off" class="flex-1 bg-slate-800 text-white text-sm px-4 py-3 rounded-xl border border-slate-700 outline-none focus:border-blue-500">
-          <button type="submit" id="sendBtn" class="bg-blue-600 hover:bg-blue-500 text-white font-semibold px-6 py-3 rounded-xl transition cursor-pointer">
-            Send
-          </button>
+        <!-- Auto-Save Status + Reply Input with Multiple Picture Upload -->
+        <form onsubmit="event.preventDefault(); sendReply();" class="p-3 bg-slate-900 border-t border-slate-800 space-y-1.5">
+          <div class="flex items-center justify-between px-1 text-[11px] text-slate-400">
+            <span id="autoSaveBadge" class="text-emerald-400/90">💾 Auto Save সক্রিয়</span>
+            <span>একসাথে একাধিক ছবি বা দ্রুত রিপ্লাই পাঠান</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <input type="file" id="imageFileInput" accept="image/*" multiple class="hidden" onchange="handleImageSelect(event)">
+            <button type="button" onclick="document.getElementById('imageFileInput').click()" title="একাধিক ছবি পাঠান" class="bg-slate-800 hover:bg-slate-700 text-slate-200 p-3 rounded-xl border border-slate-700 transition cursor-pointer shrink-0">
+              📷
+            </button>
+            <input type="text" id="replyInput" oninput="handleDraftInput()" placeholder="এখানে রিপ্লাই লিখুন..." autocomplete="off" class="flex-1 bg-slate-800 text-white text-sm px-4 py-3 rounded-xl border border-slate-700 outline-none focus:border-blue-500">
+            <button type="submit" id="sendBtn" class="bg-blue-600 hover:bg-blue-500 text-white font-semibold px-6 py-3 rounded-xl transition cursor-pointer shrink-0">
+              Send
+            </button>
+          </div>
         </form>
       </div>
     </main>
@@ -197,9 +204,42 @@
     let currentPageFilter = sessionStorage.getItem("mod_page") || "all";
     let currentBucket = "pending";
     let selectedCustomer = null;
-    let selectedImageBase64 = "";
+    let selectedImagesList = [];
     let currentMessagesCache = [];
     let isSendingMessage = false;
+
+    function getDraftKey(cust) {
+      if (!cust || !cust.page_id || !cust.sender_id) return "";
+      return `mod_draft_${cust.page_id}_${cust.sender_id}`;
+    }
+
+    function saveCurrentDraft() {
+      if (!selectedCustomer) return;
+      const key = getDraftKey(selectedCustomer);
+      const val = document.getElementById("replyInput").value;
+      try {
+        if (val && val.trim()) {
+          localStorage.setItem(key, val);
+          document.getElementById("autoSaveBadge").innerText = "💾 Auto Saved";
+        } else {
+          localStorage.removeItem(key);
+          document.getElementById("autoSaveBadge").innerText = "💾 Auto Save সক্রিয়";
+        }
+      } catch (e) {}
+    }
+
+    function restoreCustomerDraft(cust) {
+      const input = document.getElementById("replyInput");
+      const key = getDraftKey(cust);
+      let saved = "";
+      try { saved = (key && localStorage.getItem(key)) || ""; } catch (e) {}
+      input.value = saved;
+      document.getElementById("autoSaveBadge").innerText = saved ? "💾 Draft Auto-Restored" : "💾 Auto Save সক্রিয়";
+    }
+
+    function handleDraftInput() {
+      saveCurrentDraft();
+    }
 
     function deduplicateMessages(list) {
       const result = [];
@@ -240,7 +280,7 @@
       const res = await fetch("/api/mod/list");
       const data = await res.json();
       const select = document.getElementById("modSelect");
-      select.innerHTML = `<option value="">-- নাম নির্বাচন করুন --</option>` + 
+      select.innerHTML = `<option value="">-- নাম নির্বাচন করুন --</option>` +
         data.moderators.map(name => `<option value="${name}">${name}</option>`).join("");
     }
 
@@ -277,6 +317,7 @@
     }
 
     function switchBucket(bucket) {
+      saveCurrentDraft();
       currentBucket = bucket;
       selectedCustomer = null;
       document.getElementById("activeChatBox").classList.add("hidden");
@@ -305,6 +346,7 @@
     }
 
     function changePageFilter() {
+      saveCurrentDraft();
       currentPageFilter = document.getElementById("headerPageFilter").value;
       sessionStorage.setItem("mod_page", currentPageFilter);
       selectedCustomer = null;
@@ -314,6 +356,7 @@
     }
 
     function logoutMod() {
+      saveCurrentDraft();
       sessionStorage.removeItem("mod_name");
       sessionStorage.removeItem("mod_pass");
       sessionStorage.removeItem("mod_page");
@@ -375,34 +418,38 @@
       const thumb = document.getElementById("adThumb");
       const thumbLink = document.getElementById("adThumbLink");
       const link = document.getElementById("adPostLink");
+      const btnLabel = document.getElementById("adPostBtnLabel");
 
       const badUrl = adData && (adData.photo_url || adData.post_url || "").includes("39178562_1505197616293642");
+      const pageSlug = (customer && customer.page_id) || "102803132669088";
+      const fallbackAdUrl = (adData && adData.ad_id)
+        ? `https://www.facebook.com/ads/library/?id=${encodeURIComponent(adData.ad_id)}`
+        : `https://www.facebook.com/${encodeURIComponent(pageSlug)}/ads`;
 
       if (!adData || badUrl) {
-        titleEl.innerText = `${customer ? customer.page_name : 'Page'} — Customer Message`;
-        idEl.innerText = "Ad referral না থাকলে প্রোডাক্ট ছবি পাঠিয়ে বা ছবির কালার/ডিজাইন দেখে রিপ্লাই দিন";
+        titleEl.innerText = `${customer ? customer.page_name : 'Page'} — Ad / Product Check`;
+        idEl.innerText = "অ্যাড রেফারাল না থাকলে অ্যাড লাইব্রেরি/পেজ অ্যাড খুলে প্রোডাক্ট দেখে রিপ্লাই দিন";
         thumb.classList.add("hidden");
-        link.classList.add("hidden");
+        link.href = fallbackAdUrl;
+        btnLabel.innerText = "অ্যাড দেখুন";
+        link.classList.remove("hidden");
         return;
       }
 
       titleEl.innerText = adData.ad_title || "Facebook Ad";
-      idEl.innerText = adData.ad_id ? `Ad ID: ${adData.ad_id}` : "Product / Ad Attachment";
+      idEl.innerText = adData.ad_id ? `Ad ID: ${adData.ad_id}` : "Product / Ad Source";
 
       if (adData.photo_url) {
         thumb.src = adData.photo_url;
-        thumbLink.href = adData.post_url || adData.photo_url;
+        thumbLink.href = adData.post_url || adData.photo_url || fallbackAdUrl;
         thumb.classList.remove("hidden");
       } else {
         thumb.classList.add("hidden");
       }
 
-      if (adData.post_url || adData.photo_url) {
-        link.href = adData.post_url || adData.photo_url;
-        link.classList.remove("hidden");
-      } else {
-        link.classList.add("hidden");
-      }
+      link.href = adData.post_url || adData.photo_url || fallbackAdUrl;
+      btnLabel.innerText = "অ্যাড দেখুন";
+      link.classList.remove("hidden");
     }
 
     function paintMessages(msgs) {
@@ -416,7 +463,7 @@
         return `
           <div class="flex flex-col ${isPage ? 'items-end' : 'items-start'}">
             <div class="max-w-md px-4 py-2.5 rounded-2xl text-sm space-y-2 ${isPage ? 'bg-blue-600 text-white rounded-br-none' : 'bg-slate-800 text-slate-100 rounded-bl-none'}">
-              ${m.image_url ? `<a href="${m.image_url}" target="_blank"><img src="${m.image_url}" class="max-h-64 rounded-xl border border-white/10"></a>` : ''}
+              ${m.image_url ? `<a href="${m.image_url}" target="_blank" rel="noopener noreferrer"><img src="${m.image_url}" class="max-h-64 rounded-xl border border-white/10"></a>` : ''}
               ${cleanTxt ? `<div>${cleanTxt}</div>` : ''}
             </div>
             ${isPage && m.moderator ? `<span class="text-[10px] text-slate-500 mt-0.5">Sent by ${m.moderator}</span>` : ''}
@@ -427,8 +474,10 @@
     }
 
     async function openChat(customer) {
+      saveCurrentDraft();
       selectedCustomer = customer;
       clearSelectedImage();
+      restoreCustomerDraft(customer);
       document.getElementById("emptyChatState").classList.add("hidden");
       document.getElementById("activeChatBox").classList.remove("hidden");
       document.getElementById("chatCustomerName").innerText = customer.customer_name;
@@ -443,6 +492,9 @@
 
     async function classifyCustomer(targetBucket) {
       if (!selectedCustomer) return;
+      const key = getDraftKey(selectedCustomer);
+      try { if (key) localStorage.removeItem(key); } catch (e) {}
+
       const res = await fetch("/api/mod/classify", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-mod-pass": modPass },
@@ -456,6 +508,7 @@
 
       if (res.ok) {
         selectedCustomer = null;
+        document.getElementById("replyInput").value = "";
         document.getElementById("activeChatBox").classList.add("hidden");
         document.getElementById("emptyChatState").classList.remove("hidden");
         await fetchBatch(true);
@@ -480,26 +533,43 @@
     }
 
     function handleImageSelect(event) {
-      const file = event.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = function(e) {
-        selectedImageBase64 = e.target.result;
-        document.getElementById("previewImgEl").src = selectedImageBase64;
+      const files = Array.from((event.target && event.target.files) || []);
+      if (!files.length) return;
+
+      selectedImagesList = [];
+      const thumbBox = document.getElementById("previewThumbList");
+      thumbBox.innerHTML = "";
+
+      Promise.all(
+        files.map(file => new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target.result);
+          reader.onerror = () => resolve(null);
+          reader.readAsDataURL(file);
+        }))
+      ).then((results) => {
+        selectedImagesList = results.filter(Boolean);
+        if (!selectedImagesList.length) return;
+        thumbBox.innerHTML = selectedImagesList.map(src =>
+          `<img src="${src}" class="h-14 w-14 object-cover rounded-lg border border-blue-500 shrink-0">`
+        ).join("");
+        document.getElementById("previewCountLabel").innerText =
+          `${selectedImagesList.length}টি ছবি সিলেক্ট করা হয়েছে (Send চাপলে চলে যাবে)`;
         document.getElementById("imagePreviewBar").classList.remove("hidden");
-      };
-      reader.readAsDataURL(file);
+      });
     }
 
     function clearSelectedImage() {
-      selectedImageBase64 = "";
+      selectedImagesList = [];
       document.getElementById("imageFileInput").value = "";
+      document.getElementById("previewThumbList").innerHTML = "";
       document.getElementById("imagePreviewBar").classList.add("hidden");
     }
 
     function insertQuickConfirm() {
       const input = document.getElementById("replyInput");
       input.value = `Your order confirm. ধন্যবাদ! - ${currentMod}`;
+      saveCurrentDraft();
       input.focus();
     }
 
@@ -507,44 +577,79 @@
       if (!selectedCustomer || isSendingMessage) return;
       const input = document.getElementById("replyInput");
       const text = input.value.trim();
-      const imgToSend = selectedImageBase64;
-      if (!text && !imgToSend) return;
+      const imgsToSend = selectedImagesList.slice();
+      if (!text && !imgsToSend.length) return;
 
       isSendingMessage = true;
       const targetCust = { ...selectedCustomer };
+      const draftKey = getDraftKey(targetCust);
       const sendTime = Date.now();
 
-      paintMessages([
-        ...currentMessagesCache,
-        {
+      const optimisticMsgs = [];
+      if (imgsToSend.length) {
+        imgsToSend.forEach((imgSrc, idx) => {
+          optimisticMsgs.push({
+            sender: "page",
+            text: idx === 0 && text ? text : "[ছবি পাঠানো হয়েছে]",
+            image_url: imgSrc,
+            moderator: currentMod,
+            time: sendTime + idx
+          });
+        });
+      } else if (text) {
+        optimisticMsgs.push({
           sender: "page",
-          text: text || "[ছবি পাঠানো হয়েছে]",
-          image_url: imgToSend || null,
+          text,
+          image_url: null,
           moderator: currentMod,
           time: sendTime
-        }
-      ]);
+        });
+      }
+
+      paintMessages([...currentMessagesCache, ...optimisticMsgs]);
 
       input.value = "";
+      try { if (draftKey) localStorage.removeItem(draftKey); } catch (e) {}
+      document.getElementById("autoSaveBadge").innerText = "💾 Auto Save সক্রিয়";
       clearSelectedImage();
       input.focus();
 
       try {
-        const res = await fetch("/api/mod/send", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-mod-pass": modPass },
-          body: JSON.stringify({
-            page_id: targetCust.page_id,
-            sender_id: targetCust.sender_id,
-            text,
-            imageBase64: imgToSend,
-            moderator: currentMod
-          })
-        });
-
-        const result = await res.json();
-        if (result.error) {
-          alert("মেসেজ পাঠাতে সমস্যা হয়েছে: " + result.error);
+        if (imgsToSend.length > 0) {
+          for (let i = 0; i < imgsToSend.length; i++) {
+            const res = await fetch("/api/mod/send", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "x-mod-pass": modPass },
+              body: JSON.stringify({
+                page_id: targetCust.page_id,
+                sender_id: targetCust.sender_id,
+                text: i === 0 ? text : "",
+                imageBase64: imgsToSend[i],
+                moderator: currentMod
+              })
+            });
+            const result = await res.json();
+            if (result.error) {
+              alert("মেসেজ পাঠাতে সমস্যা হয়েছে: " + result.error);
+              break;
+            }
+          }
+        } else {
+          const res = await fetch("/api/mod/send", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-mod-pass": modPass },
+            body: JSON.stringify({
+              page_id: targetCust.page_id,
+              sender_id: targetCust.sender_id,
+              text,
+              imageBase64: "",
+              moderator: currentMod
+            })
+          });
+          const result = await res.json();
+          if (result.error) {
+            alert("মেসেজ পাঠাতে সমস্যা হয়েছে: " + result.error);
+          }
         }
       } catch (e) {
         alert("নেটওয়ার্ক সমস্যা: মেসেজ পাঠানো যায়নি।");
