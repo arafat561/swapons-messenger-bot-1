@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Live Analytics & Operations Dashboard</title>
+  <title>Live Analytics &amp; Operations Dashboard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -21,35 +21,26 @@
       padding: 20px;
     }
 
-    @keyframes gentleBobUpDown {
+    @keyframes cardUpDownMotion {
       0%, 100% {
         transform: translateY(-4px);
       }
       50% {
-        transform: translateY(3px);
+        transform: translateY(4px);
       }
     }
 
+    /* Up & down motion ONLY on cards when hovered */
     .card,
     .stat-card,
-    .metric-box,
-    .option-item,
-    .nav-item,
-    .ad-account-row,
-    button,
-    [role="button"] {
-      transition: transform 0.22s ease, box-shadow 0.22s ease, background-color 0.22s ease, border-color 0.22s ease;
+    .metric-box {
+      transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
     }
 
     .card:hover,
     .stat-card:hover,
-    .metric-box:hover,
-    .option-item:hover,
-    .nav-item:hover,
-    .ad-account-row:hover,
-    button:hover,
-    [role="button"]:hover {
-      animation: gentleBobUpDown 1.1s ease-in-out infinite;
+    .metric-box:hover {
+      animation: cardUpDownMotion 1.15s ease-in-out infinite;
     }
 
     .container {
@@ -96,6 +87,30 @@
       font-weight: 700;
     }
 
+    .shift-tabs {
+      display: inline-flex;
+      background: #07121c;
+      border: 1px solid #19344d;
+      border-radius: 10px;
+      padding: 3px;
+      gap: 4px;
+    }
+
+    .shift-tab {
+      background: transparent;
+      border: none;
+      color: #9fb7ca;
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .shift-tab.active {
+      background: #e6f1f8;
+      color: #07111a;
+    }
+
     .grid-2 {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
@@ -110,7 +125,7 @@
       margin-bottom: 16px;
     }
 
-    .card, .stat-card {
+    .card, .stat-card, .metric-box {
       background: #0b1926;
       border: 1px solid #162c40;
       border-radius: 14px;
@@ -142,30 +157,27 @@
       font-size: 14px;
     }
 
-    .account-title-wrap {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    .remaining-inline-badge {
-      display: inline-flex;
-      align-items: center;
-      padding: 2px 9px;
-      border-radius: 999px;
-      font-size: 12px;
+    .rem-pill {
+      display: inline-block;
+      padding: 3px 9px;
+      border-radius: 8px;
       font-weight: 700;
       background: rgba(16, 185, 129, 0.16);
       color: #34d399;
-      border: 1px solid rgba(52, 211, 153, 0.35);
     }
 
-    .sent-by-meta {
-      font-size: 11px;
-      color: #93c5fd;
-      margin-top: 4px;
-      text-align: right;
+    .bar-track {
+      height: 8px;
+      background: #142a3d;
+      border-radius: 999px;
+      overflow: hidden;
+      min-width: 120px;
+    }
+
+    .bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #34d399, #10b981);
+      border-radius: 999px;
     }
 
     .login-box {
@@ -197,14 +209,14 @@
         <div class="muted" id="statusLine">Loading...</div>
       </div>
       <div class="controls">
-        <select id="scopeSelect" class="option-item" onchange="loadReport()">
-          <option value="all">All Pages</option>
+        <select id="scopeSelect" onchange="loadReport()">
+          <option value="all">All pages</option>
           <option value="swapons">Swapons World</option>
           <option value="stone">Stone Rose BD</option>
         </select>
-        <input id="dateInput" type="date" class="option-item" onchange="loadReport()" />
+        <input id="dateInput" type="date" onchange="loadReport()" />
         <button class="primary" onclick="loadReport()">Refresh</button>
-        <button class="nav-item" onclick="doLogout()">Logout</button>
+        <button onclick="doLogout()">Logout</button>
       </div>
     </div>
 
@@ -214,10 +226,10 @@
         <div class="big-num" id="totalCustomers">0</div>
         <div class="muted" id="customerBreakdown">0 new • 0 returning • 0 messages received</div>
       </div>
-      <div class="card">
-        <div class="muted">Ad spend &amp; remaining</div>
+      <div class="card metric-box">
+        <div class="muted">Ad spend &amp; balance</div>
         <div class="big-num" id="todaySpend">$0.00</div>
-        <div class="muted" id="todayRemaining">Remaining: —</div>
+        <div class="muted" id="todayRemaining">Remaining limit: —</div>
       </div>
     </div>
 
@@ -231,7 +243,7 @@
         <div class="big-num" id="statUnread">0</div>
       </div>
       <div class="stat-card">
-        <div class="muted">Seen, no reply (5m+)</div>
+        <div class="muted">Seen, no reply</div>
         <div class="big-num" id="statSeenNoReply" style="color:#f87171;">0</div>
       </div>
       <div class="stat-card">
@@ -239,18 +251,22 @@
         <div class="big-num" id="statConfirmed">0</div>
       </div>
       <div class="stat-card">
-        <div class="muted">Phone numbers (11d)</div>
+        <div class="muted">Phone numbers</div>
         <div class="big-num" id="statPhones">0</div>
       </div>
     </div>
 
     <div class="card" style="margin-bottom:16px;">
-      <h3 style="margin:0 0 8px 0;">Ad accounts</h3>
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+        <h3 style="margin:0;">Ad accounts</h3>
+        <span class="muted" id="accCountLabel">Meta Ad Accounts</span>
+      </div>
       <table>
         <thead>
           <tr>
-            <th>Account &amp; Remaining ($)</th>
+            <th>Account</th>
             <th>Total spend</th>
+            <th>Remaining ($)</th>
             <th>Messages</th>
             <th>Orders</th>
           </tr>
@@ -260,15 +276,28 @@
     </div>
 
     <div class="card">
-      <h3 style="margin:0 0 8px 0;">Moderator &amp; FB Profile/ID Performance</h3>
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:6px;">
+        <div>
+          <h3 style="margin:0;">Moderators</h3>
+          <div class="muted" id="modSummaryLine"></div>
+        </div>
+        <div class="shift-tabs">
+          <button class="shift-tab active" data-shift="all" onclick="setShift('all', this)">Full day</button>
+          <button class="shift-tab" data-shift="morning" onclick="setShift('morning', this)">Morning 9am–5pm</button>
+          <button class="shift-tab" data-shift="evening" onclick="setShift('evening', this)">Evening 5:15pm–12am</button>
+        </div>
+      </div>
       <table>
         <thead>
           <tr>
             <th>#</th>
-            <th>Moderator / FB Profile/ID</th>
-            <th>Customers (First)</th>
+            <th>Moderator</th>
+            <th></th>
+            <th>Customers</th>
             <th>Messages</th>
             <th>Phones</th>
+            <th>Msgs / customer</th>
+            <th>Min / message</th>
           </tr>
         </thead>
         <tbody id="modBody"></tbody>
@@ -278,6 +307,7 @@
 
   <script>
     const TOKEN_KEY = "dash_session_token";
+    let activeShift = "all";
     document.getElementById("dateInput").value = new Date(Date.now() + 6 * 3600 * 1000).toISOString().slice(0, 10);
 
     function getToken() {
@@ -292,6 +322,13 @@
     function showLogin() {
       document.getElementById("dashView").style.display = "none";
       document.getElementById("loginView").style.display = "flex";
+    }
+
+    function setShift(shiftKey, btnEl) {
+      activeShift = shiftKey;
+      document.querySelectorAll(".shift-tab").forEach((b) => b.classList.remove("active"));
+      if (btnEl) btnEl.classList.add("active");
+      loadReport();
     }
 
     async function doLogin() {
@@ -322,27 +359,16 @@
       showLogin();
     }
 
-    function renderAccountNameWithRemaining(acc) {
-      const remText = acc.remaining_usd !== null && acc.remaining_usd !== undefined
-        ? `Remaining: $${acc.remaining_usd}`
-        : "Remaining: —";
-      return `
-        <span class="account-title-wrap">
-          <strong>${acc.name}</strong>
-          <span class="remaining-inline-badge">${remText}</span>
-        </span>
-      `;
-    }
-
     async function loadReport() {
       const token = getToken();
       if (!token) return showLogin();
 
       const date = document.getElementById("dateInput").value;
       const scope = document.getElementById("scopeSelect").value;
-      const res = await fetch(`/api/daily-report?date=${encodeURIComponent(date)}&scope=${encodeURIComponent(scope)}`, {
-        headers: { Authorization: "Bearer " + token }
-      });
+      const res = await fetch(
+        `/api/daily-report?date=${encodeURIComponent(date)}&scope=${encodeURIComponent(scope)}&shift=${encodeURIComponent(activeShift)}`,
+        { headers: { Authorization: "Bearer " + token } }
+      );
 
       if (res.status === 401) {
         localStorage.removeItem(TOKEN_KEY);
@@ -352,9 +378,10 @@
       const data = await res.json();
       const s = data.stats || {};
       const ads = data.ads || { accounts: [], summary: {} };
+      const mods = data.moderators || [];
 
       document.getElementById("statusLine").textContent =
-        `${data.scope?.label || "All Pages"} • ${data.date} • Seen no reply: ${s.seen_no_reply_grace_minutes || 5} min`;
+        `${data.scope?.label || "All Pages"} • ${data.date} • Seen no reply: ${s.seen_no_reply_grace_minutes || 5}m`;
 
       document.getElementById("totalCustomers").textContent = Number(s.total_received || 0).toLocaleString();
       document.getElementById("customerBreakdown").textContent =
@@ -362,7 +389,7 @@
 
       document.getElementById("todaySpend").textContent = `$${ads.summary?.total_spend || "0.00"}`;
       document.getElementById("todayRemaining").textContent =
-        ads.summary?.has_remaining ? `Remaining: $${ads.summary.total_remaining_usd}` : "Remaining: —";
+        ads.summary?.has_remaining ? `Remaining limit: $${ads.summary.total_remaining_usd}` : "Remaining limit: —";
 
       document.getElementById("statReplied").textContent = s.total_replied || 0;
       document.getElementById("statUnread").textContent = s.unread_pending || 0;
@@ -370,26 +397,46 @@
       document.getElementById("statConfirmed").textContent = s.total_confirmed_orders || 0;
       document.getElementById("statPhones").textContent = s.total_phone_numbers || 0;
 
-      const accBody = document.getElementById("accountsBody");
-      accBody.innerHTML = (ads.accounts || []).map((acc) => `
-        <tr class="ad-account-row">
-          <td>${renderAccountNameWithRemaining(acc)}</td>
-          <td>$${acc.spend}</td>
+      const accounts = ads.accounts || [];
+      document.getElementById("accCountLabel").textContent = `${data.scope?.label || "All Pages"} • ${accounts.length} accounts`;
+      document.getElementById("accountsBody").innerHTML = accounts.map((acc) => `
+        <tr>
+          <td>
+            <div><strong>${acc.name}</strong></div>
+            <div class="muted">${acc.id}</div>
+          </td>
+          <td><strong>$${acc.spend}</strong></td>
+          <td>${acc.remaining_usd !== null && acc.remaining_usd !== undefined ? `<span class="rem-pill">$${acc.remaining_usd}</span>` : "—"}</td>
           <td>${acc.messages}</td>
           <td>${acc.orders}</td>
         </tr>
       `).join("");
 
-      const modBody = document.getElementById("modBody");
-      modBody.innerHTML = (data.moderators || []).map((m, idx) => `
-        <tr class="option-item">
-          <td>${idx + 1}</td>
-          <td><strong>${m.name}</strong></td>
-          <td>${m.total_customers}</td>
-          <td>${m.total_messages}</td>
-          <td>${m.phone_numbers}</td>
-        </tr>
-      `).join("");
+      const totalModCust = mods.reduce((sum, m) => sum + (m.total_customers || 0), 0);
+      const totalModMsgs = mods.reduce((sum, m) => sum + (m.total_messages || 0), 0);
+      const totalModPhones = mods.reduce((sum, m) => sum + (m.phone_numbers || 0), 0);
+      const maxCust = Math.max(1, ...mods.map((m) => m.total_customers || 0));
+
+      document.getElementById("modSummaryLine").textContent =
+        `${totalModCust} customers • ${totalModMsgs.toLocaleString()} messages sent • ${totalModPhones} phone numbers.`;
+
+      document.getElementById("modBody").innerHTML = mods.map((m, idx) => {
+        const pct = Math.min(100, Math.round(((m.total_customers || 0) / maxCust) * 100));
+        return `
+          <tr>
+            <td>${idx + 1}</td>
+            <td><strong>${m.name}</strong></td>
+            <td style="width:26%;">
+              <div class="bar-track"><div class="bar-fill" style="width:${pct}%;"></div></div>
+            </td>
+            <td><strong>${m.total_customers}</strong></td>
+            <td style="color:#34d399;font-weight:700;">${Number(m.total_messages || 0).toLocaleString()}</td>
+            <td style="color:#fbbf24;font-weight:700;">${m.phone_numbers || 0}</td>
+            <td>${m.msgs_per_customer ?? 0}</td>
+            <td>${m.avg_minutes_per_message !== null && m.avg_minutes_per_message !== undefined ? m.avg_minutes_per_message : "—"}</td>
+          </tr>
+        `;
+      }).join("");
     }
 
     if (getToken()) {
