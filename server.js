@@ -203,8 +203,6 @@ const MODERATORS = [
   }
 ];
 
-const KNOWN_MODERATOR_NAMES = new Set(MODERATORS.map((m) => m.name.toLowerCase()));
-
 function extractFbIdentifier(raw) {
   if (!raw) return null;
   const s = String(raw).trim();
@@ -256,18 +254,47 @@ function detectModeratorByFbLink(rawOrText) {
     return FB_LINK_TO_MODERATOR.get(extracted.toLowerCase());
   }
 
-  if (str.includes("facebook.com/")) {
-    for (const mod of MODERATORS) {
-      const linkId = extractFbIdentifier(mod.fb_link);
-      if (linkId && lower.includes(linkId.toLowerCase())) {
-        return mod.name;
-      }
-      if (mod.fb_link && lower.includes(mod.fb_link.toLowerCase())) {
-        return mod.name;
-      }
+  for (const mod of MODERATORS) {
+    const linkId = extractFbIdentifier(mod.fb_link);
+    if (linkId && lower.includes(linkId.toLowerCase())) {
+      return mod.name;
+    }
+    if (mod.fb_link && lower.includes(mod.fb_link.toLowerCase())) {
+      return mod.name;
     }
   }
 
+  return null;
+}
+
+const BN_RANGE = "\\u0980-\\u09FF";
+
+function escapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+const MODERATOR_RULES = MODERATORS.map((m) => {
+  const names = [m.name, ...(m.aliases || [])].filter((x) => !/^\d+$/.test(String(x).trim()));
+  const alt = names
+    .map((a) => String(a).normalize("NFC").trim().split(/\s+/).map(escapeRegex).join("\\s+"))
+    .join("|");
+  return {
+    name: m.name,
+    re: alt ? new RegExp(`(?<![${BN_RANGE}])আমি\\s+(?:${alt})(?![${BN_RANGE}])`, "i") : null
+  };
+});
+
+function detectModeratorFromText(text) {
+  if (!text) return null;
+  const byLink = detectModeratorByFbLink(text);
+  if (byLink) return byLink;
+
+  const clean = String(text).normalize("NFC");
+  for (const rule of MODERATOR_RULES) {
+    if (rule.re && rule.re.test(clean)) {
+      return rule.name;
+    }
+  }
   return null;
 }
 
@@ -275,12 +302,7 @@ function normalizeModeratorName(rawMod) {
   if (!rawMod) return null;
   const trimmed = String(rawMod).trim();
   if (!trimmed) return null;
-  const byLink = detectModeratorByFbLink(trimmed);
-  if (byLink) return byLink;
-  if (KNOWN_MODERATOR_NAMES.has(trimmed.toLowerCase())) {
-    return trimmed;
-  }
-  return null;
+  return detectModeratorByFbLink(trimmed) || trimmed;
 }
 
 app.use(express.json({ limit: "15mb" }));
@@ -373,18 +395,6 @@ try { db.exec(`ALTER TABLE moderator_assignments ADD COLUMN bucket TEXT DEFAULT 
 try {
   db.prepare(`UPDATE customers SET ad_info = NULL WHERE ad_info LIKE '%39178562_1505197616293642%'`).run();
   db.prepare(`UPDATE messages SET ad_info = NULL WHERE ad_info LIKE '%39178562_1505197616293642%'`).run();
-  const nonModNames = [
-    "mony", "shuvro", "shihab", "Faria", "Sanjana", "ashraful",
-    "tania", "eram", "fahim", "jaber", "apon", "rifat",
-    "halim", "farjana", "apurbo", "ruman", "saidul"
-  ];
-  const placeholders = nonModNames.map(() => "?").join(",");
-  db.prepare(`DELETE FROM moderator_assignments WHERE lower(moderator) NOT IN (${placeholders})`).run(
-    ...nonModNames.map((n) => n.toLowerCase())
-  );
-  db.prepare(`UPDATE replies SET moderator = NULL WHERE moderator IS NOT NULL AND lower(moderator) NOT IN (${placeholders})`).run(
-    ...nonModNames.map((n) => n.toLowerCase())
-  );
 } catch (e) {}
 
 function isBlockedStickerUrl(url) {
@@ -713,13 +723,19 @@ function extractAdReferral(event) {
 }
 
 async function resolveEchoModeratorByFbLink(pageId, customerId, event) {
+  const replyText = (event.message && event.message.text) || "";
+  const textMatch = detectModeratorFromText(replyText);
+  if (textMatch) return textMatch;
+
   if (event.message && event.message.from && String(event.message.from.id) !== String(pageId)) {
-    const fromIdMatch = normalizeModeratorName(event.message.from.id);
+    const fromIdMatch = detectModeratorByFbLink(event.message.from.id);
     if (fromIdMatch) return fromIdMatch;
     if (event.message.from.name) {
-      const fromNameMatch = normalizeModeratorName(event.message.from.name);
+      const fromNameMatch = detectModeratorByFbLink(event.message.from.name);
       if (fromNameMatch) return fromNameMatch;
+      return String(event.message.from.name).trim();
     }
+    return `FB ID: ${String(event.message.from.id).trim()}`;
   }
 
   const token = getPageToken(pageId);
@@ -728,18 +744,19 @@ async function resolveEchoModeratorByFbLink(pageId, customerId, event) {
       const msgUrl = `https://graph.facebook.com/${META_API_VERSION}/${encodeURIComponent(event.message.mid)}?fields=from&access_token=${encodeURIComponent(token)}`;
       const msgInfo = await httpsGetJson(msgUrl);
       if (msgInfo && msgInfo.from && String(msgInfo.from.id) !== String(pageId)) {
-        const matchById = normalizeModeratorName(msgInfo.from.id);
+        const matchById = detectModeratorByFbLink(msgInfo.from.id);
         if (matchById) return matchById;
         if (msgInfo.from.name) {
-          const matchByName = normalizeModeratorName(msgInfo.from.name);
+          const matchByName = detectModeratorByFbLink(msgInfo.from.name);
           if (matchByName) return matchByName;
+          return String(msgInfo.from.name).trim();
         }
+        return `FB ID: ${String(msgInfo.from.id).trim()}`;
       }
     } catch (e) {}
   }
 
-  const replyText = (event.message && event.message.text) || "";
-  return detectModeratorByFbLink(replyText);
+  return null;
 }
 
 async function handleMessagingEvent(pageId, event) {
