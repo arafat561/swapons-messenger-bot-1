@@ -46,7 +46,9 @@ function dhakaDate(ts) {
 
 const DAY = "date(created_at, '+6 hours')";
 const DAY_M = "date(m.created_at, '+6 hours')";
-const DAY_R = "date(r.created_at, '+6 hours')";
+const DAY_R_CREATED = "date(r.created_at, '+6 hours')";
+const DAY_R_TIME = "date((r.reply_time / 1000), 'unixepoch', '+6 hours')";
+const DAY_R = `CASE WHEN r.reply_time IS NOT NULL AND r.reply_time > 0 THEN ${DAY_R_TIME} ELSE ${DAY_R_CREATED} END`;
 
 const SHIFTS = {
   all: { label: "Full day", startH: 0, endH: 24 },
@@ -261,6 +263,13 @@ function detectModeratorByFbLink(rawOrText) {
   }
 
   return null;
+}
+
+function normalizeModeratorName(rawMod) {
+  if (!rawMod) return null;
+  const trimmed = String(rawMod).trim();
+  if (!trimmed) return null;
+  return detectModeratorByFbLink(trimmed) || trimmed;
 }
 
 app.use(express.json({ limit: "15mb" }));
@@ -682,10 +691,10 @@ function extractAdReferral(event) {
 
 async function resolveEchoModeratorByFbLink(pageId, customerId, event) {
   if (event.message && event.message.from && String(event.message.from.id) !== String(pageId)) {
-    const fromIdMatch = detectModeratorByFbLink(event.message.from.id);
+    const fromIdMatch = normalizeModeratorName(event.message.from.id);
     if (fromIdMatch) return fromIdMatch;
     if (event.message.from.name) {
-      const fromNameMatch = detectModeratorByFbLink(event.message.from.name);
+      const fromNameMatch = normalizeModeratorName(event.message.from.name);
       if (fromNameMatch) return fromNameMatch;
     }
   }
@@ -696,10 +705,10 @@ async function resolveEchoModeratorByFbLink(pageId, customerId, event) {
       const msgUrl = `https://graph.facebook.com/${META_API_VERSION}/${encodeURIComponent(event.message.mid)}?fields=from&access_token=${encodeURIComponent(token)}`;
       const msgInfo = await httpsGetJson(msgUrl);
       if (msgInfo && msgInfo.from && String(msgInfo.from.id) !== String(pageId)) {
-        const matchById = detectModeratorByFbLink(msgInfo.from.id);
+        const matchById = normalizeModeratorName(msgInfo.from.id);
         if (matchById) return matchById;
         if (msgInfo.from.name) {
-          const matchByName = detectModeratorByFbLink(msgInfo.from.name);
+          const matchByName = normalizeModeratorName(msgInfo.from.name);
           if (matchByName) return matchByName;
         }
       }
@@ -707,7 +716,7 @@ async function resolveEchoModeratorByFbLink(pageId, customerId, event) {
   }
 
   const replyText = (event.message && event.message.text) || "";
-  return detectModeratorByFbLink(replyText);
+  return normalizeModeratorName(replyText);
 }
 
 async function handleMessagingEvent(pageId, event) {
@@ -777,6 +786,7 @@ async function handleMessagingEvent(pageId, event) {
     }
 
     const replyTime = event.timestamp || Date.now();
+    const replyDay = dhakaDate(replyTime);
     const isConfirm = replyText.toLowerCase().includes("your order confirm") ? 1 : 0;
     const mod = await resolveEchoModeratorByFbLink(pageId, customerId, event);
 
@@ -785,8 +795,8 @@ async function handleMessagingEvent(pageId, event) {
       stmts.insertReply.run(pageId, customerId, event.message.mid, replyText || (replyImg ? "[ছবি]" : "👍"), replyImg, replyTime, mod, isConfirm);
     }
 
-    if (mod) stmts.assignModerator.run(pageId, customerId, today, mod, replyTime);
-    stmts.markReplied.run(pageId, customerId, today);
+    if (mod) stmts.assignModerator.run(pageId, customerId, replyDay, mod, replyTime);
+    stmts.markReplied.run(pageId, customerId, replyDay);
     return;
   }
 
@@ -1033,6 +1043,7 @@ app.post("/api/mod/send", requireModAuth, async (req, res) => {
     }
 
     const cleanText = (text || "").trim();
+    const normMod = normalizeModeratorName(moderator) || moderator;
     const isConfirm = cleanText.toLowerCase().includes("your order confirm") ? 1 : 0;
 
     stmts.insertReply.run(
@@ -1042,10 +1053,10 @@ app.post("/api/mod/send", requireModAuth, async (req, res) => {
       cleanText || "[ছবি পাঠানো হয়েছে]",
       savedImageUrl,
       now,
-      moderator,
+      normMod,
       isConfirm
     );
-    stmts.assignModerator.run(page_id, sender_id, today, moderator, now);
+    stmts.assignModerator.run(page_id, sender_id, today, normMod, now);
     stmts.markReplied.run(page_id, sender_id, today);
 
     if (savedImageUrl) {
@@ -1487,7 +1498,7 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
     const shiftReplySql = isShift ? " AND r.reply_time >= ? AND r.reply_time < ?" : "";
     const shiftParams = isShift ? [win.startMs, win.endMs] : [];
 
-    // 1. Customer count goes to whoever replied FIRST in that conversation
+    // 1. Customer count goes ONLY to the moderator who replied FIRST in that conversation
     const convRows = db
       .prepare(
         `SELECT a.moderator AS raw_mod,
@@ -1499,7 +1510,7 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       )
       .all(targetDate, ...shiftParams, ...pcA.params);
 
-    // 2. Every single reply message goes to the exact moderator who sent that message
+    // 2. Every reply message goes to whichever moderator actually sent that message
     const replyRows = db
       .prepare(
         `SELECT r.moderator AS raw_mod,
@@ -1511,7 +1522,7 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       )
       .all(targetDate, ...shiftParams, ...pcR.params);
 
-    // 3. Phone number goes to the moderator who replied FIRST in that conversation
+    // 3. Phone number from that conversation goes to the first-replying moderator
     const phoneRows = db
       .prepare(
         `SELECT a.moderator AS raw_mod,
@@ -1527,7 +1538,7 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
 
     const mergedByMod = new Map();
     const ensureMod = (rawMod) => {
-      const modName = detectModeratorByFbLink(rawMod) || String(rawMod || "").trim();
+      const modName = normalizeModeratorName(rawMod);
       if (!modName) return null;
       if (!mergedByMod.has(modName)) {
         mergedByMod.set(modName, {
