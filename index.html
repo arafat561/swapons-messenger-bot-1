@@ -177,7 +177,7 @@
     .block-head span { color: var(--muted); font-size: .86rem; }
     .hint { color: var(--muted); font-size: .86rem; padding: 0 24px 14px; max-width: 90ch; }
     .scroll { overflow-x: auto; }
-    table { width: 100%; border-collapse: collapse; min-width: 820px; }
+    table { width: 100%; border-collapse: collapse; min-width: 920px; }
     th { text-align: left; font-weight: 600; font-size: .82rem; color: var(--faint); padding: 10px 16px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--raised); white-space: nowrap; }
     th:first-child, td:first-child { padding-left: 24px; }
     td { padding: 14px 16px; border-bottom: 1px solid var(--line); vertical-align: middle; }
@@ -186,10 +186,13 @@
     tbody tr.acc-row.expanded td { background: var(--raised); border-bottom-color: transparent; }
     tbody tr:last-child td { border-bottom: 0; }
     tfoot td { font-weight: 700; background: var(--raised); border-top: 1px solid var(--line); border-bottom: 0; }
-    .acc-name { font-weight: 600; display: flex; align-items: center; gap: 8px; }
+    .acc-name { font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     .chev { display: inline-block; font-size: .78rem; color: var(--msg); transition: transform .2s; }
     tr.expanded .chev { transform: rotate(90deg); }
     .acc-id { color: var(--faint); font-size: .78rem; font-family: "Bricolage Grotesque", sans-serif; margin-left: 16px; }
+    .plat-tag { font-size: .68rem; font-weight: 700; padding: 1px 6px; border-radius: 6px; text-transform: uppercase; }
+    .plat-tag.tt { background: rgba(255, 125, 107, .16); color: var(--bad); }
+    .plat-tag.st { background: var(--sale-soft); color: var(--sale); font-weight: 600; text-transform: none; }
     .share { height: 5px; border-radius: 3px; background: var(--raised); margin-top: 7px; width: 120px; overflow: hidden; }
     .share i { display: block; height: 100%; background: var(--invert); border-radius: 3px; }
     .strong { font-weight: 700; }
@@ -198,6 +201,8 @@
     .pill { display: inline-block; padding: 2px 9px; border-radius: 8px; font-weight: 700; font-size: .88rem; }
     .pill.msg { background: var(--msg-soft); color: var(--msg); }
     .pill.sale { background: var(--sale-soft); color: var(--sale); }
+    .pill.rem { background: rgba(116, 214, 154, .14); color: var(--ok); }
+    .pill.rem-low { background: var(--bad-soft); color: var(--bad); }
     .warn-flag { color: var(--bad); font-size: .78rem; display: block; margin-top: 3px; max-width: 34ch; }
     .empty { padding: 36px 24px; text-align: center; color: var(--muted); }
     .empty b { display: block; color: var(--text); margin-bottom: 4px; }
@@ -379,7 +384,7 @@
     <header class="top">
       <div class="brand">
         <h1 class="display">Live Analytics &amp; Operations Dashboard</h1>
-        <p>Messenger inbox, Meta ad spend and moderator workload in one view.</p>
+        <p>Messenger inbox, Meta &amp; TikTok ad spend and moderator workload in one view.</p>
         <div class="live" id="liveBadge"><i></i><span id="liveText">Connecting…</span><span id="sessionLeft" title="Time left before you must sign in again"></span></div>
       </div>
 
@@ -437,16 +442,17 @@
           </div>
         </div>
 
-        <aside class="panel ads" aria-label="Meta ads">
+        <aside class="panel ads" aria-label="Meta & TikTok ads">
           <div class="ads-head">
-            <h2>Meta ads</h2>
+            <h2>Ad spend &amp; balance</h2>
             <small id="adsScope">—</small>
           </div>
 
           <div class="adrow">
             <div>
-              <div class="lbl">Ad spend</div>
+              <div class="lbl">Ad spend (today)</div>
               <div class="num val" id="totalSpend">$0.00</div>
+              <div class="detail">Remaining limit: <b class="num" id="totalRemainingHero">—</b></div>
             </div>
             <div class="cost"></div>
           </div>
@@ -517,13 +523,14 @@
           <h2 class="display">Ad accounts</h2>
           <span id="accountsMeta">—</span>
         </div>
-        <p class="hint">যেকোনো অ্যাড অ্যাকাউন্টে ক্লিক করলে নিচে ড্রপডাউনে ওই অ্যাকাউন্টের সব Ads দেখুন এবং খারাপ পারফরম্যান্স করলে Off/On সুইচে চাপ দিন।</p>
+        <p class="hint">যেকোনো অ্যাড অ্যাকাউন্টে ক্লিক করলে নিচে ড্রপডাউনে ওই অ্যাকাউন্টের সব Ads দেখুন এবং খারাপ পারফরম্যান্স করলে Off/On সুইচে চাপ দিন। পাশে প্রতি অ্যাকাউন্টের বাকি থাকা ডলার (Remaining) দেখানো হয়েছে।</p>
         <div class="scroll">
           <table>
             <thead>
               <tr>
                 <th>Account</th>
                 <th>Total spend</th>
+                <th>Remaining ($)</th>
                 <th>Messages</th>
                 <th>Cost / message</th>
                 <th>Orders</th>
@@ -531,7 +538,7 @@
               </tr>
             </thead>
             <tbody id="adsTableBody">
-              <tr><td colspan="6" class="empty">Loading ad accounts…</td></tr>
+              <tr><td colspan="7" class="empty">Loading ad accounts…</td></tr>
             </tbody>
             <tfoot id="adsTableFoot"></tfoot>
           </table>
@@ -927,6 +934,7 @@
         var scopeLabel = (data.scope && data.scope.label) || "All Pages";
 
         $("totalSpend").textContent = money(sum.total_spend);
+        $("totalRemainingHero").textContent = sum.has_remaining ? money(sum.total_remaining_usd) : "No cap set";
         setNum("totalMessages", sum.total_messages);
         $("msgSpend").textContent = money(sum.msg_spend);
         $("costPerMsg").textContent = (sum.avg_cost_per_msg_cents || "0.0") + "¢";
@@ -936,8 +944,8 @@
         $("adsScope").textContent = accounts.length + (accounts.length === 1 ? " ad account" : " ad accounts") + " · " + scopeLabel;
 
         var notice = $("adsNotice");
-        if (ads.configured === false) {
-          notice.textContent = "Meta access token is not set on the server, so ad numbers are empty.";
+        if (ads.meta_configured === false) {
+          notice.textContent = "Meta access token is not set on the server, so Meta ad numbers are empty.";
           notice.hidden = false;
         } else if (ads.has_error) {
           var bad = accounts.filter(function (a) { return a.error; }).length;
@@ -1002,7 +1010,10 @@
           '</div>';
 
         if (!camps.length) {
-          return '<div class="sub-drop-box">' + headerHtml + '<div class="empty" style="padding:18px">এই অ্যাড অ্যাকাউন্টে আজকের তারিখে কোনো অ্যাকটিভ অ্যাড/ক্যাম্পেইন পাওয়া যায়নি।</div></div>';
+          var note = acc.platform === "tiktok"
+            ? (acc.status_note || "TikTok Ads Account") + " — আজকের তারিখে কোনো অ্যাকটিভ ক্যাম্পেইন ডাটা নেই।"
+            : "এই অ্যাড অ্যাকাউন্টে আজকের তারিখে কোনো অ্যাকটিভ অ্যাড/ক্যাম্পেইন পাওয়া যায়নি।";
+          return '<div class="sub-drop-box">' + headerHtml + '<div class="empty" style="padding:18px">' + esc(note) + '</div></div>';
         }
 
         var rowsHtml = camps.map(function (c) {
@@ -1030,20 +1041,38 @@
         '</div>';
       }
 
+      function renderRemainingCell(a) {
+        if (a.remaining_usd === null || a.remaining_usd === undefined) {
+          return '<span class="detail">—</span>';
+        }
+        var remNum = parseFloat(a.remaining_usd) || 0;
+        var cls = remNum <= 50 ? "pill rem-low num" : "pill rem num";
+        var sub = a.spending_limit_usd
+          ? '<div class="detail num">limit ' + money(a.spending_limit_usd) + '</div>'
+          : '<div class="detail">remaining</div>';
+        return '<span class="' + cls + '">' + money(remNum) + '</span>' + sub;
+      }
+
       function renderAccounts(accounts, sum, scopeLabel) {
         var body = $("adsTableBody");
         var foot = $("adsTableFoot");
         $("accountsMeta").textContent = scopeLabel + " · " + accounts.length + (accounts.length === 1 ? " account" : " accounts");
 
         if (!accounts.length) {
-          body.innerHTML = '<tr><td colspan="6" class="empty"><b>No ad data for this selection</b>Pick another date or channel.</td></tr>';
+          body.innerHTML = '<tr><td colspan="7" class="empty"><b>No ad data for this selection</b>Pick another date or channel.</td></tr>';
           foot.innerHTML = "";
           return;
         }
 
         state.accountsMap = {};
         var totalSpend = parseFloat(sum.total_spend || 0) || 0;
-        var rows = accounts.slice().sort(function (a, b) { return parseFloat(b.spend) - parseFloat(a.spend); });
+        var rows = accounts.slice().sort(function (a, b) {
+          var diff = parseFloat(b.spend) - parseFloat(a.spend);
+          if (diff !== 0) return diff;
+          if (a.platform === "tiktok" && b.platform !== "tiktok") return 1;
+          if (a.platform !== "tiktok" && b.platform === "tiktok") return -1;
+          return 0;
+        });
 
         var htmlParts = [];
         rows.forEach(function (a) {
@@ -1051,12 +1080,20 @@
           var isOpen = state.expandedAccountId === a.id;
           var share = totalSpend > 0 ? Math.round(parseFloat(a.spend) / totalSpend * 100) : 0;
           var campCount = (a.campaigns && a.campaigns.length) || 0;
+          var isTt = a.platform === "tiktok";
+
+          var badgesHtml = '<span class="sub-drop-badge" style="padding:1px 7px;font-size:.72rem">' + campCount + ' ads</span>';
+          if (isTt) {
+            badgesHtml += '<span class="plat-tag tt">TikTok</span>';
+            if (a.status_note) badgesHtml += '<span class="plat-tag st">' + esc(a.status_note) + '</span>';
+          }
 
           htmlParts.push(
             '<tr class="acc-row' + (isOpen ? ' expanded' : '') + '" data-acc-id="' + esc(a.id) + '" title="ক্লিক করে ভেতরের Ads দেখুন">' +
-              '<td><div class="acc-name"><span class="chev">▸</span><span>' + esc(a.name) + '</span><span class="sub-drop-badge" style="padding:1px 7px;font-size:.72rem">' + campCount + ' ads</span></div><div class="acc-id">' + esc(a.id) + '</div>' +
+              '<td><div class="acc-name"><span class="chev">▸</span><span>' + esc(a.name) + '</span>' + badgesHtml + '</div><div class="acc-id">' + esc(a.id) + '</div>' +
                 (a.error ? '<span class="warn-flag">Could not load: ' + esc(a.error) + '</span>' : '') + '</td>' +
               '<td><div class="num strong">' + money(a.spend) + '</div><div class="share" title="' + share + '% of spend"><i style="width:' + share + '%"></i></div></td>' +
+              '<td>' + renderRemainingCell(a) + '</td>' +
               '<td><div class="num strong c-msg">' + fmt(a.messages) + '</div><div class="detail num">spend ' + money(a.msg_spend) + '</div></td>' +
               '<td><span class="pill msg num">' + esc(a.cost_per_msg_cents) + '¢</span></td>' +
               '<td><div class="num strong c-sale">' + fmt(a.orders) + '</div><div class="detail num">spend ' + money(a.sales_spend) + '</div></td>' +
@@ -1066,7 +1103,7 @@
 
           if (isOpen) {
             htmlParts.push(
-              '<tr class="sub-drop-row"><td colspan="6">' + buildCampaignsSubHtml(a) + '</td></tr>'
+              '<tr class="sub-drop-row"><td colspan="7">' + buildCampaignsSubHtml(a) + '</td></tr>'
             );
           }
         });
@@ -1076,6 +1113,7 @@
         foot.innerHTML = '<tr>' +
           '<td>Total</td>' +
           '<td class="num">' + money(sum.total_spend) + '</td>' +
+          '<td class="num">' + (sum.has_remaining ? money(sum.total_remaining_usd) : "—") + '</td>' +
           '<td class="num c-msg">' + fmt(sum.total_messages) + '</td>' +
           '<td class="num">' + esc(sum.avg_cost_per_msg_cents || "0.0") + '¢</td>' +
           '<td class="num c-sale">' + fmt(sum.total_orders) + '</td>' +
@@ -1102,7 +1140,7 @@
             });
           }).then(function (r) {
             if (!r.ok) {
-              toast(r.data.error || "অ্যাড স্ট্যাটাস পরিবর্তন করা যায়নি");
+              toast(r.data.error || "অ্যাড স্ট্যাটাস পরিবর্তন করা যায়নি");
               toggleBtn.disabled = false;
               return;
             }
@@ -1112,11 +1150,11 @@
                 if (String(c.id) === String(campId)) c.status = nextStatus;
               });
               var dropBox = toggleBtn.closest(".sub-drop-row");
-              if (dropBox) dropBox.innerHTML = '<td colspan="6">' + buildCampaignsSubHtml(accObj) + '</td>';
+              if (dropBox) dropBox.innerHTML = '<td colspan="7">' + buildCampaignsSubHtml(accObj) + '</td>';
             }
-            toast(nextStatus === "PAUSED" ? "অ্যাডটি OFF (Paused) করা হয়েছে" : "অ্যাডটি ON (Active) করা হয়েছে");
+            toast(nextStatus === "PAUSED" ? "অ্যাডটি OFF (Paused) করা হয়েছে" : "অ্যাডটি ON (Active) করা হয়েছে");
           }).catch(function () {
-            toast("নেটওয়ার্ক সমস্যা: স্ট্যাটাস আপডেট হয়নি");
+            toast("নেটওয়ার্ক সমস্যা: স্ট্যাটাস আপডেট হয়নি");
             toggleBtn.disabled = false;
           });
           return;
@@ -1143,7 +1181,7 @@
         var accObj = state.accountsMap[rowAccId];
         var dropTr = document.createElement("tr");
         dropTr.className = "sub-drop-row";
-        dropTr.innerHTML = '<td colspan="6">' + buildCampaignsSubHtml(accObj || { name: rowAccId, campaigns: [] }) + '</td>';
+        dropTr.innerHTML = '<td colspan="7">' + buildCampaignsSubHtml(accObj || { name: rowAccId, campaigns: [] }) + '</td>';
         row.parentNode.insertBefore(dropTr, row.nextSibling);
       });
 
