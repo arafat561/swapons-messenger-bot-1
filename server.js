@@ -331,7 +331,6 @@ try { db.exec(`ALTER TABLE customers ADD COLUMN ad_info TEXT;`); } catch (e) {}
 try { db.exec(`ALTER TABLE customers ADD COLUMN profile_pic TEXT;`); } catch (e) {}
 try { db.exec(`ALTER TABLE moderator_assignments ADD COLUMN bucket TEXT DEFAULT 'pending';`); } catch (e) {}
 
-// Seed default shared saved replies once if empty
 const existingSrCount = db.prepare(`SELECT COUNT(*) as cnt FROM saved_replies`).get().cnt;
 if (existingSrCount === 0) {
   const seedStmt = db.prepare(`INSERT OR IGNORE INTO saved_replies (id, title, reply_text, source, created_by, updated_at) VALUES (?, ?, ?, 'default', 'system', ?)`);
@@ -668,6 +667,10 @@ app.get("/inbox", (req, res) => {
   res.sendFile(path.join(__dirname, "inbox.html"));
 });
 
+app.get("/admin", (req, res) => {
+  res.sendFile(path.join(__dirname, "admin.html"));
+});
+
 app.get("/healthz", (req, res) => res.json({ ok: true }));
 
 app.get("/webhook", (req, res) => {
@@ -911,8 +914,21 @@ app.post("/api/saved-replies/sync-meta", requireModAuth, async (req, res) => {
     let imported = 0;
     const errors = [];
 
-    for (const [pageId, token] of Object.entries(PAGE_TOKENS)) {
-      if (!token) continue;
+    const tokenEntries = Object.entries(PAGE_TOKENS).filter(([, t]) => Boolean(t));
+    if (!tokenEntries.length && META_ACCESS_TOKEN) {
+      const pagesRes = await httpsGetJson(
+        `https://graph.facebook.com/${META_API_VERSION}/me/accounts?fields=id,name,access_token&access_token=${encodeURIComponent(META_ACCESS_TOKEN)}`
+      );
+      if (pagesRes && Array.isArray(pagesRes.data)) {
+        for (const p of pagesRes.data) {
+          if (p && p.id && p.access_token) {
+            tokenEntries.push([String(p.id), String(p.access_token)]);
+          }
+        }
+      }
+    }
+
+    for (const [pageId, token] of tokenEntries) {
       const url = `https://graph.facebook.com/${META_API_VERSION}/${encodeURIComponent(pageId)}/saved_replies?fields=id,title,message&access_token=${encodeURIComponent(token)}`;
       const data = await httpsGetJson(url);
       if (data && Array.isArray(data.data)) {
