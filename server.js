@@ -100,8 +100,8 @@ const AD_ACCOUNTS = [
   { id: "act_770104971706610", name: "ST-09 (Stone Rose)", brand: "swapons", platform: "meta" },
   { id: "act_722336793300354", name: "ST-07 (Stone Rose)", brand: "stone", platform: "meta" },
   { id: "act_3681717408727534", name: "ST-10 (Stone Rose)", brand: "stone", platform: "meta" },
-  { id: "7482192635537653776", name: "Swapons World (TikTok)", brand: "swapons", platform: "tiktok", statusNote: "Paused / Scheduled" },
-  { id: "7547244221146087432", name: "Swapon's World (TikTok)", brand: "swapons", platform: "tiktok", statusNote: "Upcoming / Scheduled" }
+  { id: "7547244221146087432", name: "Swapon's World (TikTok)", brand: "swapons", platform: "tiktok", statusNote: "Active / TikTok Ads" },
+  { id: "7535761847878762497", name: "VNTIKTOK_Swapons World T62", brand: "swapons", platform: "tiktok", statusNote: "TikTok Ads" }
 ];
 
 function resolveScope(raw) {
