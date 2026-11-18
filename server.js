@@ -569,7 +569,7 @@ function requireModAuth(req, res, next) {
   if (modPass === MOD_PASS || modPass === DASHBOARD_PASS || modPass === "swapon123") {
     return next();
   }
-  return res.status(401).json({ error: "ভুল মডারেটর পাসওয়ার্ড!" });
+  return res.status(401).json({ error: "ভুল মডারেটর পাসওয়ার্ড!" });
 }
 
 app.get("/", (req, res) => {
@@ -633,7 +633,7 @@ async function handleMessagingEvent(pageId, event) {
       }
     }
 
-    const displayText = rawText || (imageUrl ? "[ছবি পাঠিয়েছেন]" : "👍");
+    const displayText = rawText || (imageUrl ? "[ছবি পাঠিয়েছেন]" : "👍");
 
     stmts.insertMessage.run(
       pageId,
@@ -940,7 +940,7 @@ app.post("/api/mod/send", requireModAuth, async (req, res) => {
       page_id,
       sender_id,
       mid,
-      cleanText || "[ছবি পাঠানো হয়েছে]",
+      cleanText || "[ছবি পাঠানো হয়েছে]",
       savedImageUrl,
       now,
       moderator,
@@ -1029,24 +1029,52 @@ async function fetchMetaAdsMetrics(targetDate, brand) {
         limit: "500"
       });
       const url = `https://graph.facebook.com/${META_API_VERSION}/${cleanId}/insights?${params.toString()}`;
-      const { rows, error } = await fetchAllInsights(url);
+
+      const accInfoParams = new URLSearchParams({
+        access_token: META_ACCESS_TOKEN,
+        fields: "spend_cap,amount_spent,balance,account_status"
+      });
+      const accInfoUrl = `https://graph.facebook.com/${META_API_VERSION}/${cleanId}?${accInfoParams.toString()}`;
+
+      const [{ rows, error }, accInfo, campRes] = await Promise.all([
+        fetchAllInsights(url),
+        httpsGetJson(accInfoUrl),
+        httpsGetJson(
+          `https://graph.facebook.com/${META_API_VERSION}/${cleanId}/campaigns?${new URLSearchParams({
+            access_token: META_ACCESS_TOKEN,
+            fields: "id,status",
+            limit: "500"
+          }).toString()}`
+        )
+      ]);
 
       const statusMap = new Map();
-      try {
-        const campParams = new URLSearchParams({
-          access_token: META_ACCESS_TOKEN,
-          fields: "id,status",
-          limit: "500"
+      if (campRes && Array.isArray(campRes.data)) {
+        campRes.data.forEach((c) => {
+          if (c && c.id) statusMap.set(String(c.id), String(c.status || "ACTIVE").toUpperCase());
         });
-        const campRes = await httpsGetJson(
-          `https://graph.facebook.com/${META_API_VERSION}/${cleanId}/campaigns?${campParams.toString()}`
-        );
-        if (campRes && Array.isArray(campRes.data)) {
-          campRes.data.forEach((c) => {
-            if (c && c.id) statusMap.set(String(c.id), String(c.status || "ACTIVE").toUpperCase());
-          });
+      }
+
+      let hasSpendCap = false;
+      let remainingUsd = null;
+      let spendCapUsd = 0;
+      let amountSpentUsd = 0;
+      let balanceDueUsd = 0;
+
+      if (accInfo && !accInfo.error) {
+        const rawCap = Number(accInfo.spend_cap || 0);
+        const rawSpent = Number(accInfo.amount_spent || 0);
+        const rawBal = Number(accInfo.balance || 0);
+
+        spendCapUsd = rawCap > 0 ? rawCap / 100 : 0;
+        amountSpentUsd = rawSpent > 0 ? rawSpent / 100 : 0;
+        balanceDueUsd = rawBal > 0 ? rawBal / 100 : 0;
+
+        if (rawCap > 0) {
+          hasSpendCap = true;
+          remainingUsd = Math.max(0, (rawCap - rawSpent) / 100);
         }
-      } catch (e) {}
+      }
 
       let totalSpend = 0;
       let totalMessages = 0;
@@ -1140,6 +1168,11 @@ async function fetchMetaAdsMetrics(targetDate, brand) {
         name: acc.name,
         brand: acc.brand,
         spend: totalSpend.toFixed(2),
+        has_spend_cap: hasSpendCap,
+        remaining_usd: remainingUsd !== null ? remainingUsd.toFixed(2) : null,
+        spend_cap_usd: spendCapUsd.toFixed(2),
+        amount_spent_usd: amountSpentUsd.toFixed(2),
+        balance_due_usd: balanceDueUsd.toFixed(2),
         messages: totalMessages,
         msg_spend: msgSpend.toFixed(2),
         cost_per_msg_cents: costPerMsgCents,
@@ -1155,6 +1188,11 @@ async function fetchMetaAdsMetrics(targetDate, brand) {
         name: acc.name,
         brand: acc.brand,
         spend: "0.00",
+        has_spend_cap: false,
+        remaining_usd: null,
+        spend_cap_usd: "0.00",
+        amount_spent_usd: "0.00",
+        balance_due_usd: "0.00",
         messages: 0,
         msg_spend: "0.00",
         cost_per_msg_cents: "0.0",
@@ -1171,6 +1209,11 @@ async function fetchMetaAdsMetrics(targetDate, brand) {
 
   const sum = (key) => results.reduce((acc, cur) => acc + parseFloat(cur[key] || 0), 0);
   const totalSpendSum = sum("spend");
+  const totalRemainingSum = results.reduce(
+    (acc, cur) => acc + (cur.has_spend_cap && cur.remaining_usd !== null ? parseFloat(cur.remaining_usd) : 0),
+    0
+  );
+  const hasAnyCap = results.some((r) => r.has_spend_cap && r.remaining_usd !== null);
   const totalMsgsSum = results.reduce((acc, cur) => acc + cur.messages, 0);
   const totalOrdersSum = results.reduce((acc, cur) => acc + cur.orders, 0);
   const totalMsgSpendSum = sum("msg_spend");
@@ -1182,6 +1225,8 @@ async function fetchMetaAdsMetrics(targetDate, brand) {
     accounts: results,
     summary: {
       total_spend: totalSpendSum.toFixed(2),
+      has_remaining_cap: hasAnyCap,
+      total_remaining_usd: totalRemainingSum.toFixed(2),
       total_messages: totalMsgsSum,
       msg_spend: totalMsgSpendSum.toFixed(2),
       avg_cost_per_msg_cents:
