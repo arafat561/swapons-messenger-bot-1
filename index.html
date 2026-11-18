@@ -1,1312 +1,645 @@
-"use strict";
-
-const express = require("express");
-const Database = require("better-sqlite3");
-const fs = require("fs");
-const path = require("path");
-const https = require("https");
-const crypto = require("crypto");
-require("dotenv").config();
-
-const app = express();
-const PORT = process.env.PORT || 3000;
-const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "my_verify_token";
-
-const DASHBOARD_USER = process.env.DASHBOARD_USER || "swapon";
-const DASHBOARD_PASS = process.env.DASHBOARD_PASS || "swapon123";
-const MOD_PASS = process.env.MOD_PASS || "mod123";
-const META_ACCESS_TOKEN = process.env.META_ACCESS_TOKEN || "";
-const META_API_VERSION = process.env.META_API_VERSION || "v25.0";
-
-const SEEN_NO_REPLY_MS = 5 * 60 * 1000;
-
-const SESSION_MINUTES = Number(process.env.SESSION_MINUTES || 0);
-const SESSION_MS = SESSION_MINUTES > 0 ? SESSION_MINUTES * 60 * 1000 : 0;
-
-const PAGE_TOKENS = {
-  "102803132669088": process.env.PAGE_TOKEN_SW1 || process.env.SWAPONS_WORLD_PAGE_TOKEN || "",
-  "1133872699971391": process.env.PAGE_TOKEN_SW2 || process.env.SWAPONS_WORLD_PAGE_TOKEN || "",
-  "250386238168336": process.env.PAGE_TOKEN_SR || process.env.STONE_ROSE_PAGE_TOKEN || ""
-};
-
-function getPageToken(pageId) {
-  return PAGE_TOKENS[pageId] || "";
-}
-
-const PAGE_NAMES = {
-  "102803132669088": "Swapons World",
-  "1133872699971391": "Swapons World",
-  "250386238168336": "Stone Rose BD"
-};
-
-const DHAKA_OFFSET_MS = 6 * 60 * 60 * 1000;
-
-function dhakaDate(ts) {
-  const t = typeof ts === "number" ? ts : Date.now();
-  return new Date(t + DHAKA_OFFSET_MS).toISOString().slice(0, 10);
-}
-
-const DAY = "date(created_at, '+6 hours')";
-const DAY_M = "date(m.created_at, '+6 hours')";
-const DAY_R = "date(r.created_at, '+6 hours')";
-
-const SHIFTS = {
-  all: { label: "Full day", startH: 0, endH: 24 },
-  morning: { label: "Morning (9am–5pm)", startH: 9, endH: 17 },
-  evening: { label: "Evening (5:15pm–12am)", startH: 17.25, endH: 24 }
-};
-
-function sqlTime(ms) {
-  return new Date(ms).toISOString().slice(0, 19).replace("T", " ");
-}
-
-function shiftWindow(dateStr, shiftKey) {
-  const key = SHIFTS[shiftKey] ? shiftKey : "all";
-  const s = SHIFTS[key];
-  const dayStartMs = Date.parse(dateStr + "T00:00:00Z") - DHAKA_OFFSET_MS;
-  const startMs = dayStartMs + Math.round(s.startH * 3600000);
-  const endMs = dayStartMs + Math.round(s.endH * 3600000);
-  const full = key === "all" ? null : Math.round((s.endH - s.startH) * 60);
-  const elapsed = key === "all" ? null : Math.max(0, Math.min(endMs, Date.now()) - startMs) / 60000;
-  return {
-    key,
-    label: s.label,
-    start: sqlTime(startMs),
-    end: sqlTime(endMs),
-    startMs,
-    endMs,
-    minutes: full,
-    elapsed_minutes: elapsed === null ? null : Math.round(elapsed * 10) / 10
-  };
-}
-
-const PAGE_GROUPS = {
-  swapons: { label: "Swapons World", ids: ["102803132669088", "1133872699971391"] },
-  stone: { label: "Stone Rose BD", ids: ["250386238168336"] }
-};
-
-const PAGE_TO_GROUP = {
-  "102803132669088": "swapons",
-  "1133872699971391": "swapons",
-  "250386238168336": "stone"
-};
-
-const AD_ACCOUNTS = [
-  { id: "act_846240430355170", name: "Swapons World-3", brand: "swapons" },
-  { id: "act_414594386485433", name: "Swapons World-2", brand: "swapons" },
-  { id: "act_705111815068714", name: "ZXC19 (Stone rose)", brand: "swapons" },
-  { id: "act_412119051932043", name: "ST-18 (Stone Rose)", brand: "swapons" },
-  { id: "act_7707351539304206", name: "ZXC20 (Stone Rose)", brand: "swapons" },
-  { id: "act_770104971706610", name: "ST-09 (Stone Rose)", brand: "swapons" },
-  { id: "act_722336793300354", name: "ST-07 (Stone Rose)", brand: "stone" },
-  { id: "act_3681717408727534", name: "ST-10 (Stone Rose)", brand: "stone" }
-];
-
-function resolveScope(raw) {
-  const v = String(raw || "all");
-  const key = PAGE_TO_GROUP[v] || (PAGE_GROUPS[v] ? v : "all");
-  if (key === "all") return { key: "all", label: "All Pages", ids: [] };
-  return { key, label: PAGE_GROUPS[key].label, ids: PAGE_GROUPS[key].ids };
-}
-
-function pageClause(ids, col) {
-  const column = col || "page_id";
-  if (!ids.length) return { sql: "", params: [] };
-  return { sql: ` AND ${column} IN (${ids.map(() => "?").join(",")})`, params: ids };
-}
-
-const FB_ID_TO_PROFILE = new Map([
-  ["61594030833722", "Iram"],
-  ["61594801244167", "Shuvro"],
-  ["19ibuyadbj", "Ashraful"],
-  ["faria.rahman.800321", "Faria Rahman"],
-  ["1phgk91sez", "Saidul"],
-  ["61592130331098", "Tania"],
-  ["61591664456446", "Arif"],
-  ["1crg2mozpq", "Halim"],
-  ["ferdous.fahim.921", "Ferdous Fahim"],
-  ["19kyfdy2fr", "Al Amin"],
-  ["61593951013042", "San Jana"],
-  ["61594203401850", "Shanta"],
-  ["61594028540149", "Zakir"],
-  ["1poachcnqh", "Samir"]
-]);
-
-const MODERATORS = [
-  { name: "ফাহিম", aliases: ["ফাহিম", "ferdous.fahim.921"] },
-  { name: "আজাদ", aliases: ["আজাদ"] },
-  { name: "অপুর্ব", aliases: ["অপুর্ব", "অপূর্ব"] },
-  { name: "আশরাফুল", aliases: ["আশরাফুল", "19ibuyadbj"] },
-  { name: "সাইদুল", aliases: ["সাইদুল", "1phgk91sez"] },
-  { name: "জাবের", aliases: ["জাবের"] },
-  { name: "রিফাত", aliases: ["রিফাত"] },
-  { name: "হালিম", aliases: ["হালিম", "1crg2mozpq"] },
-  { name: "আল আমিন", aliases: ["আল আমিন", "আলআমিন", "19kyfdy2fr"] },
-  { name: "সানজানা", aliases: ["সানজানা", "san jana", "61593951013042"] },
-  { name: "শান্তা", aliases: ["শান্তা", "61594203401850"] },
-  { name: "জাকির", aliases: ["জাকির", "61594028540149"] },
-  { name: "সামির", aliases: ["সামির", "1poachcnqh"] },
-  { name: "ইরাম", aliases: ["ইরাম", "61594030833722"] },
-  { name: "শুভ্র", aliases: ["শুভ্র", "61594801244167"] },
-  { name: "তানিয়া", aliases: ["তানিয়া", "61592130331098"] },
-  { name: "আরিফ", aliases: ["আরিফ", "61591664456446"] },
-  { name: "আপন", aliases: ["আপন"] },
-  { name: "ফারজানা", aliases: ["ফারজানা"] },
-  { name: "Faria Rahman", aliases: ["faria.rahman.800321", "ফারিয়া"] },
-  { name: "Ferdous Fahim", aliases: ["ferdous.fahim.921", "ফাহিম"] }
-];
-
-const BN_RANGE = "\\u0980-\\u09FF";
-
-function escapeRegex(s) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-const MODERATOR_RULES = MODERATORS.map((m) => {
-  const alt = m.aliases
-    .map((a) => a.normalize("NFC").trim().split(/\s+/).map(escapeRegex).join("\\s+"))
-    .join("|");
-  return {
-    name: m.name,
-    re: new RegExp(`(?<![${BN_RANGE}])(?:আমি\\s+)?(?:${alt})(?![${BN_RANGE}])`, "i")
-  };
-});
-
-function resolveFbProfileDisplay(rawActorId, text) {
-  if (rawActorId) {
-    const cleanId = String(rawActorId).trim().toLowerCase();
-    if (FB_ID_TO_PROFILE.has(cleanId)) return FB_ID_TO_PROFILE.get(cleanId);
-    for (const [k, v] of FB_ID_TO_PROFILE.entries()) {
-      if (cleanId.includes(k)) return v;
-    }
-  }
-  if (text) {
-    const clean = String(text).normalize("NFC");
-    const low = clean.toLowerCase();
-    for (const [k, v] of FB_ID_TO_PROFILE.entries()) {
-      if (low.includes(k)) return v;
-    }
-    let best = null;
-    for (const rule of MODERATOR_RULES) {
-      const m = rule.re.exec(clean);
-      if (m && (best === null || m.index < best.index)) {
-        best = { index: m.index, name: rule.name };
-      }
-    }
-    if (best) return best.name;
-  }
-  return rawActorId ? String(rawActorId).trim() : null;
-}
-
-function detectModerator(text) {
-  return resolveFbProfileDisplay(null, text);
-}
-
-function isOrderConfirmMatch(text) {
-  if (!text) return false;
-  const t = String(text).toLowerCase();
-  return t.includes("your order is confirm") || t.includes("your order confirm") || t.includes("conversation");
-}
-
-function extractElevenDigitPhone(text) {
-  if (!text) return null;
-  const cleaned = String(text).replace(/[\s\-()+]/g, "");
-  const match = cleaned.match(/(?:88)?(01\d{9})/);
-  return match ? match[1] : null;
-}
-
-app.use(express.json({ limit: "35mb" }));
-
-const dbDir = process.env.DATA_DIR || (fs.existsSync("/data") ? "/data" : ".");
-const uploadDir = path.join(dbDir, "uploads");
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-app.use("/uploads", express.static(uploadDir));
-
-const dbPath = path.join(dbDir, "messenger.db");
-const db = new Database(dbPath);
-db.pragma("journal_mode = WAL");
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS messages (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    page_id TEXT NOT NULL,
-    sender_id TEXT NOT NULL,
-    message_id TEXT UNIQUE,
-    message_text TEXT,
-    image_url TEXT,
-    ad_info TEXT,
-    message_time INTEGER,
-    phone_number TEXT,
-    status TEXT DEFAULT 'unread',
-    read_time INTEGER,
-    assigned_moderator TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-
-  CREATE TABLE IF NOT EXISTS replies (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    page_id TEXT NOT NULL,
-    sender_id TEXT NOT NULL,
-    message_id TEXT,
-    reply_text TEXT,
-    image_url TEXT,
-    reply_time INTEGER,
-    moderator TEXT,
-    is_order_confirm INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-
-  CREATE TABLE IF NOT EXISTS moderator_assignments (
-    page_id TEXT NOT NULL,
-    sender_id TEXT NOT NULL,
-    day TEXT NOT NULL,
-    moderator TEXT NOT NULL,
-    assigned_at INTEGER,
-    bucket TEXT DEFAULT 'pending',
-    PRIMARY KEY (page_id, sender_id, day)
-  );
-
-  CREATE TABLE IF NOT EXISTS customers (
-    page_id TEXT NOT NULL,
-    sender_id TEXT NOT NULL,
-    name TEXT,
-    profile_pic TEXT,
-    ad_info TEXT,
-    PRIMARY KEY (page_id, sender_id)
-  );
-
-  CREATE TABLE IF NOT EXISTS sessions (
-    token_hash TEXT PRIMARY KEY,
-    created_at INTEGER NOT NULL
-  );
-
-  CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
-  CREATE INDEX IF NOT EXISTS idx_messages_status ON messages(status);
-  CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(page_id, sender_id);
-  CREATE INDEX IF NOT EXISTS idx_messages_phone ON messages(phone_number);
-  CREATE INDEX IF NOT EXISTS idx_replies_sender ON replies(page_id, sender_id);
-  CREATE INDEX IF NOT EXISTS idx_replies_created_at ON replies(created_at);
-  CREATE INDEX IF NOT EXISTS idx_assign_day ON moderator_assignments(day);
-`);
-
-try { db.exec(`ALTER TABLE messages ADD COLUMN read_time INTEGER;`); } catch (e) {}
-try { db.exec(`ALTER TABLE messages ADD COLUMN phone_number TEXT;`); } catch (e) {}
-try { db.exec(`ALTER TABLE messages ADD COLUMN assigned_moderator TEXT;`); } catch (e) {}
-try { db.exec(`ALTER TABLE messages ADD COLUMN image_url TEXT;`); } catch (e) {}
-try { db.exec(`ALTER TABLE messages ADD COLUMN ad_info TEXT;`); } catch (e) {}
-try { db.exec(`ALTER TABLE replies ADD COLUMN moderator TEXT;`); } catch (e) {}
-try { db.exec(`ALTER TABLE replies ADD COLUMN is_order_confirm INTEGER DEFAULT 0;`); } catch (e) {}
-try { db.exec(`ALTER TABLE replies ADD COLUMN image_url TEXT;`); } catch (e) {}
-try { db.exec(`ALTER TABLE customers ADD COLUMN ad_info TEXT;`); } catch (e) {}
-try { db.exec(`ALTER TABLE customers ADD COLUMN profile_pic TEXT;`); } catch (e) {}
-try { db.exec(`ALTER TABLE moderator_assignments ADD COLUMN bucket TEXT DEFAULT 'pending';`); } catch (e) {}
-
-function isBlockedStickerUrl(url) {
-  if (!url) return false;
-  const u = String(url);
-  return u.includes("39178562_1505197616293642") || u.includes("/stickers/");
-}
-
-function isValidProductAttachment(att) {
-  if (!att) return null;
-  if (att.mime_type && String(att.mime_type).includes("sticker")) return null;
-  const imgData = att.image_data || {};
-  const imgUrl = imgData.url || att.file_url || "";
-  if (!imgUrl || isBlockedStickerUrl(imgUrl)) return null;
-  const w = Number(imgData.width || 0);
-  const h = Number(imgData.height || 0);
-  if ((w > 0 && w <= 120) || (h > 0 && h <= 120)) return null;
-  return imgUrl;
-}
-
-const stmts = {
-  insertMessage: db.prepare(`
-    INSERT OR IGNORE INTO messages
-    (page_id, sender_id, message_id, message_text, image_url, ad_info, message_time, phone_number, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'unread')
-  `),
-  markRead: db.prepare(`
-    UPDATE messages
-    SET status = 'read', read_time = COALESCE(read_time, ?)
-    WHERE page_id = ? AND sender_id = ? AND message_time <= ? AND status = 'unread'
-  `),
-  insertReply: db.prepare(`
-    INSERT INTO replies
-    (page_id, sender_id, message_id, reply_text, image_url, reply_time, moderator, is_order_confirm)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `),
-  assignFirstOwner: db.prepare(`
-    INSERT OR IGNORE INTO moderator_assignments (page_id, sender_id, day, moderator, assigned_at, bucket)
-    VALUES (?, ?, ?, ?, ?, 'pending')
-  `),
-  markReplied: db.prepare(`
-    UPDATE messages
-    SET status = 'replied'
-    WHERE page_id = ? AND sender_id = ? AND status != 'replied'
-      AND ${DAY} = ?
-  `),
-  insertSession: db.prepare(`INSERT INTO sessions (token_hash, created_at) VALUES (?, ?)`),
-  getSession: db.prepare(`SELECT created_at FROM sessions WHERE token_hash = ?`),
-  deleteSession: db.prepare(`DELETE FROM sessions WHERE token_hash = ?`),
-  purgeSessions: db.prepare(`DELETE FROM sessions WHERE created_at < ?`)
-};
-
-function getFirstCustomerOwner(pageId, senderId, day) {
-  const row = db.prepare(`
-    SELECT moderator FROM moderator_assignments
-    WHERE page_id = ? AND sender_id = ? AND day = ?
-  `).get(pageId, senderId, day);
-  return row ? row.moderator : null;
-}
-
-function ensureFirstCustomerOwner(pageId, senderId, day, profileName, ts) {
-  if (!profileName) return null;
-  stmts.assignFirstOwner.run(pageId, senderId, day, profileName, ts || Date.now());
-  return getFirstCustomerOwner(pageId, senderId, day) || profileName;
-}
-
-const fbAgent = new https.Agent({ keepAlive: true, maxSockets: 20 });
-
-function sendFacebookPayload(pageId, bodyObj) {
-  return new Promise((resolve, reject) => {
-    const token = getPageToken(pageId);
-    if (!token) {
-      return reject(new Error(`Page ID (${pageId}) এর জন্য টোকেন সেট করা নেই!`));
-    }
-
-    const payload = JSON.stringify(bodyObj);
-    const options = {
-      hostname: "graph.facebook.com",
-      path: `/${META_API_VERSION}/me/messages?access_token=${token}`,
-      method: "POST",
-      agent: fbAgent,
-      headers: {
-        "Content-Type": "application/json",
-        "Content-Length": Buffer.byteLength(payload)
-      }
-    };
-
-    const req = https.request(options, (res) => {
-      let data = "";
-      res.on("data", (chunk) => { data += chunk; });
-      res.on("end", () => {
-        try {
-          const parsed = JSON.parse(data);
-          if (parsed.error) reject(new Error(parsed.error.message));
-          else resolve(parsed);
-        } catch (e) {
-          reject(e);
-        }
-      });
-    });
-
-    req.on("error", (err) => reject(err));
-    req.setTimeout(8000, () => req.destroy(new Error("Meta API timeout")));
-    req.write(payload);
-    req.end();
-  });
-}
-
-function httpsGetJson(url) {
-  return new Promise((resolve) => {
-    const req = https.get(url, { timeout: 12000, agent: fbAgent }, (res) => {
-      let raw = "";
-      res.setEncoding("utf8");
-      res.on("data", (chunk) => { raw += chunk; });
-      res.on("end", () => {
-        try { resolve(JSON.parse(raw)); } catch (e) { resolve(null); }
-      });
-    });
-    req.on("timeout", () => req.destroy(new Error("timeout")));
-    req.on("error", () => resolve(null));
-  });
-}
-
-async function syncCustomerAndAdFromGraph(pageId, senderId) {
-  const token = getPageToken(pageId);
-  if (!token) return null;
-
-  try {
-    const existing = db.prepare(`SELECT name, profile_pic, ad_info FROM customers WHERE page_id = ? AND sender_id = ?`).get(pageId, senderId);
-    let fullName = (existing && existing.name && !existing.name.startsWith("Customer_")) ? existing.name : "";
-    let picUrl = (existing && existing.profile_pic) ? existing.profile_pic : "";
-
-    let parsedExistingAd = null;
-    if (existing && existing.ad_info) {
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Live Analytics & Operations Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;600;700;800&family=Hind+Siliguri:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    (function () {
       try {
-        const tmp = JSON.parse(existing.ad_info);
-        if (tmp && !isBlockedStickerUrl(tmp.photo_url) && !isBlockedStickerUrl(tmp.post_url)) {
-          parsedExistingAd = tmp;
-        }
+        var saved = localStorage.getItem("dash_theme");
+        var prefersLight = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches;
+        document.documentElement.setAttribute("data-theme", saved || (prefersLight ? "light" : "dark"));
       } catch (e) {}
+    })();
+  </script>
+  <style>
+    :root {
+      --bg: #0d1b26;
+      --surface: #132a39;
+      --raised: #1a3547;
+      --line: #284859;
+      --text: #e9f1f5;
+      --muted: #96aebc;
+      --faint: #6d8898;
+      --msg: #3ad3bd;
+      --msg-soft: rgba(58, 211, 189, .14);
+      --sale: #f4b84d;
+      --sale-soft: rgba(244, 184, 77, .14);
+      --ok: #74d69a;
+      --warn: #f4b84d;
+      --bad: #ff7d6b;
+      --bad-soft: rgba(255, 125, 107, .13);
+      --invert: #e9f1f5;
+      --on-invert: #0d1b26;
+      --shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 18px 40px -24px rgba(0,0,0,.6);
+      color-scheme: dark;
+    }
+    [data-theme="light"] {
+      --bg: #edf3f5;
+      --surface: #ffffff;
+      --raised: #f3f8f9;
+      --line: #d3e0e5;
+      --text: #0f2430;
+      --muted: #4f6d7c;
+      --faint: #7b97a5;
+      --msg: #0b8c7b;
+      --msg-soft: rgba(11, 140, 123, .11);
+      --sale: #a86800;
+      --sale-soft: rgba(168, 104, 0, .11);
+      --ok: #1b8a4a;
+      --warn: #b27300;
+      --bad: #cf432d;
+      --bad-soft: rgba(207, 67, 45, .09);
+      --invert: #0f2430;
+      --on-invert: #ffffff;
+      --shadow: 0 1px 2px rgba(15,36,48,.05), 0 14px 30px -22px rgba(15,36,48,.25);
+      color-scheme: light;
     }
 
-    if (!fullName || !picUrl) {
-      const profile = await httpsGetJson(`https://graph.facebook.com/${META_API_VERSION}/${senderId}?fields=first_name,last_name,name,profile_pic&access_token=${token}`);
-      if (profile && !profile.error) {
-        if (profile.name || profile.first_name) {
-          fullName = profile.name || `${profile.first_name || ""} ${profile.last_name || ""}`.trim();
-        }
-        if (profile.profile_pic) {
-          picUrl = profile.profile_pic;
-        }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    [hidden] { display: none !important; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: "Hind Siliguri", system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+    button, input { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+    :focus-visible { outline: 2px solid var(--msg); outline-offset: 2px; border-radius: 6px; }
+
+    .display, .num { font-family: "Bricolage Grotesque", "Hind Siliguri", sans-serif; }
+    .num { font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+
+    .wrap { max-width: 1240px; margin: 0 auto; padding: 28px 24px 56px; display: grid; gap: 20px; }
+
+    .top { display: flex; flex-wrap: wrap; gap: 16px 24px; align-items: flex-end; justify-content: space-between; }
+    .brand h1 { font-size: clamp(1.35rem, 2.4vw, 1.9rem); font-weight: 700; letter-spacing: -.02em; line-height: 1.15; }
+    .brand p { color: var(--muted); font-size: .92rem; margin-top: 4px; }
+    .live { display: inline-flex; align-items: center; gap: 8px; font-size: .85rem; color: var(--muted); margin-top: 10px; }
+    .live i { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 0 var(--ok); animation: pulse 2.4s infinite; }
+    .live.stale i { background: var(--bad); animation: none; }
+    @keyframes pulse { 70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+
+    .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    .seg { display: inline-flex; padding: 4px; gap: 2px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
+    .seg button { border: 0; background: transparent; padding: 8px 16px; border-radius: 10px; font-weight: 600; font-size: .92rem; color: var(--muted); transition: background .18s, color .18s; }
+    .seg button:hover { color: var(--text); }
+    .seg button[aria-pressed="true"] { background: var(--invert); color: var(--on-invert); }
+    .seg.sm button { padding: 6px 12px; font-size: .86rem; }
+
+    .stepper { display: inline-flex; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+    .stepper button { border: 0; background: transparent; width: 38px; height: 40px; font-size: 1.15rem; color: var(--muted); }
+    .stepper button:hover:not(:disabled) { background: var(--raised); color: var(--text); }
+    .stepper button:disabled { opacity: .35; cursor: not-allowed; }
+    .stepper input { border: 0; background: transparent; padding: 0 6px; height: 40px; font-weight: 600; font-size: .92rem; min-width: 128px; text-align: center; color-scheme: inherit; }
+
+    .btn { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; font-weight: 600; font-size: .9rem; transition: background .18s, border-color .18s; text-decoration: none; color: inherit; }
+    .btn:hover { background: var(--raised); border-color: var(--faint); }
+    .btn.inbox-link { background: var(--msg-soft); border-color: var(--msg); color: var(--msg); }
+    .btn.inbox-link:hover { background: var(--msg); color: var(--on-invert); }
+    .btn svg { width: 16px; height: 16px; }
+    .btn .spin { animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .btn.icon { padding: 0; width: 40px; justify-content: center; }
+    .count { color: var(--faint); font-weight: 500; font-variant-numeric: tabular-nums; min-width: 2.2ch; }
+
+    .hero { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 20px; }
+    .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); }
+    .hero-main { border-radius: 24px; padding: 28px 30px 26px; }
+    .hero-main h2 { font-size: 1.05rem; font-weight: 600; color: var(--muted); }
+    .hero-number { font-size: clamp(3.6rem, 9vw, 6.2rem); font-weight: 800; line-height: 1; margin: 10px 0 6px; color: var(--text); }
+    .hero-sub { color: var(--muted); max-width: 52ch; font-size: .95rem; }
+    .facts { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 18px; }
+    .facts div { display: flex; align-items: baseline; gap: 8px; color: var(--muted); font-size: .9rem; }
+    .facts b { color: var(--text); font-size: 1.15rem; font-weight: 700; }
+
+    .funnel { display: flex; gap: 3px; height: 16px; margin-top: 26px; }
+    .funnel span { display: block; min-width: 0; border-radius: 6px; transition: flex-grow .6s cubic-bezier(.2,.8,.2,1); }
+    .funnel .f-ok { background: var(--ok); }
+    .funnel .f-bad { background: var(--bad); }
+    .funnel .f-warn { background: var(--warn); }
+    .funnel .f-rest { background: var(--line); }
+
+    .ads { padding: 22px 24px; display: grid; align-content: start; gap: 0; }
+    .ads-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 8px; }
+    .ads-head h2 { font-size: 1.05rem; font-weight: 600; color: var(--muted); }
+    .ads-head small { color: var(--faint); font-size: .82rem; text-align: right; }
+    .adrow { display: grid; grid-template-columns: 1fr auto; gap: 2px 14px; align-items: center; padding: 15px 0; border-top: 1px solid var(--line); }
+    .adrow:first-of-type { border-top: 0; }
+    .lbl { color: var(--muted); font-size: .88rem; }
+    .val { font-size: 1.9rem; font-weight: 700; line-height: 1.15; }
+    .adrow.msg .val { color: var(--msg); }
+    .adrow.sale .val { color: var(--sale); }
+    .detail { color: var(--faint); font-size: .84rem; }
+    .detail b { color: var(--muted); font-weight: 600; }
+    .cost { justify-self: end; text-align: right; }
+    .cost .num { display: inline-block; font-size: 1.05rem; font-weight: 700; padding: 3px 10px; border-radius: 8px; }
+    .adrow.msg .cost .num { background: var(--msg-soft); color: var(--msg); }
+    .adrow.sale .cost .num { background: var(--sale-soft); color: var(--sale); }
+    .cost small { display: block; color: var(--faint); font-size: .76rem; margin-top: 3px; }
+    .notice { margin-top: 6px; padding: 10px 12px; border-radius: 10px; background: var(--bad-soft); color: var(--bad); font-size: .84rem; }
+
+    .tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; }
+    .tile { padding: 16px 18px; position: relative; overflow: hidden; }
+    .tile::before { content: ""; position: absolute; left: 0; top: 14px; bottom: 14px; width: 4px; border-radius: 0 4px 4px 0; background: var(--tone, var(--line)); }
+    .tile .lbl { padding-left: 4px; }
+    .tile .val { font-size: 2.1rem; display: block; padding-left: 4px; margin-top: 2px; }
+    .tile .detail { padding-left: 4px; }
+    .tile.ok { --tone: var(--ok); }
+    .tile.warn { --tone: var(--warn); }
+    .tile.bad { --tone: var(--bad); background: linear-gradient(0deg, var(--bad-soft), var(--bad-soft)), var(--surface); }
+    .tile.bad .val { color: var(--bad); }
+    .tile.sale { --tone: var(--sale); }
+    .tile.msg { --tone: var(--msg); }
+
+    .reconcile { padding: 20px 24px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 20px 40px; align-items: center; }
+    .reconcile h2 { font-size: 1.05rem; font-weight: 600; }
+    .reconcile p { color: var(--muted); font-size: .88rem; margin-top: 6px; max-width: 60ch; }
+    .bars { display: grid; gap: 14px; }
+    .bar-row { display: grid; grid-template-columns: 150px 1fr auto; gap: 12px; align-items: center; font-size: .88rem; color: var(--muted); }
+    .track { height: 12px; background: var(--raised); border-radius: 6px; overflow: hidden; }
+    .fill { height: 100%; border-radius: 6px; width: 0; transition: width .6s cubic-bezier(.2,.8,.2,1); }
+    .fill.m { background: var(--msg); }
+    .fill.i { background: var(--invert); }
+    .bar-row b { color: var(--text); font-size: 1.05rem; min-width: 5ch; text-align: right; }
+
+    .block-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 20px 24px 14px; flex-wrap: wrap; }
+    .block-head h2 { font-size: 1.1rem; font-weight: 700; }
+    .block-head span { color: var(--muted); font-size: .86rem; }
+    .hint { color: var(--muted); font-size: .86rem; padding: 0 24px 14px; max-width: 90ch; }
+    .scroll { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; min-width: 860px; }
+    th { text-align: left; font-weight: 600; font-size: .82rem; color: var(--faint); padding: 10px 16px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--raised); white-space: nowrap; }
+    th:first-child, td:first-child { padding-left: 24px; }
+    td { padding: 14px 16px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+    tbody tr.acc-row { cursor: pointer; transition: background .15s; }
+    tbody tr.acc-row:hover td { background: var(--raised); }
+    tbody tr.acc-row.expanded td { background: var(--raised); border-bottom-color: transparent; }
+    tbody tr:last-child td { border-bottom: 0; }
+    tfoot td { font-weight: 700; background: var(--raised); border-top: 1px solid var(--line); border-bottom: 0; }
+    .acc-name { font-weight: 600; display: flex; align-items: center; gap: 8px; }
+    .chev { display: inline-block; font-size: .78rem; color: var(--msg); transition: transform .2s; }
+    tr.expanded .chev { transform: rotate(90deg); }
+    .acc-id { color: var(--faint); font-size: .78rem; font-family: "Bricolage Grotesque", sans-serif; margin-left: 16px; }
+    .share { height: 5px; border-radius: 3px; background: var(--raised); margin-top: 7px; width: 120px; overflow: hidden; }
+    .share i { display: block; height: 100%; background: var(--invert); border-radius: 3px; }
+    .strong { font-weight: 700; }
+    .c-msg { color: var(--msg); }
+    .c-sale { color: var(--sale); }
+    .rem-val { display: inline-block; padding: 2px 9px; border-radius: 8px; font-weight: 700; font-size: .88rem; background: rgba(116, 214, 154, .14); color: var(--ok); }
+    .pill { display: inline-block; padding: 2px 9px; border-radius: 8px; font-weight: 700; font-size: .88rem; }
+    .pill.msg { background: var(--msg-soft); color: var(--msg); }
+    .pill.sale { background: var(--sale-soft); color: var(--sale); }
+    .warn-flag { color: var(--bad); font-size: .78rem; display: block; margin-top: 3px; max-width: 34ch; }
+    .empty { padding: 36px 24px; text-align: center; color: var(--muted); }
+    .empty b { display: block; color: var(--text); margin-bottom: 4px; }
+
+    .sub-drop-row td { padding: 0 !important; background: var(--bg) !important; border-bottom: 2px solid var(--line); }
+    .sub-drop-box { padding: 16px 24px 20px; background: rgba(0, 0, 0, .18); }
+    [data-theme="light"] .sub-drop-box { background: rgba(15, 36, 48, .03); }
+    .sub-drop-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+    .sub-drop-title { font-size: .95rem; font-weight: 700; color: var(--msg); }
+    .sub-drop-actions { display: flex; align-items: center; gap: 8px; }
+    .sub-drop-badge { font-size: .78rem; color: var(--muted); background: var(--surface); border: 1px solid var(--line); padding: 3px 10px; border-radius: 999px; }
+    .close-drop-btn { display: inline-flex; align-items: center; gap: 5px; background: var(--raised); border: 1px solid var(--line); color: var(--text); font-size: .78rem; font-weight: 600; padding: 4px 11px; border-radius: 999px; }
+    .sub-table { width: 100%; min-width: 780px; border-collapse: collapse; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+    .sub-table th { background: var(--raised); font-size: .76rem; padding: 8px 14px; color: var(--faint); border-top: 0; }
+    .sub-table td { padding: 10px 14px; font-size: .86rem; border-bottom: 1px solid var(--line); }
+    .sub-table tr:last-child td { border-bottom: 0; }
+    .camp-name { font-weight: 600; color: var(--text); }
+    .camp-obj { font-size: .72rem; color: var(--faint); margin-top: 2px; }
+    .ad-toggle-wrap { display: inline-flex; align-items: center; gap: 8px; }
+    .ad-switch { position: relative; display: inline-block; width: 42px; height: 22px; border: 0; border-radius: 999px; background: #475569; transition: background .2s; padding: 0; }
+    .ad-switch[data-active="true"] { background: #1877f2; }
+    .ad-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #ffffff; transition: transform .2s; }
+    .ad-switch[data-active="true"]::after { transform: translateX(20px); }
+    .ad-state-txt { font-size: .72rem; font-weight: 700; min-width: 24px; }
+    .ad-state-txt.on { color: var(--ok); }
+    .ad-state-txt.off { color: var(--bad); }
+
+    .mrow { display: grid; grid-template-columns: 38px minmax(100px, 1.1fr) minmax(60px, 1.3fr) 80px 88px 76px 100px 100px; gap: 12px; align-items: center; padding: 12px 24px; }
+    .mhead { background: var(--raised); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: .8rem; font-weight: 600; color: var(--faint); padding-top: 10px; padding-bottom: 10px; }
+    .mhead span:nth-child(n+4), .board .mrow > span:nth-child(n+4) { text-align: right; }
+    .board { list-style: none; padding: 0 0 8px; }
+    .board li.mrow { border-bottom: 1px solid var(--line); }
+    .board li.mrow:last-child { border-bottom: 0; }
+    .board .rank { font-weight: 700; color: var(--faint); font-size: 1.05rem; }
+    .board li:nth-child(1) .rank { color: var(--sale); }
+    .board .who { font-weight: 600; font-size: 1.05rem; }
+    .board .track { height: 10px; }
+    .board .fill { background: var(--ok); }
+    .board li:nth-child(n+2) .fill { background: var(--msg); }
+    .board .n { font-size: 1.2rem; font-weight: 700; }
+    .board .msgs { font-size: 1.1rem; font-weight: 700; color: var(--msg); }
+    .board .ph { font-size: 1.1rem; font-weight: 700; color: var(--sale); }
+    .board .per { color: var(--muted); font-weight: 600; }
+    .board .avg { font-weight: 700; }
+    .board .avg.na { color: var(--faint); font-weight: 500; }
+
+    footer { color: var(--faint); font-size: .82rem; }
+    .toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); opacity: 0; pointer-events: none; background: var(--invert); color: var(--on-invert); padding: 11px 18px; border-radius: 12px; font-weight: 500; font-size: .92rem; transition: all .3s; z-index: 40; }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+    .gate {
+      position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 20px; overflow: auto;
+      background: #132a39;
+    }
+    .gate form { width: min(330px, 100%); display: grid; gap: 14px; color: #fff; }
+    .gate h2 { text-align: center; font-size: 1.3rem; font-weight: 500; margin-bottom: 8px; }
+    .pill-field { display: flex; align-items: center; gap: 12px; height: 46px; padding: 0 18px; border-radius: 999px; background: rgba(255,255,255,.16); }
+    .pill-field input { flex: 1; border: 0; outline: 0; background: transparent; color: #fff; font-size: .95rem; }
+    .signin-btn { height: 48px; border: 0; border-radius: 999px; background: var(--msg); color: #07131a; font-weight: 700; font-size: 1rem; }
+    body.locked .wrap, body.locked .toast { visibility: hidden; }
+  </style>
+</head>
+<body>
+
+  <div id="loginModal" class="gate" hidden>
+    <form id="authForm" autocomplete="on">
+      <h2 class="display">Sign in</h2>
+      <label class="pill-field">
+        <input type="text" id="loginUser" name="username" placeholder="Username" required>
+      </label>
+      <label class="pill-field">
+        <input type="password" id="loginPass" name="password" placeholder="Password" required>
+      </label>
+      <div id="loginError" style="color:#ff9b8e;font-size:.86rem;text-align:center;" hidden></div>
+      <button type="submit" class="signin-btn" id="loginBtn">Sign in</button>
+    </form>
+  </div>
+
+  <div class="wrap">
+    <header class="top">
+      <div class="brand">
+        <h1 class="display">Live Analytics &amp; Operations Dashboard</h1>
+        <p>Messenger inbox, Meta ad spend and moderator workload in one view.</p>
+        <div class="live" id="liveBadge"><i></i><span id="liveText">Connecting…</span></div>
+      </div>
+
+      <div class="controls">
+        <div class="seg" id="scopeSeg" role="group" aria-label="Channel">
+          <button type="button" data-scope="all" aria-pressed="true">All pages</button>
+          <button type="button" data-scope="swapons" aria-pressed="false">Swapons World</button>
+          <button type="button" data-scope="stone" aria-pressed="false">Stone Rose BD</button>
+        </div>
+
+        <div class="stepper">
+          <button type="button" id="prevDay" aria-label="Previous day">‹</button>
+          <input type="date" id="datePicker" aria-label="Report date">
+          <button type="button" id="nextDay" aria-label="Next day">›</button>
+        </div>
+
+        <button type="button" class="btn" id="todayBtn">Today</button>
+        <button type="button" class="btn" id="refreshBtn">Refresh <span class="count" id="countdown">30</span></button>
+        <a href="/inbox" target="_blank" class="btn inbox-link">💬 Moderator Inbox</a>
+        <button type="button" class="btn icon" id="themeBtn" aria-label="Switch theme">☀</button>
+        <button type="button" class="btn icon" id="logoutBtn" aria-label="Sign out">⎋</button>
+      </div>
+    </header>
+
+    <main id="main" style="display:grid;gap:20px">
+      <section class="hero">
+        <div class="panel hero-main">
+          <h2>Total inbox customers</h2>
+          <div class="num hero-number" id="statReceived">0</div>
+          <p class="hero-sub">Unique people who wrote to the page on this date, from ads, direct visits and returning customers.</p>
+          <div class="facts">
+            <div><b class="num" id="statNew">0</b> new</div>
+            <div><b class="num" id="statReturning">0</b> returning from earlier days</div>
+            <div><b class="num" id="statRawMsgs">0</b> messages received</div>
+          </div>
+          <div class="funnel" id="funnel">
+            <span class="f-ok" style="flex-grow:0"></span>
+            <span class="f-bad" style="flex-grow:0"></span>
+            <span class="f-warn" style="flex-grow:0"></span>
+            <span class="f-rest" style="flex-grow:1"></span>
+          </div>
+        </div>
+
+        <aside class="panel ads">
+          <div class="ads-head">
+            <h2>Meta ads</h2>
+            <small id="adsScope">—</small>
+          </div>
+          <div class="adrow">
+            <div>
+              <div class="lbl">Ad spend</div>
+              <div class="num val" id="totalSpend">$0.00</div>
+            </div>
+            <div class="cost"></div>
+          </div>
+          <div class="adrow msg">
+            <div>
+              <div class="lbl">Messaging campaigns</div>
+              <div class="num val" id="totalMessages">0</div>
+              <div class="detail">Spend <b class="num" id="msgSpend">$0.00</b></div>
+            </div>
+            <div class="cost"><span class="num" id="costPerMsg">0.0¢</span><small>per message</small></div>
+          </div>
+          <div class="adrow sale">
+            <div>
+              <div class="lbl">Website purchases</div>
+              <div class="num val" id="totalOrders">0</div>
+              <div class="detail">Spend <b class="num" id="salesSpend">$0.00</b></div>
+            </div>
+            <div class="cost"><span class="num" id="costPerOrder">$0.00</span><small>per order</small></div>
+          </div>
+        </aside>
+      </section>
+
+      <section class="tiles">
+        <div class="panel tile ok">
+          <div class="lbl">Replied</div>
+          <span class="num val" id="statReplied">0</span>
+          <div class="detail" id="pctReplied">—</div>
+        </div>
+        <div class="panel tile warn">
+          <div class="lbl">Unread</div>
+          <span class="num val" id="statUnread">0</span>
+          <div class="detail" id="pctUnread">—</div>
+        </div>
+        <div class="panel tile bad">
+          <div class="lbl">Seen, no reply</div>
+          <span class="num val" id="statReadNoReply">0</span>
+          <div class="detail" id="pctSeen">Follow up first</div>
+        </div>
+        <div class="panel tile sale">
+          <div class="lbl">Confirmed orders</div>
+          <span class="num val" id="statOrders">0</span>
+          <div class="detail">Confirmed in chat</div>
+        </div>
+        <div class="panel tile msg">
+          <div class="lbl">Phone numbers</div>
+          <span class="num val" id="statPhones">0</span>
+          <div class="detail">Unique leads</div>
+        </div>
+      </section>
+
+      <section class="panel reconcile">
+        <div>
+          <h2 class="display">Meta vs inbox</h2>
+          <p id="gapText">Meta counts conversations started by ads. The inbox counts unique people who wrote.</p>
+        </div>
+        <div class="bars">
+          <div class="bar-row"><span>Meta conversations</span><div class="track"><div class="fill m" id="barMeta"></div></div><b class="num" id="valMeta">0</b></div>
+          <div class="bar-row"><span>Inbox customers</span><div class="track"><div class="fill i" id="barInbox"></div></div><b class="num" id="valInbox">0</b></div>
+        </div>
+      </section>
+
+      <section class="panel" style="padding:0;overflow:hidden">
+        <div class="block-head">
+          <h2 class="display">Ad accounts</h2>
+          <span id="accountsMeta">—</span>
+        </div>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Account</th>
+                <th>Remaining</th>
+                <th>Total spend</th>
+                <th>Messages</th>
+                <th>Cost / message</th>
+                <th>Orders</th>
+                <th>Cost / order</th>
+              </tr>
+            </thead>
+            <tbody id="adsTableBody">
+              <tr><td colspan="7" class="empty">Loading ad accounts…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel" style="padding:0;overflow:hidden">
+        <div class="block-head">
+          <h2 class="display">Moderators</h2>
+          <div class="seg sm" id="shiftSeg" role="group" aria-label="Shift">
+            <button type="button" data-shift="all" aria-pressed="true">Full day</button>
+            <button type="button" data-shift="morning" aria-pressed="false">Morning 9am–5pm</button>
+            <button type="button" data-shift="evening" aria-pressed="false">Evening 5:15pm–12am</button>
+          </div>
+        </div>
+        <p class="hint" id="modHint">Loading…</p>
+
+        <div class="mrow mhead" aria-hidden="true">
+          <span>#</span>
+          <span>Moderator</span>
+          <span class="hide-sm"></span>
+          <span>Customers</span>
+          <span>Messages</span>
+          <span>Phones</span>
+          <span class="hide-sm">Msgs / customer</span>
+          <span>Min / message</span>
+        </div>
+        <ol class="board" id="modBoard">
+          <li style="display:block"><div class="empty">Loading moderators…</div></li>
+        </ol>
+      </section>
+    </main>
+
+    <footer>Times follow Bangladesh time (UTC+6). Dashboard refreshes every 30 seconds.</footer>
+  </div>
+
+  <script>
+    (function () {
+      "use strict";
+      var REFRESH_SECONDS = 30;
+      var $ = function (id) { return document.getElementById(id); };
+      function dhakaToday() { return new Date(Date.now() + 6 * 3600 * 1000).toISOString().slice(0, 10); }
+      function shiftDate(dateStr, days) {
+        var d = new Date(dateStr + "T00:00:00Z");
+        d.setUTCDate(d.getUTCDate() + days);
+        return d.toISOString().slice(0, 10);
       }
-    }
 
-    if (fullName || picUrl) {
-      db.prepare(`
-        INSERT INTO customers (page_id, sender_id, name, profile_pic) VALUES (?, ?, ?, ?)
-        ON CONFLICT(page_id, sender_id) DO UPDATE SET 
-          name = COALESCE(NULLIF(excluded.name, ''), customers.name),
-          profile_pic = COALESCE(NULLIF(excluded.profile_pic, ''), customers.profile_pic)
-      `).run(pageId, senderId, fullName || `Customer_${senderId.slice(-4)}`, picUrl);
-    }
-
-    return parsedExistingAd;
-  } catch (e) {}
-  return null;
-}
-
-function safeEqual(a, b) {
-  const ha = crypto.createHash("sha256").update(String(a)).digest();
-  const hb = crypto.createHash("sha256").update(String(b)).digest();
-  return crypto.timingSafeEqual(ha, hb);
-}
-
-const AUTH_FINGERPRINT = crypto
-  .createHash("sha256")
-  .update(`${DASHBOARD_USER}:${DASHBOARD_PASS}`)
-  .digest("hex");
-
-function hashToken(token) {
-  return crypto.createHash("sha256").update(`${AUTH_FINGERPRINT}:${token}`).digest("hex");
-}
-
-function createSession() {
-  const token = crypto.randomBytes(32).toString("hex");
-  const now = Date.now();
-  stmts.insertSession.run(hashToken(token), now);
-  return { token, expiresAt: SESSION_MS ? now + SESSION_MS : null };
-}
-
-function sessionValid(token) {
-  if (!token) return false;
-  const h = hashToken(token);
-  const row = stmts.getSession.get(h);
-  if (!row) return false;
-  if (SESSION_MS && Date.now() - row.created_at >= SESSION_MS) {
-    stmts.deleteSession.run(h);
-    return false;
-  }
-  return true;
-}
-
-if (SESSION_MS) {
-  setInterval(() => {
-    try { stmts.purgeSessions.run(Date.now() - SESSION_MS); } catch (e) {}
-  }, 60 * 1000).unref();
-}
-
-const failedLogins = new Map();
-const MAX_FAILS = 5;
-const BLOCK_MS = 60 * 1000;
-
-function clientIp(req) {
-  return String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim();
-}
-
-app.post("/api/login", (req, res) => {
-  const ip = clientIp(req);
-  const rec = failedLogins.get(ip);
-  if (rec && rec.until && Date.now() < rec.until) {
-    const wait = Math.ceil((rec.until - Date.now()) / 1000);
-    return res.status(429).json({ error: `Too many attempts. Try again in ${wait}s.` });
-  }
-
-  const body = req.body || {};
-  const username = String(body.username || "").trim();
-  const password = String(body.password || "");
-
-  const validUser = safeEqual(username, DASHBOARD_USER) || safeEqual(username, "swapon");
-  const validPass = safeEqual(password, DASHBOARD_PASS) || safeEqual(password, "swapon123") || safeEqual(password, "swapon@1234");
-
-  if (validUser && validPass) {
-    failedLogins.delete(ip);
-    const s = createSession();
-    return res.json({ token: s.token, expires_at: s.expiresAt, session_ms: SESSION_MS || null });
-  }
-
-  const count = (rec && !rec.until ? rec.count : 0) + 1;
-  if (count >= MAX_FAILS) {
-    failedLogins.set(ip, { count: 0, until: Date.now() + BLOCK_MS });
-  } else {
-    failedLogins.set(ip, { count });
-  }
-  return res.status(401).json({ error: "Wrong username or password." });
-});
-
-app.post("/api/logout", (req, res) => {
-  const header = req.headers.authorization || "";
-  const [scheme, token] = header.split(" ");
-  if (scheme === "Bearer" && token) stmts.deleteSession.run(hashToken(token));
-  res.json({ ok: true });
-});
-
-function requireAuth(req, res, next) {
-  const header = req.headers.authorization || "";
-  const [scheme, token] = header.split(" ");
-  if (scheme === "Bearer" && sessionValid(token)) return next();
-  return res.status(401).json({ error: "Session ended. Please sign in again." });
-}
-
-function requireModAuth(req, res, next) {
-  const modPass = req.headers["x-mod-pass"];
-  if (modPass === MOD_PASS || modPass === DASHBOARD_PASS || modPass === "swapon123") return next();
-  return res.status(401).json({ error: "ভুল মডারেটর পাসওয়ার্ড!" });
-}
-
-app.get("/", (req, res) => res.sendFile(path.join(__dirname, "index.html")));
-app.get("/inbox", (req, res) => res.sendFile(path.join(__dirname, "inbox.html")));
-app.get("/healthz", (req, res) => res.json({ ok: true }));
-
-app.get("/webhook", (req, res) => {
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
-  if (mode && token === VERIFY_TOKEN) return res.status(200).send(challenge);
-  return res.sendStatus(403);
-});
-
-function extractAdReferral(event) {
-  const ref = event.referral || (event.message && event.message.referral) || (event.postback && event.postback.referral);
-  if (!ref) return null;
-  const ctx = ref.ads_context_data || {};
-  const adId = ref.ad_id || "";
-  const postUrl = ctx.post_url || (adId ? `https://www.facebook.com/ads/library/?id=${adId}` : "");
-  const photoUrl = ctx.photo_url || ctx.video_url || "";
-  if (isBlockedStickerUrl(photoUrl) || isBlockedStickerUrl(postUrl)) return null;
-
-  return JSON.stringify({
-    ad_id: adId,
-    ad_title: ctx.ad_title || ref.ref || (adId ? `Facebook Ad #${adId}` : "Facebook Ad"),
-    post_url: postUrl,
-    photo_url: photoUrl
-  });
-}
-
-async function handleMessagingEvent(pageId, event) {
-  const ts = event.timestamp || Date.now();
-  const day = dhakaDate(ts);
-  const senderId = event.sender && event.sender.id;
-  const adInfoJson = extractAdReferral(event);
-
-  if (adInfoJson && senderId && (!event.message || !event.message.is_echo)) {
-    db.prepare(`
-      INSERT INTO customers (page_id, sender_id, ad_info) VALUES (?, ?, ?)
-      ON CONFLICT(page_id, sender_id) DO UPDATE SET ad_info = excluded.ad_info
-    `).run(pageId, senderId, adInfoJson);
-  }
-
-  if (event.message && !event.message.is_echo) {
-    const rawText = event.message.text || "";
-    let imageUrl = null;
-    if (!event.message.sticker && event.message.attachments && event.message.attachments.length > 0) {
-      const att = event.message.attachments[0];
-      if (att.payload && att.payload.url && !isBlockedStickerUrl(att.payload.url)) {
-        imageUrl = att.payload.url;
-      }
-    }
-
-    const displayText = rawText || (imageUrl ? "[ছবি পাঠিয়েছেন]" : "👍");
-    const phone11 = extractElevenDigitPhone(rawText);
-    const firstOwner = getFirstCustomerOwner(pageId, senderId, day);
-
-    stmts.insertMessage.run(
-      pageId,
-      senderId,
-      event.message.mid,
-      displayText,
-      imageUrl,
-      adInfoJson,
-      ts,
-      phone11
-    );
-
-    if (firstOwner) {
-      db.prepare(`
-        UPDATE messages SET assigned_moderator = ?
-        WHERE page_id = ? AND sender_id = ? AND ${DAY} = ? AND (assigned_moderator IS NULL OR assigned_moderator = '')
-      `).run(firstOwner, pageId, senderId, day);
-    }
-
-    db.prepare(`
-      UPDATE moderator_assignments SET bucket = 'pending'
-      WHERE page_id = ? AND sender_id = ? AND day = ? AND bucket != 'pending'
-    `).run(pageId, senderId, day);
-
-    syncCustomerAndAdFromGraph(pageId, senderId).catch(() => {});
-    return;
-  }
-
-  if (event.postback || event.referral) {
-    const mid = (event.postback && event.postback.mid) || `ref_${senderId}_${ts}`;
-    const text = (event.postback && (event.postback.title || event.postback.payload)) || "📢 Ad থেকে ইনবক্সে এসেছেন";
-    stmts.insertMessage.run(pageId, senderId, mid, text, null, adInfoJson, ts, extractElevenDigitPhone(text));
-    syncCustomerAndAdFromGraph(pageId, senderId).catch(() => {});
-    return;
-  }
-
-  if (event.message && event.message.is_echo) {
-    const customerId = event.recipient && event.recipient.id;
-    if (!customerId) return;
-
-    const replyText = event.message.text || "";
-    let replyImg = null;
-    if (event.message.attachments && event.message.attachments.length > 0) {
-      const att = event.message.attachments[0];
-      if (att.payload && att.payload.url && !isBlockedStickerUrl(att.payload.url)) {
-        replyImg = att.payload.url;
-      }
-    }
-
-    const actorId = (event.message.from && event.message.from.id) || null;
-    const profileName = resolveFbProfileDisplay(actorId, replyText);
-    const isConfirm = isOrderConfirmMatch(replyText) ? 1 : 0;
-    const firstOwner = ensureFirstCustomerOwner(pageId, customerId, day, profileName, ts);
-
-    const exists = db.prepare(`SELECT id FROM replies WHERE message_id = ?`).get(event.message.mid);
-    if (!exists) {
-      stmts.insertReply.run(
-        pageId,
-        customerId,
-        event.message.mid,
-        replyText || (replyImg ? "[ছবি]" : "👍"),
-        replyImg,
-        ts,
-        profileName || firstOwner,
-        isConfirm
-      );
-    }
-
-    if (firstOwner) {
-      db.prepare(`
-        UPDATE messages SET assigned_moderator = ?
-        WHERE page_id = ? AND sender_id = ? AND ${DAY} = ? AND (assigned_moderator IS NULL OR assigned_moderator = '')
-      `).run(firstOwner, pageId, customerId, day);
-    }
-
-    stmts.markReplied.run(pageId, customerId, day);
-    return;
-  }
-
-  if (event.read) {
-    const readAt = event.read.watermark || ts;
-    stmts.markRead.run(readAt, pageId, senderId, readAt);
-  }
-}
-
-app.post("/webhook", (req, res) => {
-  const body = req.body;
-  if (!body || body.object !== "page") return res.sendStatus(404);
-
-  for (const entry of body.entry || []) {
-    const pageId = String(entry.id);
-    for (const event of entry.messaging || []) {
-      handleMessagingEvent(pageId, event).catch((err) => {
-        console.error("webhook event error:", err.message);
-      });
-    }
-  }
-  return res.status(200).send("EVENT_RECEIVED");
-});
-
-app.get("/api/mod/search-phone", requireModAuth, (req, res) => {
-  try {
-    const qRaw = String(req.query.phone || "").replace(/[\s\-()+]/g, "");
-    if (!qRaw) return res.status(400).json({ error: "ফোন নম্বর দিন" });
-
-    const rows = db.prepare(`
-      SELECT
-        m.page_id,
-        m.sender_id,
-        m.phone_number,
-        m.message_text,
-        m.message_time,
-        COALESCE(NULLIF(c.name, ''), 'Customer_' || substr(m.sender_id, -4)) AS customer_name,
-        (
-          SELECT a.moderator FROM moderator_assignments a
-          WHERE a.page_id = m.page_id AND a.sender_id = m.sender_id AND a.day = date(m.created_at, '+6 hours')
-          LIMIT 1
-        ) AS first_owner_profile,
-        (
-          SELECT GROUP_CONCAT(DISTINCT r.moderator) FROM replies r
-          WHERE r.page_id = m.page_id AND r.sender_id = m.sender_id AND r.moderator IS NOT NULL
-        ) AS sent_by_profiles
-      FROM messages m
-      LEFT JOIN customers c ON m.page_id = c.page_id AND m.sender_id = c.sender_id
-      WHERE m.phone_number LIKE ?
-      ORDER BY m.message_time DESC
-      LIMIT 30
-    `).all(`%${qRaw}%`);
-
-    res.json({
-      query: qRaw,
-      matches: rows.map((r) => ({
-        ...r,
-        page_name: PAGE_NAMES[r.page_id] || "Page"
-      }))
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.get("/api/mod/list", (req, res) => {
-  res.json({ moderators: MODERATORS.map((m) => m.name) });
-});
-
-app.post("/api/mod/batch", requireModAuth, async (req, res) => {
-  try {
-    const { moderator, requestNew, pageFilter, bucket } = req.body;
-    if (!moderator) return res.status(400).json({ error: "Moderator name required" });
-
-    const profileName = resolveFbProfileDisplay(null, moderator) || moderator;
-    const today = dhakaDate();
-    const activeBucket = ["pending", "average", "good", "poor"].includes(bucket) ? bucket : "pending";
-    const scope = resolveScope(pageFilter || "all");
-    const pcM = pageClause(scope.ids, "m.page_id");
-
-    const getBucketCustomers = (targetBucket) => {
-      return db.prepare(`
-        SELECT 
-          m.page_id,
-          m.sender_id,
-          COALESCE(NULLIF(MAX(c.name), ''), 'Customer_' || substr(m.sender_id, -4)) as customer_name,
-          MAX(c.profile_pic) as profile_pic,
-          COALESCE(MAX(c.ad_info), MAX(m.ad_info)) as ad_info,
-          MAX(m.message_text) as last_message,
-          MAX(m.message_time) as last_time,
-          COUNT(m.id) as msg_count
-        FROM messages m
-        JOIN moderator_assignments a 
-          ON a.page_id = m.page_id AND a.sender_id = m.sender_id AND a.day = ?
-        LEFT JOIN customers c ON m.page_id = c.page_id AND m.sender_id = c.sender_id
-        WHERE a.moderator = ?
-          AND COALESCE(NULLIF(a.bucket, ''), 'pending') = ?
-          AND ${DAY_M} = ?
-          ${pcM.sql}
-        GROUP BY m.page_id, m.sender_id
-        ORDER BY MIN(m.id) ASC
-      `).all(today, profileName, targetBucket, today, ...pcM.params);
-    };
-
-    let pendingQueue = getBucketCustomers("pending");
-    const slotsNeeded = 10 - pendingQueue.length;
-    if (slotsNeeded > 0 && (activeBucket === "pending" || requestNew)) {
-      const unassignedCustomers = db.prepare(`
-        SELECT DISTINCT m.page_id, m.sender_id
-        FROM messages m
-        LEFT JOIN moderator_assignments a 
-          ON a.page_id = m.page_id AND a.sender_id = m.sender_id AND a.day = ?
-        WHERE a.moderator IS NULL
-          AND m.status != 'replied'
-          AND ${DAY_M} = ?
-          ${pcM.sql}
-        ORDER BY m.id ASC
-        LIMIT ?
-      `).all(today, today, ...pcM.params, slotsNeeded);
-
-      const assignTransaction = db.transaction((list) => {
-        const now = Date.now();
-        for (const item of list) {
-          stmts.assignFirstOwner.run(item.page_id, item.sender_id, today, profileName, now);
-        }
-      });
-      assignTransaction(unassignedCustomers);
-      pendingQueue = getBucketCustomers("pending");
-    }
-
-    const currentList = activeBucket === "pending" ? pendingQueue : getBucketCustomers(activeBucket);
-    const countRows = db.prepare(`
-      SELECT COALESCE(NULLIF(a.bucket, ''), 'pending') as b, COUNT(DISTINCT a.page_id || ':' || a.sender_id) as cnt
-      FROM moderator_assignments a
-      JOIN messages m ON m.page_id = a.page_id AND m.sender_id = a.sender_id AND ${DAY_M} = ?
-      WHERE a.day = ? AND a.moderator = ? ${pcM.sql}
-      GROUP BY b
-    `).all(today, today, profileName, ...pcM.params);
-
-    const counts = { pending: 0, average: 0, good: 0, poor: 0 };
-    countRows.forEach((r) => {
-      if (counts[r.b] !== undefined) counts[r.b] = r.cnt;
-    });
-
-    res.json({
-      moderator: profileName,
-      bucket: activeBucket,
-      counts,
-      queue: currentList.map((q) => ({
-        ...q,
-        page_name: PAGE_NAMES[q.page_id] || "Page"
-      }))
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.get("/api/mod/chat", requireModAuth, async (req, res) => {
-  try {
-    const { page_id, sender_id } = req.query;
-    const incoming = db.prepare(`
-      SELECT 'customer' as sender, COALESCE(NULLIF(message_text, ''), '👍') as text, image_url, ad_info, message_time as time
-      FROM messages
-      WHERE page_id = ? AND sender_id = ?
-    `).all(page_id, sender_id);
-
-    const outgoing = db.prepare(`
-      SELECT 'page' as sender, COALESCE(NULLIF(reply_text, ''), '👍') as text, image_url, reply_time as time, moderator
-      FROM replies
-      WHERE page_id = ? AND sender_id = ?
-    `).all(page_id, sender_id);
-
-    const custRow = db.prepare(`SELECT name, profile_pic, ad_info FROM customers WHERE page_id = ? AND sender_id = ?`).get(page_id, sender_id);
-    const merged = [...incoming, ...outgoing].sort((a, b) => (a.time || 0) - (b.time || 0));
-
-    res.json({
-      messages: merged,
-      customer: {
-        name: (custRow && custRow.name) || `Customer_${String(sender_id).slice(-4)}`,
-        profile_pic: (custRow && custRow.profile_pic) || ""
-      }
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post("/api/mod/send", requireModAuth, async (req, res) => {
-  try {
-    const { page_id, sender_id, text, imageBase64, imagesBase64, moderator } = req.body;
-    const imgList = Array.isArray(imagesBase64) && imagesBase64.length > 0
-      ? imagesBase64
-      : (imageBase64 ? [imageBase64] : []);
-
-    if (!page_id || !sender_id || !moderator || (!text && imgList.length === 0)) {
-      return res.status(400).json({ error: "মেসেজ অথবা ছবি দিন" });
-    }
-
-    const baseNow = Date.now();
-    const day = dhakaDate(baseNow);
-    const profileName = resolveFbProfileDisplay(null, moderator) || moderator;
-    const firstOwner = ensureFirstCustomerOwner(page_id, sender_id, day, profileName, baseNow);
-
-    const host = req.get("host");
-    const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
-    const savedUrls = [];
-
-    for (let i = 0; i < imgList.length; i++) {
-      const b64 = imgList[i];
-      const match = String(b64).match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
-      if (!match) return res.status(400).json({ error: "Invalid image format" });
-
-      const ext = match[1].split("/")[1].replace("jpeg", "jpg");
-      const filename = `img_${baseNow}_${i}_${crypto.randomBytes(3).toString("hex")}.${ext}`;
-      fs.writeFileSync(path.join(uploadDir, filename), Buffer.from(match[2], "base64"));
-      savedUrls.push(`${protocol}://${host}/uploads/${filename}`);
-    }
-
-    const cleanText = (text || "").trim();
-    const isConfirm = isOrderConfirmMatch(cleanText) ? 1 : 0;
-
-    for (let i = 0; i < savedUrls.length; i++) {
-      const t = baseNow + i;
-      const mid = `mod_${t}_${crypto.randomBytes(3).toString("hex")}`;
-      stmts.insertReply.run(page_id, sender_id, mid, "[ছবি পাঠানো হয়েছে]", savedUrls[i], t, profileName, 0);
-      await sendFacebookPayload(page_id, {
-        recipient: { id: sender_id },
-        message: {
-          attachment: { type: "image", payload: { url: savedUrls[i], is_reusable: true } }
-        },
-        messaging_type: "RESPONSE"
-      });
-    }
-
-    if (cleanText) {
-      const tText = baseNow + savedUrls.length;
-      const midText = `mod_${tText}_${crypto.randomBytes(3).toString("hex")}`;
-      stmts.insertReply.run(page_id, sender_id, midText, cleanText, null, tText, profileName, isConfirm);
-      await sendFacebookPayload(page_id, {
-        recipient: { id: sender_id },
-        message: { text: cleanText },
-        messaging_type: "RESPONSE"
-      });
-    }
-
-    stmts.markReplied.run(page_id, sender_id, day);
-    res.json({ success: true, owner: firstOwner, image_urls: savedUrls });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-function fetchAllInsights(url) {
-  return new Promise(async (resolve) => {
-    let rows = [];
-    let next = url;
-    let guard = 0;
-    while (next && guard < 20) {
-      const r = await httpsGetJson(next);
-      if (!r) return resolve({ rows, error: "Meta API-তে সংযোগ হয়নি" });
-      if (r.error) return resolve({ rows, error: r.error.message || "Meta API error" });
-      if (Array.isArray(r.data)) rows = rows.concat(r.data);
-      next = r.paging && r.paging.next ? r.paging.next : null;
-      guard += 1;
-    }
-    resolve({ rows, error: null });
-  });
-}
-
-async function fetchMetaAdsMetrics(targetDate, brand) {
-  if (!META_ACCESS_TOKEN) {
-    return { configured: false, has_error: false, accounts: [], summary: {} };
-  }
-
-  const accounts = AD_ACCOUNTS.filter((a) => brand === "all" || a.brand === brand);
-
-  const promises = accounts.map(async (acc) => {
-    const cleanId = acc.id.replace(/\s+/g, "");
-    let remainingUsd = null;
-    try {
-      const accInfo = await httpsGetJson(
-        `https://graph.facebook.com/${META_API_VERSION}/${cleanId}?fields=spend_cap,amount_spent&access_token=${META_ACCESS_TOKEN}`
-      );
-      if (accInfo && !accInfo.error) {
-        const capRaw = parseFloat(accInfo.spend_cap || 0);
-        const spentRaw = parseFloat(accInfo.amount_spent || 0);
-        if (capRaw > 0) remainingUsd = Math.max(0, (capRaw - spentRaw) / 100).toFixed(2);
-      }
-    } catch (e) {}
-
-    try {
-      const params = new URLSearchParams({
-        access_token: META_ACCESS_TOKEN,
-        level: "campaign",
-        fields: "campaign_id,campaign_name,objective,spend,actions",
-        time_range: JSON.stringify({ since: targetDate, until: targetDate }),
-        use_unified_attribution_setting: "true",
-        limit: "500"
-      });
-      const url = `https://graph.facebook.com/${META_API_VERSION}/${cleanId}/insights?${params.toString()}`;
-      const { rows, error } = await fetchAllInsights(url);
-
-      let totalSpend = 0;
-      let totalMessages = 0;
-      let totalOrders = 0;
-      let msgSpend = 0;
-      let salesSpend = 0;
-
-      rows.forEach((camp) => {
-        const campSpend = parseFloat(camp.spend || 0);
-        totalSpend += campSpend;
-        let campMsgs = 0;
-        let campOrders = 0;
-        if (camp.actions) {
-          const msgAction = camp.actions.find((a) => a.action_type === "onsite_conversion.messaging_conversation_started_7d");
-          if (msgAction) campMsgs = parseInt(msgAction.value || 0, 10);
-          const orderAction = camp.actions.find((a) => a.action_type === "purchase" || a.action_type === "offsite_conversion.fb_pixel_purchase");
-          if (orderAction) campOrders = parseInt(orderAction.value || 0, 10);
-        }
-        totalMessages += campMsgs;
-        totalOrders += campOrders;
-
-        if (campMsgs > 0 && campOrders === 0) msgSpend += campSpend;
-        else if (campOrders > 0 && campMsgs === 0) salesSpend += campSpend;
-        else {
-          if (campMsgs > 0) msgSpend += campSpend / 2;
-          if (campOrders > 0) salesSpend += campSpend / 2;
-        }
-      });
-
-      return {
-        id: cleanId,
-        name: acc.name,
-        brand: acc.brand,
-        remaining_usd: remainingUsd,
-        spend: totalSpend.toFixed(2),
-        messages: totalMessages,
-        msg_spend: msgSpend.toFixed(2),
-        cost_per_msg_cents: totalMessages > 0 && msgSpend > 0 ? ((msgSpend / totalMessages) * 100).toFixed(1) : "0.0",
-        orders: totalOrders,
-        sales_spend: salesSpend.toFixed(2),
-        cost_per_order_usd: totalOrders > 0 && salesSpend > 0 ? (salesSpend / totalOrders).toFixed(2) : "0.00",
-        campaigns: [],
-        error: error || null
+      var state = {
+        auth: localStorage.getItem("dashboard_token") || "",
+        scope: localStorage.getItem("dash_scope") || "all",
+        shift: localStorage.getItem("dash_shift") || "all",
+        countdown: REFRESH_SECONDS
       };
-    } catch (err) {
-      return {
-        id: cleanId,
-        name: acc.name,
-        brand: acc.brand,
-        remaining_usd: remainingUsd,
-        spend: "0.00",
-        messages: 0,
-        msg_spend: "0.00",
-        cost_per_msg_cents: "0.0",
-        orders: 0,
-        sales_spend: "0.00",
-        cost_per_order_usd: "0.00",
-        campaigns: [],
-        error: err.message
-      };
-    }
-  });
 
-  const results = await Promise.all(promises);
-  const sum = (key) => results.reduce((acc, cur) => acc + parseFloat(cur[key] || 0), 0);
-  const totalSpendSum = sum("spend");
-  const totalMsgsSum = results.reduce((acc, cur) => acc + cur.messages, 0);
-  const totalOrdersSum = results.reduce((acc, cur) => acc + cur.orders, 0);
-  const totalMsgSpendSum = sum("msg_spend");
-  const totalSalesSpendSum = sum("sales_spend");
+      function esc(v) {
+        return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
+          return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+        });
+      }
+      function fmt(n) { return Number(n || 0).toLocaleString("en-US"); }
+      function money(n) { return "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+      function pct(n, total) { return total > 0 ? Math.round((n / total) * 100) : 0; }
 
-  return {
-    configured: true,
-    has_error: results.some((r) => r.error),
-    accounts: results,
-    summary: {
-      total_spend: totalSpendSum.toFixed(2),
-      total_messages: totalMsgsSum,
-      msg_spend: totalMsgSpendSum.toFixed(2),
-      avg_cost_per_msg_cents: totalMsgsSum > 0 && totalMsgSpendSum > 0 ? ((totalMsgSpendSum / totalMsgsSum) * 100).toFixed(1) : "0.0",
-      total_orders: totalOrdersSum,
-      sales_spend: totalSalesSpendSum.toFixed(2),
-      avg_cost_per_order_usd: totalOrdersSum > 0 && totalSalesSpendSum > 0 ? (totalSalesSpendSum / totalOrdersSum).toFixed(2) : "0.00"
-    }
-  };
-}
+      function showLogin(msg) {
+        document.body.classList.add("locked");
+        $("loginModal").hidden = false;
+        if (msg) { $("loginError").textContent = msg; $("loginError").hidden = false; }
+      }
+      function hideLogin() {
+        $("loginModal").hidden = true;
+        document.body.classList.remove("locked");
+      }
 
-const adsCache = new Map();
-async function getAdsMetrics(date, brand) {
-  const key = `${date}|${brand}`;
-  const hit = adsCache.get(key);
-  if (hit && Date.now() - hit.t < 60 * 1000) return hit.v;
-  const v = await fetchMetaAdsMetrics(date, brand);
-  if (!v.has_error) adsCache.set(key, { t: Date.now(), v });
-  if (adsCache.size > 100) adsCache.clear();
-  return v;
-}
+      $("authForm").addEventListener("submit", function (e) {
+        e.preventDefault();
+        fetch("/api/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: $("loginUser").value.trim(), password: $("loginPass").value })
+        }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+          .then(function (x) {
+            if (!x.ok) return showLogin(x.d.error || "Login failed");
+            state.auth = "Bearer " + x.d.token;
+            localStorage.setItem("dashboard_token", x.d.token);
+            hideLogin();
+            loadDashboard();
+          });
+      });
 
-app.get("/api/daily-report", requireAuth, async (req, res) => {
-  try {
-    const rawDate = String(req.query.date || "");
-    const targetDate = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : dhakaDate();
-    const scope = resolveScope(req.query.page_id || req.query.scope);
-    const win = shiftWindow(targetDate, String(req.query.shift || "all"));
-    const nowMs = Date.now();
+      $("logoutBtn").addEventListener("click", function () {
+        localStorage.removeItem("dashboard_token");
+        state.auth = "";
+        showLogin("");
+      });
 
-    const pc = pageClause(scope.ids);
-    const pcM = pageClause(scope.ids, "m.page_id");
-    const pcA = pageClause(scope.ids, "a.page_id");
-    const pcR = pageClause(scope.ids, "r.page_id");
+      $("themeBtn").addEventListener("click", function () {
+        var next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+        document.documentElement.setAttribute("data-theme", next);
+        localStorage.setItem("dash_theme", next);
+      });
 
-    const CUST = "page_id || ':' || sender_id";
-    const CUST_M = "m.page_id || ':' || m.sender_id";
-    const count = (sql, params) => db.prepare(sql).get(...params).count;
+      $("scopeSeg").addEventListener("click", function (e) {
+        var b = e.target.closest("button[data-scope]");
+        if (!b) return;
+        state.scope = b.getAttribute("data-scope");
+        localStorage.setItem("dash_scope", state.scope);
+        document.querySelectorAll("#scopeSeg button").forEach(function (x) { x.setAttribute("aria-pressed", x === b); });
+        loadDashboard();
+      });
 
-    const totalReceived = count(
-      `SELECT COUNT(DISTINCT ${CUST}) AS count FROM messages WHERE ${DAY} = ?${pc.sql}`,
-      [targetDate, ...pc.params]
-    );
+      $("shiftSeg").addEventListener("click", function (e) {
+        var b = e.target.closest("button[data-shift]");
+        if (!b) return;
+        state.shift = b.getAttribute("data-shift");
+        localStorage.setItem("dash_shift", state.shift);
+        document.querySelectorAll("#shiftSeg button").forEach(function (x) { x.setAttribute("aria-pressed", x === b); });
+        loadDashboard();
+      });
 
-    const totalRawMessages = count(
-      `SELECT COUNT(*) AS count FROM messages WHERE ${DAY} = ?${pc.sql}`,
-      [targetDate, ...pc.params]
-    );
+      $("datePicker").addEventListener("change", loadDashboard);
+      $("prevDay").addEventListener("click", function () { $("datePicker").value = shiftDate($("datePicker").value, -1); loadDashboard(); });
+      $("nextDay").addEventListener("click", function () {
+        var next = shiftDate($("datePicker").value, 1);
+        if (next <= dhakaToday()) { $("datePicker").value = next; loadDashboard(); }
+      });
+      $("todayBtn").addEventListener("click", function () { $("datePicker").value = dhakaToday(); loadDashboard(); });
+      $("refreshBtn").addEventListener("click", loadDashboard);
 
-    const returningCustomers = count(
-      `SELECT COUNT(DISTINCT ${CUST_M}) AS count
-       FROM messages m
-       WHERE ${DAY_M} = ?${pcM.sql}
-         AND EXISTS (
-           SELECT 1 FROM messages p
-           WHERE p.page_id = m.page_id AND p.sender_id = m.sender_id
-             AND date(p.created_at, '+6 hours') < ?
-         )`,
-      [targetDate, ...pcM.params, targetDate]
-    );
+      function loadDashboard() {
+        if (!state.auth) { showLogin(""); return; }
+        state.countdown = REFRESH_SECONDS;
+        var qs = "date=" + encodeURIComponent($("datePicker").value) +
+          "&page_id=" + encodeURIComponent(state.scope) +
+          "&shift=" + encodeURIComponent(state.shift);
 
-    const totalReplied = count(
-      `SELECT COUNT(DISTINCT ${CUST}) AS count FROM messages
-       WHERE status = 'replied' AND ${DAY} = ?${pc.sql}`,
-      [targetDate, ...pc.params]
-    );
+        fetch("/api/daily-report?" + qs, { headers: { Authorization: state.auth } })
+          .then(function (res) {
+            if (res.status === 401) { showLogin("Session expired"); return null; }
+            return res.json();
+          })
+          .then(function (data) {
+            if (!data) return;
+            renderData(data);
+            $("liveText").textContent = "Live · updated " + new Date(Date.now() + 6 * 3600 * 1000).toISOString().slice(11, 16);
+          });
+      }
 
-    const unreadPending = count(
-      `SELECT COUNT(DISTINCT ${CUST}) AS count FROM messages
-       WHERE status = 'unread' AND ${DAY} = ?${pc.sql}`,
-      [targetDate, ...pc.params]
-    );
+      function renderData(data) {
+        var st = data.stats || {};
+        var total = st.total_received || 0;
+        $("statReceived").textContent = fmt(total);
+        $("statNew").textContent = fmt(st.new_customers);
+        $("statReturning").textContent = fmt(st.returning_customers);
+        $("statRawMsgs").textContent = fmt(st.total_raw_messages);
 
-    const readNoReply = count(
-      `SELECT COUNT(DISTINCT ${CUST_M}) AS count
-       FROM messages m
-       WHERE m.status = 'read'
-         AND m.read_time IS NOT NULL
-         AND (? - m.read_time) >= ?
-         AND ${DAY_M} = ?${pcM.sql}
-         AND NOT EXISTS (
-           SELECT 1 FROM replies r
-           WHERE r.sender_id = m.sender_id AND r.page_id = m.page_id
-             AND ${DAY_R} = ?
-         )`,
-      [nowMs, SEEN_NO_REPLY_MS, targetDate, ...pcM.params, targetDate]
-    );
+        $("statReplied").textContent = fmt(st.total_replied);
+        $("statUnread").textContent = fmt(st.unread_pending);
+        $("statReadNoReply").textContent = fmt(st.read_without_reply);
+        $("statOrders").textContent = fmt(st.total_confirmed_orders);
+        $("statPhones").textContent = fmt(st.total_phone_numbers);
+        $("pctReplied").textContent = pct(st.total_replied, total) + "% of customers";
+        $("pctUnread").textContent = pct(st.unread_pending, total) + "% waiting";
+        $("pctSeen").textContent = (st.read_without_reply || 0) > 0 ? pct(st.read_without_reply, total) + "% · follow up first" : "Nobody left waiting";
 
-    const orderConfirms = count(
-      `SELECT COUNT(DISTINCT ${CUST}) AS count FROM replies
-       WHERE (
-         is_order_confirm = 1
-         OR lower(reply_text) LIKE '%your order is confirm%'
-         OR lower(reply_text) LIKE '%conversation%'
-       ) AND ${DAY} = ?${pc.sql}`,
-      [targetDate, ...pc.params]
-    );
+        var ads = data.ads || {};
+        var sum = ads.summary || {};
+        var accounts = ads.accounts || [];
+        $("totalSpend").textContent = money(sum.total_spend);
+        $("totalMessages").textContent = fmt(sum.total_messages);
+        $("msgSpend").textContent = money(sum.msg_spend);
+        $("costPerMsg").textContent = (sum.avg_cost_per_msg_cents || "0.0") + "¢";
+        $("totalOrders").textContent = fmt(sum.total_orders);
+        $("salesSpend").textContent = money(sum.sales_spend);
+        $("costPerOrder").textContent = money(sum.avg_cost_per_order_usd);
+        $("adsScope").textContent = accounts.length + " ad accounts · " + ((data.scope && data.scope.label) || "All Pages");
+        $("accountsMeta").textContent = accounts.length + " accounts";
 
-    const phoneCount = count(
-      `SELECT COUNT(DISTINCT phone_number) AS count FROM messages
-       WHERE phone_number GLOB '01[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
-         AND ${DAY} = ?${pc.sql}`,
-      [targetDate, ...pc.params]
-    );
+        var maxBar = Math.max(sum.total_messages || 0, total, 1);
+        $("valMeta").textContent = fmt(sum.total_messages || 0);
+        $("valInbox").textContent = fmt(total);
+        $("barMeta").style.width = ((sum.total_messages || 0) / maxBar * 100) + "%";
+        $("barInbox").style.width = (total / maxBar * 100) + "%";
 
-    const isShift = win.key !== "all";
-    const shiftAssignSql = isShift ? " AND a.assigned_at >= ? AND a.assigned_at < ?" : "";
-    const shiftReplySql = isShift ? " AND r.reply_time >= ? AND r.reply_time < ?" : "";
-    const shiftParams = isShift ? [win.startMs, win.endMs] : [];
+        $("adsTableBody").innerHTML = accounts.map(function (a) {
+          var remDisplay = (a.remaining_usd !== null && a.remaining_usd !== undefined)
+            ? '<span class="rem-val num">' + money(a.remaining_usd) + '</span>'
+            : '<span class="detail">—</span>';
+          return '<tr class="acc-row">' +
+            '<td><div class="acc-name"><span>' + esc(a.name) + '</span></div><div class="acc-id">' + esc(a.id) + '</div></td>' +
+            '<td>' + remDisplay + '</td>' +
+            '<td class="num strong">' + money(a.spend) + '</td>' +
+            '<td class="num strong c-msg">' + fmt(a.messages) + '</td>' +
+            '<td><span class="pill msg num">' + esc(a.cost_per_msg_cents) + '¢</span></td>' +
+            '<td class="num strong c-sale">' + fmt(a.orders) + '</td>' +
+            '<td><span class="pill sale num">' + money(a.cost_per_order_usd) + '</span></td>' +
+          '</tr>';
+        }).join("");
 
-    const custRows = db
-      .prepare(
-        `SELECT a.moderator AS raw_key,
-                COUNT(DISTINCT a.page_id || ':' || a.sender_id) AS total_conversations
-         FROM moderator_assignments a
-         WHERE a.day = ?${shiftAssignSql}${pcA.sql}
-         GROUP BY a.moderator`
-      )
-      .all(targetDate, ...shiftParams, ...pcA.params);
+        var mods = data.moderators || [];
+        var maxM = (mods[0] && mods[0].total_conversations) || 1;
+        $("modHint").textContent = mods.length + " active FB profiles.";
+        $("modBoard").innerHTML = mods.map(function (m, i) {
+          var w = Math.round((m.total_conversations / maxM) * 100);
+          return '<li class="mrow">' +
+            '<span class="rank num">' + (i + 1) + '</span>' +
+            '<span class="who">' + esc(m.name) + '</span>' +
+            '<div class="track hide-sm"><div class="fill" style="width:' + w + '%"></div></div>' +
+            '<span class="n num">' + fmt(m.total_conversations) + '</span>' +
+            '<span class="msgs num">' + fmt(m.total_messages) + '</span>' +
+            '<span class="ph num">' + fmt(m.phone_numbers) + '</span>' +
+            '<span class="per num hide-sm">' + (m.msgs_per_customer || 0) + '</span>' +
+            '<span class="avg num">' + (m.avg_minutes_per_message != null ? m.avg_minutes_per_message : '—') + '</span>' +
+          '</li>';
+        }).join("");
+      }
 
-    const msgRows = db
-      .prepare(
-        `SELECT r.moderator AS raw_key,
-                COUNT(r.id) AS total_messages
-         FROM replies r
-         WHERE r.moderator IS NOT NULL AND r.moderator != ''
-           AND ${DAY_R} = ?${shiftReplySql}${pcR.sql}
-         GROUP BY r.moderator`
-      )
-      .all(targetDate, ...shiftParams, ...pcR.params);
+      setInterval(function () {
+        if (!state.auth || document.hidden) return;
+        state.countdown -= 1;
+        if (state.countdown <= 0) { loadDashboard(); state.countdown = REFRESH_SECONDS; }
+        $("countdown").textContent = Math.max(0, state.countdown);
+      }, 1000);
 
-    const phoneRows = db
-      .prepare(
-        `SELECT a.moderator AS raw_key,
-                COUNT(DISTINCT m.phone_number) AS phones
-         FROM messages m
-         JOIN moderator_assignments a
-           ON a.page_id = m.page_id AND a.sender_id = m.sender_id AND a.day = ?
-         WHERE m.phone_number GLOB '01[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
-           AND ${DAY_M} = ?${shiftAssignSql}${pcA.sql}
-         GROUP BY a.moderator`
-      )
-      .all(targetDate, targetDate, ...shiftParams, ...pcA.params);
-
-    const custMap = new Map();
-    custRows.forEach((c) => {
-      const label = resolveFbProfileDisplay(c.raw_key, c.raw_key) || c.raw_key;
-      custMap.set(label, (custMap.get(label) || 0) + (c.total_conversations || 0));
-    });
-
-    const msgMap = new Map();
-    msgRows.forEach((m) => {
-      const label = resolveFbProfileDisplay(m.raw_key, m.raw_key) || m.raw_key;
-      msgMap.set(label, (msgMap.get(label) || 0) + (m.total_messages || 0));
-    });
-
-    const phoneMap = new Map();
-    phoneRows.forEach((p) => {
-      const label = resolveFbProfileDisplay(p.raw_key, p.raw_key) || p.raw_key;
-      phoneMap.set(label, (phoneMap.get(label) || 0) + (p.phones || 0));
-    });
-
-    const names = new Set([...custMap.keys(), ...msgMap.keys(), ...phoneMap.keys()]);
-
-    const board = Array.from(names).map((name) => ({
-      name,
-      total_conversations: custMap.get(name) || 0,
-      total_messages: msgMap.get(name) || 0,
-      phone_numbers: phoneMap.get(name) || 0
-    }));
-
-    board.sort(
-      (a, b) =>
-        b.total_conversations - a.total_conversations ||
-        b.total_messages - a.total_messages ||
-        b.phone_numbers - a.phone_numbers ||
-        (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
-    );
-
-    const moderatorStats = board.map((m) => ({
-      name: m.name,
-      total_conversations: m.total_conversations,
-      total_messages: m.total_messages,
-      phone_numbers: m.phone_numbers,
-      msgs_per_customer: m.total_conversations
-        ? Math.round((m.total_messages / m.total_conversations) * 10) / 10
-        : 0,
-      avg_minutes_per_message:
-        win.elapsed_minutes && m.total_messages
-          ? Math.round((win.elapsed_minutes / m.total_messages) * 10) / 10
-          : null
-    }));
-
-    const adsData = await getAdsMetrics(targetDate, scope.key);
-
-    res.json({
-      date: targetDate,
-      generated_at: nowMs,
-      scope: { key: scope.key, label: scope.label },
-      shift: {
-        key: win.key,
-        label: win.label,
-        minutes: win.minutes,
-        elapsed_minutes: win.elapsed_minutes
-      },
-      page_id: req.query.page_id || "all",
-      page_name: scope.label,
-      stats: {
-        total_received: totalReceived,
-        total_raw_messages: totalRawMessages,
-        returning_customers: returningCustomers,
-        new_customers: Math.max(0, totalReceived - returningCustomers),
-        total_replied: totalReplied,
-        unread_pending: unreadPending,
-        read_without_reply: readNoReply,
-        total_confirmed_orders: orderConfirms,
-        total_phone_numbers: phoneCount
-      },
-      moderators: moderatorStats,
-      ads: adsData
-    });
-  } catch (err) {
-    console.error("daily-report error:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.get("/privacy-policy", (req, res) => {
-  res.send(`<h1>Privacy Policy</h1><p>Analytics application for connected Facebook pages.</p>`);
-});
-
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+      $("datePicker").value = dhakaToday();
+      if (state.auth) { hideLogin(); loadDashboard(); } else { showLogin(""); }
+    })();
+  </script>
+</body>
+</html>
