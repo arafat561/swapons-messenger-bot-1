@@ -172,7 +172,7 @@ const MODERATORS = [
   {
     name: "rifat",
     fb_link: "https://www.facebook.com/profile.php?id=61594203401850",
-    aliases: ["rifat", "রিফাত", "61594203401850"]
+    aliases: ["rifat", "রিফাত", "Muhammad Rifat Molla", "61594203401850"]
   },
   {
     name: "halim",
@@ -192,7 +192,7 @@ const MODERATORS = [
   {
     name: "ruman",
     fb_link: "https://www.facebook.com/ruman.hossen.342329",
-    aliases: ["ruman", "রুমান", "ruman.hossen.342329"]
+    aliases: ["ruman", "রুমান", "Ruman Hossen", "ruman.hossen.342329"]
   },
   {
     name: "saidul",
@@ -1418,6 +1418,7 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
     const pc = pageClause(scope.ids);
     const pcM = pageClause(scope.ids, "m.page_id");
     const pcA = pageClause(scope.ids, "a.page_id");
+    const pcR = pageClause(scope.ids, "r.page_id");
 
     const CUST = "page_id || ':' || sender_id";
     const CUST_M = "m.page_id || ':' || m.sender_id";
@@ -1482,24 +1483,35 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
     );
 
     const isShift = win.key !== "all";
-    const shiftSql = isShift ? " AND a.assigned_at >= ? AND a.assigned_at < ?" : "";
+    const shiftAssignSql = isShift ? " AND a.assigned_at >= ? AND a.assigned_at < ?" : "";
+    const shiftReplySql = isShift ? " AND r.reply_time >= ? AND r.reply_time < ?" : "";
     const shiftParams = isShift ? [win.startMs, win.endMs] : [];
 
-    const modRows = db
+    // 1. Customer count goes to whoever replied FIRST in that conversation
+    const convRows = db
       .prepare(
         `SELECT a.moderator AS raw_mod,
-                COUNT(DISTINCT a.page_id || ':' || a.sender_id) AS total_conversations,
-                COUNT(r.id) AS total_messages
+                COUNT(DISTINCT a.page_id || ':' || a.sender_id) AS total_conversations
          FROM moderator_assignments a
-         LEFT JOIN replies r
-           ON r.page_id = a.page_id AND r.sender_id = a.sender_id
-          AND r.created_at >= ? AND r.created_at < ?
          WHERE a.day = ?
-           AND a.moderator IS NOT NULL${shiftSql}${pcA.sql}
+           AND a.moderator IS NOT NULL${shiftAssignSql}${pcA.sql}
          GROUP BY a.moderator`
       )
-      .all(win.start, win.end, targetDate, ...shiftParams, ...pcA.params);
+      .all(targetDate, ...shiftParams, ...pcA.params);
 
+    // 2. Every single reply message goes to the exact moderator who sent that message
+    const replyRows = db
+      .prepare(
+        `SELECT r.moderator AS raw_mod,
+                COUNT(r.id) AS total_messages
+         FROM replies r
+         WHERE ${DAY_R} = ?
+           AND r.moderator IS NOT NULL${shiftReplySql}${pcR.sql}
+         GROUP BY r.moderator`
+      )
+      .all(targetDate, ...shiftParams, ...pcR.params);
+
+    // 3. Phone number goes to the moderator who replied FIRST in that conversation
     const phoneRows = db
       .prepare(
         `SELECT a.moderator AS raw_mod,
@@ -1508,33 +1520,39 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
          JOIN moderator_assignments a
            ON a.page_id = m.page_id AND a.sender_id = m.sender_id AND a.day = ?
          WHERE m.phone_number IS NOT NULL AND m.phone_number != ''
-           AND ${DAY_M} = ?${shiftSql}${pcA.sql}
+           AND ${DAY_M} = ?${shiftAssignSql}${pcA.sql}
          GROUP BY a.moderator`
       )
       .all(targetDate, targetDate, ...shiftParams, ...pcA.params);
 
     const mergedByMod = new Map();
-    for (const m of modRows) {
-      const modName = detectModeratorByFbLink(m.raw_mod) || String(m.raw_mod || "").trim();
-      if (!modName) continue;
-      const cur = mergedByMod.get(modName) || {
-        name: modName,
-        total_conversations: 0,
-        total_messages: 0,
-        phone_numbers: 0
-      };
-      cur.total_conversations += m.total_conversations || 0;
-      cur.total_messages += m.total_messages || 0;
-      mergedByMod.set(modName, cur);
+    const ensureMod = (rawMod) => {
+      const modName = detectModeratorByFbLink(rawMod) || String(rawMod || "").trim();
+      if (!modName) return null;
+      if (!mergedByMod.has(modName)) {
+        mergedByMod.set(modName, {
+          name: modName,
+          total_conversations: 0,
+          total_messages: 0,
+          phone_numbers: 0
+        });
+      }
+      return mergedByMod.get(modName);
+    };
+
+    for (const c of convRows) {
+      const cur = ensureMod(c.raw_mod);
+      if (cur) cur.total_conversations += c.total_conversations || 0;
+    }
+
+    for (const r of replyRows) {
+      const cur = ensureMod(r.raw_mod);
+      if (cur) cur.total_messages += r.total_messages || 0;
     }
 
     for (const p of phoneRows) {
-      const modName = detectModeratorByFbLink(p.raw_mod) || String(p.raw_mod || "").trim();
-      if (!modName) continue;
-      const cur = mergedByMod.get(modName);
-      if (cur) {
-        cur.phone_numbers += p.phones || 0;
-      }
+      const cur = ensureMod(p.raw_mod);
+      if (cur) cur.phone_numbers += p.phones || 0;
     }
 
     const board = Array.from(mergedByMod.values());
