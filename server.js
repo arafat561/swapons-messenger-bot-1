@@ -119,87 +119,92 @@ const MODERATORS = [
   {
     name: "mony",
     fb_link: "https://www.facebook.com/profile.php?id=61594030833722",
-    aliases: ["61594030833722"]
+    aliases: ["mony", "61594030833722"]
   },
   {
     name: "shuvro",
     fb_link: "https://www.facebook.com/profile.php?id=61594801244167",
-    aliases: ["61594801244167"]
+    aliases: ["shuvro", "শুভ্র", "61594801244167"]
   },
   {
     name: "shihab",
     fb_link: "https://www.facebook.com/share/19iBuYADbj/?mibextid=wwXIfr",
-    aliases: ["19iBuYADbj"]
+    aliases: ["shihab", "19iBuYADbj"]
   },
   {
     name: "Faria",
     fb_link: "https://www.facebook.com/faria.rahman.800321",
-    aliases: ["faria.rahman.800321"]
+    aliases: ["Faria", "faria", "faria.rahman.800321"]
   },
   {
     name: "Sanjana",
     fb_link: "https://www.facebook.com/share/1PHGk91SEz/",
-    aliases: ["1PHGk91SEz"]
+    aliases: ["Sanjana", "sanjana", "সানজানা", "1PHGk91SEz"]
   },
   {
     name: "ashraful",
     fb_link: "https://www.facebook.com/profile.php?id=61592130331098&sk=about",
-    aliases: ["61592130331098"]
+    aliases: ["ashraful", "আশরাফুল", "61592130331098"]
   },
   {
     name: "tania",
     fb_link: "https://www.facebook.com/profile.php?id=61591664456446",
-    aliases: ["61591664456446"]
+    aliases: ["tania", "তানিয়া", "61591664456446"]
   },
   {
     name: "eram",
     fb_link: "https://www.facebook.com/share/1CRG2mozpQ/",
-    aliases: ["1CRG2mozpQ"]
+    aliases: ["eram", "ইরাম", "1CRG2mozpQ"]
   },
   {
     name: "fahim",
     fb_link: "https://www.facebook.com/ferdous.fahim.921",
-    aliases: ["ferdous.fahim.921"]
+    aliases: ["fahim", "ফাহিম", "ferdous.fahim.921"]
   },
   {
     name: "jaber",
     fb_link: "https://www.facebook.com/share/19kYfdY2fr/",
-    aliases: ["19kYfdY2fr"]
+    aliases: ["jaber", "জাবের", "19kYfdY2fr"]
   },
   {
     name: "apon",
     fb_link: "https://www.facebook.com/profile.php?id=61593951013042&mibextid=ZbWKwL",
-    aliases: ["61593951013042"]
+    aliases: ["apon", "আপন", "61593951013042"]
   },
   {
     name: "rifat",
     fb_link: "https://www.facebook.com/profile.php?id=61594203401850",
-    aliases: ["61594203401850"]
+    aliases: ["rifat", "রিফাত", "Muhammad Rifat Molla", "61594203401850"]
   },
   {
     name: "halim",
     fb_link: "https://www.facebook.com/profile.php?id=61594028540149",
-    aliases: ["61594028540149"]
+    aliases: ["halim", "হালিম", "61594028540149"]
   },
   {
     name: "farjana",
     fb_link: "https://www.facebook.com/share/1PoAchCNQh/",
-    aliases: ["1PoAchCNQh"]
+    aliases: ["farjana", "ফারজানা", "1PoAchCNQh"]
   },
   {
     name: "apurbo",
     fb_link: "https://www.facebook.com/profile.php?id=61592804760356",
-    aliases: ["61592804760356"]
+    aliases: ["apurbo", "অপুর্ব", "অপূর্ব", "61592804760356"]
   },
   {
     name: "ruman",
     fb_link: "https://www.facebook.com/ruman.hossen.342329",
-    aliases: ["ruman.hossen.342329"]
+    aliases: ["ruman", "রুমান", "Ruman Hossen", "ruman.hossen.342329"]
   },
   {
     name: "saidul",
     fb_link: "https://www.facebook.com/profile.php?id=61592488485671",
-    aliases: ["61592488485671"]
+    aliases: ["saidul", "সাইদুল", "61592488485671"]
+  },
+  {
+    name: "সামির",
+    fb_link: "",
+    aliases: ["সামির", "samir"]
   }
 ];
 
@@ -267,11 +272,39 @@ function detectModeratorByFbLink(rawOrText) {
   return null;
 }
 
+const BN_RANGE = "\\u0980-\\u09FF";
+
+function escapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+const MODERATOR_WELCOME_RULES = MODERATORS.map((m) => {
+  const names = [m.name, ...(m.aliases || [])].filter((t) => t && !/^\d+$/.test(String(t).trim()));
+  const alt = names
+    .map((a) => String(a).normalize("NFC").trim().split(/\s+/).map(escapeRegex).join("\\s+"))
+    .join("|");
+  return {
+    name: m.name,
+    re: alt ? new RegExp(`(?<![${BN_RANGE}])আমি\\s+(?:${alt})(?![${BN_RANGE}])`, "i") : null
+  };
+});
+
+function detectModeratorFromWelcomeText(text) {
+  if (!text) return null;
+  const clean = String(text).normalize("NFC");
+  for (const rule of MODERATOR_WELCOME_RULES) {
+    if (rule.re && rule.re.test(clean)) {
+      return rule.name;
+    }
+  }
+  return null;
+}
+
 function normalizeModeratorName(rawMod) {
   if (!rawMod) return null;
   const trimmed = String(rawMod).trim();
   if (!trimmed) return null;
-  return detectModeratorByFbLink(trimmed) || trimmed;
+  return detectModeratorByFbLink(trimmed) || detectModeratorFromWelcomeText(trimmed) || trimmed;
 }
 
 app.use(express.json({ limit: "15mb" }));
@@ -691,20 +724,27 @@ function extractAdReferral(event) {
   });
 }
 
-async function resolveEchoModeratorByFbLink(pageId, customerId, event) {
+async function resolveEchoModerator(pageId, customerId, event) {
+  const replyText = String((event.message && event.message.text) || "").trim();
+
+  // 1. Welcome message name ("আমি <নাম>")
+  const welcomeName = detectModeratorFromWelcomeText(replyText);
+  if (welcomeName) return welcomeName;
+
+  // 2. Personal FB ID / FB Link / name from echo payload
   if (event.message && event.message.from && String(event.message.from.id) !== String(pageId)) {
     const fromIdMatch = detectModeratorByFbLink(event.message.from.id);
     if (fromIdMatch) return fromIdMatch;
     if (event.message.from.name) {
-      const fromNameMatch = detectModeratorByFbLink(event.message.from.name);
+      const fromNameMatch = detectModeratorByFbLink(event.message.from.name) || detectModeratorFromWelcomeText(event.message.from.name);
       if (fromNameMatch) return fromNameMatch;
     }
   }
 
   const token = getPageToken(pageId);
   const mid = event.message && event.message.mid;
-  const replyText = String((event.message && event.message.text) || "").trim();
 
+  // 3. Graph API /{mid}?fields=from
   if (token && mid) {
     try {
       const msgUrl = `https://graph.facebook.com/${META_API_VERSION}/${encodeURIComponent(mid)}?fields=from&access_token=${encodeURIComponent(token)}`;
@@ -713,13 +753,14 @@ async function resolveEchoModeratorByFbLink(pageId, customerId, event) {
         const matchById = detectModeratorByFbLink(msgInfo.from.id);
         if (matchById) return matchById;
         if (msgInfo.from.name) {
-          const matchByName = detectModeratorByFbLink(msgInfo.from.name);
+          const matchByName = detectModeratorByFbLink(msgInfo.from.name) || detectModeratorFromWelcomeText(msgInfo.from.name);
           if (matchByName) return matchByName;
         }
       }
     } catch (e) {}
   }
 
+  // 4. Graph API conversation messages for sender FB ID/link
   if (token && customerId) {
     try {
       const convUrl = `https://graph.facebook.com/${META_API_VERSION}/me/conversations?user_id=${encodeURIComponent(customerId)}&fields=messages.limit(6){id,message,from}&access_token=${encodeURIComponent(token)}`;
@@ -733,7 +774,7 @@ async function resolveEchoModeratorByFbLink(pageId, customerId, event) {
           const idHit = detectModeratorByFbLink(matchedMsg.from.id);
           if (idHit) return idHit;
           if (matchedMsg.from.name) {
-            const nameHit = detectModeratorByFbLink(matchedMsg.from.name);
+            const nameHit = detectModeratorByFbLink(matchedMsg.from.name) || detectModeratorFromWelcomeText(matchedMsg.from.name);
             if (nameHit) return nameHit;
           }
         }
@@ -813,7 +854,7 @@ async function handleMessagingEvent(pageId, event) {
     const replyTime = event.timestamp || Date.now();
     const replyDay = dhakaDate(replyTime);
     const isConfirm = replyText.toLowerCase().includes("your order confirm") ? 1 : 0;
-    const mod = await resolveEchoModeratorByFbLink(pageId, customerId, event);
+    const mod = await resolveEchoModerator(pageId, customerId, event);
 
     const exists = db.prepare(`SELECT id FROM replies WHERE message_id = ?`).get(event.message.mid);
     if (!exists) {
