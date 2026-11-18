@@ -114,54 +114,138 @@ function pageClause(ids, col) {
 }
 
 const MODERATORS = [
-  { name: "ফাহিম", aliases: ["ফাহিম"] },
-  { name: "আজাদ", aliases: ["আজাদ"] },
-  { name: "অপুর্ব", aliases: ["অপুর্ব", "অপূর্ব"] },
-  { name: "আশরাফুল", aliases: ["আশরাফুল"] },
-  { name: "সাইদুল", aliases: ["সাইদুল"] },
-  { name: "জাবের", aliases: ["জাবের"] },
-  { name: "রিফাত", aliases: ["রিফাত"] },
-  { name: "হালিম", aliases: ["হালিম"] },
-  { name: "আল আমিন", aliases: ["আল আমিন", "আলআমিন"] },
-  { name: "সানজানা", aliases: ["সানজানা"] },
-  { name: "শান্তা", aliases: ["শান্তা"] },
-  { name: "জাকির", aliases: ["জাকির"] },
-  { name: "সামির", aliases: ["সামির"] },
-  { name: "ইরাম", aliases: ["ইরাম"] },
-  { name: "শুভ্র", aliases: ["শুভ্র"] },
-  { name: "তানিয়া", aliases: ["তানিয়া"] },
-  { name: "আরিফ", aliases: ["আরিফ"] },
-  { name: "আপন", aliases: ["আপন"] },
-  { name: "ফারজানা", aliases: ["ফারজানা"] }
+  {
+    name: "mony",
+    fb_link: "https://www.facebook.com/profile.php?id=61594030833722",
+    aliases: ["mony", "61594030833722"]
+  },
+  {
+    name: "shuvro",
+    fb_link: "https://www.facebook.com/profile.php?id=61594801244167",
+    aliases: ["shuvro", "শুভ্র", "61594801244167"]
+  },
+  {
+    name: "shihab",
+    fb_link: "https://www.facebook.com/share/19iBuYADbj/?mibextid=wwXIfr",
+    aliases: ["shihab", "19iBuYADbj"]
+  },
+  {
+    name: "Faria",
+    fb_link: "https://www.facebook.com/faria.rahman.800321",
+    aliases: ["Faria", "faria", "faria.rahman.800321"]
+  },
+  {
+    name: "Sanjana",
+    fb_link: "https://www.facebook.com/share/1PHGk91SEz/",
+    aliases: ["Sanjana", "sanjana", "সানজানা", "1PHGk91SEz"]
+  },
+  {
+    name: "ashraful",
+    fb_link: "https://www.facebook.com/profile.php?id=61592130331098&sk=about",
+    aliases: ["ashraful", "আশরাফুল", "61592130331098"]
+  },
+  {
+    name: "tania",
+    fb_link: "https://www.facebook.com/profile.php?id=61591664456446",
+    aliases: ["tania", "তানিয়া", "61591664456446"]
+  },
+  {
+    name: "eram",
+    fb_link: "https://www.facebook.com/share/1CRG2mozpQ/",
+    aliases: ["eram", "ইরাম", "1CRG2mozpQ"]
+  },
+  {
+    name: "fahim",
+    fb_link: "https://www.facebook.com/ferdous.fahim.921",
+    aliases: ["fahim", "ফাহিম", "ferdous.fahim.921"]
+  },
+  {
+    name: "jaber",
+    fb_link: "https://www.facebook.com/share/19kYfdY2fr/",
+    aliases: ["jaber", "জাবের", "19kYfdY2fr"]
+  },
+  {
+    name: "apon",
+    fb_link: "https://www.facebook.com/profile.php?id=61593951013042&mibextid=ZbWKwL",
+    aliases: ["apon", "আপন", "61593951013042"]
+  },
+  {
+    name: "rifat",
+    fb_link: "https://www.facebook.com/profile.php?id=61594203401850",
+    aliases: ["rifat", "রিফাত", "61594203401850"]
+  },
+  {
+    name: "halim",
+    fb_link: "https://www.facebook.com/profile.php?id=61594028540149",
+    aliases: ["halim", "হালিম", "61594028540149"]
+  },
+  {
+    name: "farjana",
+    fb_link: "https://www.facebook.com/share/1PoAchCNQh/",
+    aliases: ["farjana", "ফারজানা", "1PoAchCNQh"]
+  }
 ];
 
-const BN_RANGE = "\\u0980-\\u09FF";
+function extractFbIdentifier(raw) {
+  if (!raw) return null;
+  const s = String(raw).trim();
 
-function escapeRegex(s) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const idQuery = s.match(/[?&]id=(\d{5,})/i);
+  if (idQuery) return idQuery[1];
+
+  const sharePath = s.match(/facebook\.com\/share\/([A-Za-z0-9_-]+)/i);
+  if (sharePath) return sharePath[1];
+
+  const userPath = s.match(/facebook\.com\/([A-Za-z0-9._-]+)\/?(?:\?|$)/i);
+  if (userPath && userPath[1].toLowerCase() !== "profile.php") {
+    return userPath[1];
+  }
+
+  const fbIdPrefix = s.match(/^(?:FB ID|FB Share):\s*(.+)$/i);
+  if (fbIdPrefix) return fbIdPrefix[1].trim();
+
+  return s;
 }
 
-const MODERATOR_RULES = MODERATORS.map((m) => {
-  const alt = m.aliases
-    .map((a) => a.normalize("NFC").trim().split(/\s+/).map(escapeRegex).join("\\s+"))
-    .join("|");
-  return {
-    name: m.name,
-    re: new RegExp(`(?<![${BN_RANGE}])আমি\\s+(?:${alt})(?![${BN_RANGE}])`)
-  };
-});
-
-function detectModerator(text) {
-  if (!text) return null;
-  const clean = String(text).normalize("NFC");
-  let best = null;
-  for (const rule of MODERATOR_RULES) {
-    const m = rule.re.exec(clean);
-    if (m && (best === null || m.index < best.index)) {
-      best = { index: m.index, name: rule.name };
+const FB_LINK_TO_MODERATOR = new Map();
+for (const mod of MODERATORS) {
+  const keys = [mod.name, mod.fb_link, ...(mod.aliases || [])];
+  for (const k of keys) {
+    if (!k) continue;
+    const rawKey = String(k).trim();
+    const extracted = extractFbIdentifier(rawKey);
+    FB_LINK_TO_MODERATOR.set(rawKey.toLowerCase(), mod.name);
+    if (extracted) {
+      FB_LINK_TO_MODERATOR.set(extracted.toLowerCase(), mod.name);
     }
   }
-  return best ? best.name : null;
+}
+
+function detectModeratorByFbLink(rawOrText) {
+  if (!rawOrText) return null;
+  const str = String(rawOrText).trim();
+  const lower = str.toLowerCase();
+
+  if (FB_LINK_TO_MODERATOR.has(lower)) {
+    return FB_LINK_TO_MODERATOR.get(lower);
+  }
+
+  const extracted = extractFbIdentifier(str);
+  if (extracted && FB_LINK_TO_MODERATOR.has(extracted.toLowerCase())) {
+    return FB_LINK_TO_MODERATOR.get(extracted.toLowerCase());
+  }
+
+  for (const mod of MODERATORS) {
+    const linkId = extractFbIdentifier(mod.fb_link);
+    if (linkId && lower.includes(linkId.toLowerCase())) {
+      return mod.name;
+    }
+    if (mod.fb_link && lower.includes(mod.fb_link.toLowerCase())) {
+      return mod.name;
+    }
+  }
+
+  return null;
 }
 
 app.use(express.json({ limit: "15mb" }));
@@ -274,36 +358,6 @@ function isValidProductAttachment(att) {
   if ((w > 0 && w <= 120) || (h > 0 && h <= 120)) return null;
 
   return imgUrl;
-}
-
-function createdAtToDay(createdAt) {
-  const ms = Date.parse(String(createdAt).replace(" ", "T") + "Z");
-  return Number.isNaN(ms) ? null : dhakaDate(ms);
-}
-
-if (db.pragma("user_version", { simple: true }) < 1) {
-  const rows = db
-    .prepare(`SELECT id, page_id, sender_id, reply_text, reply_time, created_at FROM replies ORDER BY id ASC`)
-    .all();
-
-  const insertAssign = db.prepare(`
-    INSERT OR IGNORE INTO moderator_assignments (page_id, sender_id, day, moderator, assigned_at, bucket)
-    VALUES (?, ?, ?, ?, ?, 'pending')
-  `);
-  const fixReply = db.prepare(`UPDATE replies SET moderator = ? WHERE id = ?`);
-
-  const rebuild = db.transaction((list) => {
-    for (const r of list) {
-      const mod = detectModerator(r.reply_text);
-      fixReply.run(mod, r.id);
-      if (!mod) continue;
-      const day = createdAtToDay(r.created_at);
-      if (day) insertAssign.run(r.page_id, r.sender_id, day, mod, r.reply_time || null);
-    }
-  });
-
-  rebuild(rows);
-  db.pragma("user_version = 1");
 }
 
 const stmts = {
@@ -611,6 +665,36 @@ function extractAdReferral(event) {
   });
 }
 
+async function resolveEchoModeratorByFbLink(pageId, customerId, event) {
+  if (event.message && event.message.from && String(event.message.from.id) !== String(pageId)) {
+    const fromIdMatch = detectModeratorByFbLink(event.message.from.id);
+    if (fromIdMatch) return fromIdMatch;
+    if (event.message.from.name) {
+      const fromNameMatch = detectModeratorByFbLink(event.message.from.name);
+      if (fromNameMatch) return fromNameMatch;
+    }
+  }
+
+  const token = getPageToken(pageId);
+  if (token && event.message && event.message.mid) {
+    try {
+      const msgUrl = `https://graph.facebook.com/${META_API_VERSION}/${encodeURIComponent(event.message.mid)}?fields=from&access_token=${encodeURIComponent(token)}`;
+      const msgInfo = await httpsGetJson(msgUrl);
+      if (msgInfo && msgInfo.from && String(msgInfo.from.id) !== String(pageId)) {
+        const matchById = detectModeratorByFbLink(msgInfo.from.id);
+        if (matchById) return matchById;
+        if (msgInfo.from.name) {
+          const matchByName = detectModeratorByFbLink(msgInfo.from.name);
+          if (matchByName) return matchByName;
+        }
+      }
+    } catch (e) {}
+  }
+
+  const replyText = (event.message && event.message.text) || "";
+  return detectModeratorByFbLink(replyText);
+}
+
 async function handleMessagingEvent(pageId, event) {
   const today = dhakaDate();
   const senderId = event.sender && event.sender.id;
@@ -679,7 +763,7 @@ async function handleMessagingEvent(pageId, event) {
 
     const replyTime = event.timestamp || Date.now();
     const isConfirm = replyText.toLowerCase().includes("your order confirm") ? 1 : 0;
-    const mod = detectModerator(replyText);
+    const mod = await resolveEchoModeratorByFbLink(pageId, customerId, event);
 
     const exists = db.prepare(`SELECT id FROM replies WHERE message_id = ?`).get(event.message.mid);
     if (!exists) {
@@ -1388,21 +1472,22 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
 
     const modRows = db
       .prepare(
-        `SELECT a.moderator AS name,
+        `SELECT a.moderator AS raw_mod,
                 COUNT(DISTINCT a.page_id || ':' || a.sender_id) AS total_conversations,
                 COUNT(r.id) AS total_messages
          FROM moderator_assignments a
          LEFT JOIN replies r
            ON r.page_id = a.page_id AND r.sender_id = a.sender_id
           AND r.created_at >= ? AND r.created_at < ?
-         WHERE a.day = ?${shiftSql}${pcA.sql}
+         WHERE a.day = ?
+           AND a.moderator IS NOT NULL${shiftSql}${pcA.sql}
          GROUP BY a.moderator`
       )
       .all(win.start, win.end, targetDate, ...shiftParams, ...pcA.params);
 
     const phoneRows = db
       .prepare(
-        `SELECT a.moderator AS name,
+        `SELECT a.moderator AS raw_mod,
                 COUNT(DISTINCT m.phone_number) AS phones
          FROM messages m
          JOIN moderator_assignments a
@@ -1413,17 +1498,36 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       )
       .all(targetDate, targetDate, ...shiftParams, ...pcA.params);
 
-    const phoneByMod = new Map(phoneRows.map((p) => [p.name, p.phones]));
-    const board = modRows.map((m) => ({
-      name: m.name,
-      total_conversations: m.total_conversations,
-      total_messages: m.total_messages
-    }));
+    const mergedByMod = new Map();
+    for (const m of modRows) {
+      const modName = detectModeratorByFbLink(m.raw_mod) || String(m.raw_mod || "").trim();
+      if (!modName) continue;
+      const cur = mergedByMod.get(modName) || {
+        name: modName,
+        total_conversations: 0,
+        total_messages: 0,
+        phone_numbers: 0
+      };
+      cur.total_conversations += m.total_conversations || 0;
+      cur.total_messages += m.total_messages || 0;
+      mergedByMod.set(modName, cur);
+    }
+
+    for (const p of phoneRows) {
+      const modName = detectModeratorByFbLink(p.raw_mod) || String(p.raw_mod || "").trim();
+      if (!modName) continue;
+      const cur = mergedByMod.get(modName);
+      if (cur) {
+        cur.phone_numbers += p.phones || 0;
+      }
+    }
+
+    const board = Array.from(mergedByMod.values());
     board.sort(
       (a, b) =>
         b.total_conversations - a.total_conversations ||
         b.total_messages - a.total_messages ||
-        (phoneByMod.get(b.name) || 0) - (phoneByMod.get(a.name) || 0) ||
+        b.phone_numbers - a.phone_numbers ||
         (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
     );
 
@@ -1431,7 +1535,7 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       name: m.name,
       total_conversations: m.total_conversations,
       total_messages: m.total_messages,
-      phone_numbers: phoneByMod.get(m.name) || 0,
+      phone_numbers: m.phone_numbers,
       msgs_per_customer: m.total_conversations
         ? Math.round((m.total_messages / m.total_conversations) * 10) / 10
         : 0,
