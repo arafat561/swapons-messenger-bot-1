@@ -183,6 +183,21 @@ const MODERATORS = [
     name: "farjana",
     fb_link: "https://www.facebook.com/share/1PoAchCNQh/",
     aliases: ["farjana", "ফারজানা", "1PoAchCNQh"]
+  },
+  {
+    name: "apurbo",
+    fb_link: "https://www.facebook.com/profile.php?id=61592804760356",
+    aliases: ["apurbo", "অপুর্ব", "অপূর্ব", "61592804760356"]
+  },
+  {
+    name: "ruman",
+    fb_link: "https://www.facebook.com/ruman.hossen.342329",
+    aliases: ["ruman", "রুমান", "ruman.hossen.342329"]
+  },
+  {
+    name: "saidul",
+    fb_link: "https://www.facebook.com/profile.php?id=61592488485671",
+    aliases: ["saidul", "সাইদুল", "61592488485671"]
   }
 ];
 
