@@ -198,14 +198,15 @@
         <!-- Messages Stream -->
         <div id="messagesContainer" class="flex-1 overflow-y-auto p-4 space-y-3"></div>
 
-        <!-- Saved Replies Panel (Search + Add new + Auto Save + Delete) -->
+        <!-- Shared Saved Replies Panel (Meta Sync + Search + Add new + Auto Save + Delete) -->
         <div id="savedRepliesPanel" class="hidden px-4 py-3 bg-slate-900 border-t border-slate-800 space-y-2.5">
-          <div class="flex items-center justify-between gap-2">
+          <div class="flex flex-wrap items-center justify-between gap-2">
             <div class="flex items-center gap-2">
               <span class="text-sm font-bold text-white">Saved replies</span>
-              <span id="savedReplyAutoStatus" class="text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full">💾 Auto Save</span>
+              <span id="savedReplyAutoStatus" class="text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full">🌐 Shared Auto Save</span>
             </div>
             <div class="flex items-center gap-3">
+              <button type="button" onclick="syncMetaSavedReplies()" id="syncMetaBtn" class="text-xs font-bold text-amber-400 hover:text-amber-300 cursor-pointer">🔄 Meta Sync</button>
               <button type="button" onclick="openNewSavedReplyCreator()" class="text-xs font-bold text-sky-400 hover:text-sky-300 cursor-pointer">+ Add new</button>
               <button type="button" onclick="toggleSavedRepliesPanel(false)" class="text-xs text-slate-400 hover:text-white cursor-pointer">✕</button>
             </div>
@@ -219,7 +220,7 @@
           <!-- Inline Auto-Save Add New Reply Box -->
           <div id="addNewSavedReplyBox" class="hidden bg-slate-800/80 border border-slate-700 rounded-xl p-2.5 space-y-2">
             <div class="flex items-center justify-between text-[11px] text-slate-400">
-              <span>নতুন Saved Reply (টাইপ করলেই Auto Save হবে)</span>
+              <span>নতুন Saved Reply (টাইপ করলেই Railway-তে Auto Save হবে ও সবাই পাবে)</span>
               <button type="button" onclick="finishAutoSavedReply()" class="text-emerald-400 font-bold hover:underline cursor-pointer">✓ সম্পন্ন</button>
             </div>
             <input type="text" id="newSavedReplyTitle" oninput="autoSaveDraftSavedReply()" placeholder="Title (যেমন: number, kon, mark)..." class="w-full bg-slate-900 text-white text-xs font-bold px-3 py-1.5 rounded-lg border border-slate-700 outline-none focus:border-sky-500">
@@ -308,62 +309,58 @@
     let currentMessagesCache = [];
     let isSendingMessage = false;
     let activeAutoSaveItemId = null;
-
-    const DEFAULT_SAVED_REPLIES = [
-      {
-        id: "sr_1",
-        title: "number",
-        text: "📞 বিস্তারিত জানতে অনুগ্রহ করে আপনার মোবাইল নাম্বারটি দিন। চ্যাটে অনেক সময় লাগতে পারে, তাই আমাদের প্রতিনিধি আপনাকে ফোন করে বিস্তারিত জানিয়ে দেবে। 😊"
-      },
-      {
-        id: "sr_2",
-        title: "kon",
-        text: "স্যার, আপনি কি এমন কোনো প্রোডাক্ট খুঁজছিলেন? আপনার পছন্দের কালার বা ডিজাইনটি জানালে আমি বিস্তারিত জানাচ্ছি। 😊"
-      },
-      {
-        id: "sr_3",
-        title: "kon",
-        text: "কোন সাইজ লাগবে জানাবেন স্যার / ম্যাম ?"
-      },
-      {
-        id: "sr_4",
-        title: "mark",
-        text: "কোন কালার টি চাচ্ছেন স্যার ছবির উপর মার্ক করে দিন"
-      }
-    ];
-
-    function getSavedReplies() {
-      try {
-        const raw = localStorage.getItem("mod_saved_replies_v2");
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed) && parsed.length) return parsed;
-        }
-      } catch (e) {}
-      const initial = DEFAULT_SAVED_REPLIES.slice();
-      try { localStorage.setItem("mod_saved_replies_v2", JSON.stringify(initial)); } catch (e) {}
-      return initial;
-    }
-
-    function persistSavedReplies(list) {
-      try {
-        localStorage.setItem("mod_saved_replies_v2", JSON.stringify(list));
-        const statusEl = document.getElementById("savedReplyAutoStatus");
-        if (statusEl) {
-          statusEl.innerText = "💾 Auto Saved";
-          setTimeout(() => { statusEl.innerText = "💾 Auto Save"; }, 1400);
-        }
-      } catch (e) {}
-    }
+    let sharedSavedRepliesCache = [];
+    let autoSaveDebounceTimer = null;
 
     function escHtml(s) {
       return String(s || "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
     }
 
+    async function loadSharedSavedReplies() {
+      if (!modPass) return;
+      try {
+        const res = await fetch("/api/saved-replies", {
+          headers: { "x-mod-pass": modPass }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.replies)) {
+            sharedSavedRepliesCache = data.replies;
+            renderSavedRepliesList();
+          }
+        }
+      } catch (e) {}
+    }
+
+    async function syncMetaSavedReplies() {
+      if (!modPass) return;
+      const btn = document.getElementById("syncMetaBtn");
+      if (btn) btn.innerText = "⏳ Syncing...";
+      try {
+        const res = await fetch("/api/saved-replies/sync-meta", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-mod-pass": modPass }
+        });
+        const data = await res.json();
+        if (Array.isArray(data.replies)) {
+          sharedSavedRepliesCache = data.replies;
+          renderSavedRepliesList();
+        }
+        const statusEl = document.getElementById("savedReplyAutoStatus");
+        if (statusEl) {
+          statusEl.innerText = data.imported ? `✓ ${data.imported} Meta Synced` : "🌐 Shared Auto Save";
+        }
+      } catch (e) {
+      } finally {
+        if (btn) btn.innerText = "🔄 Meta Sync";
+      }
+    }
+
     function renderSavedRepliesList() {
       const box = document.getElementById("savedRepliesList");
+      if (!box) return;
       const q = ((document.getElementById("savedReplySearch") && document.getElementById("savedReplySearch").value) || "").trim().toLowerCase();
-      const list = getSavedReplies();
+      const list = sharedSavedRepliesCache;
       const filtered = q
         ? list.filter(item => String(item.title || "").toLowerCase().includes(q) || String(item.text || "").toLowerCase().includes(q))
         : list;
@@ -375,12 +372,13 @@
 
       box.innerHTML = filtered.map((item) => {
         const encodedText = encodeURIComponent(item.text || "");
+        const metaBadge = item.source === "meta" ? `<span class="text-[9px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded ml-1.5">Meta</span>` : "";
         return `
           <div class="flex items-start justify-between gap-2 bg-slate-800/80 hover:bg-slate-800 border border-slate-700/80 rounded-xl p-2.5 transition">
             <button type="button" onclick="insertSavedReplyByEncoded('${encodedText}')" class="flex-1 flex items-start gap-2.5 text-left cursor-pointer min-w-0">
               <div class="w-8 h-8 rounded-lg bg-slate-900 border border-slate-700 flex items-center justify-center text-slate-400 shrink-0 mt-0.5">💬</div>
               <div class="min-w-0">
-                <div class="text-xs font-bold text-white truncate">${escHtml(item.title || "Reply")}</div>
+                <div class="text-xs font-bold text-white truncate">${escHtml(item.title || "Reply")}${metaBadge}</div>
                 <div class="text-xs text-slate-300 whitespace-pre-line break-words mt-0.5">${escHtml(item.text || "")}</div>
               </div>
             </button>
@@ -400,10 +398,15 @@
       input.focus();
     }
 
-    function deleteSavedReply(id) {
-      const list = getSavedReplies().filter(item => item.id !== id);
-      persistSavedReplies(list);
+    async function deleteSavedReply(id) {
+      sharedSavedRepliesCache = sharedSavedRepliesCache.filter(item => item.id !== id);
       renderSavedRepliesList();
+      try {
+        await fetch(`/api/saved-replies/${encodeURIComponent(id)}`, {
+          method: "DELETE",
+          headers: { "x-mod-pass": modPass }
+        });
+      } catch (e) {}
     }
 
     function openNewSavedReplyCreator() {
@@ -421,21 +424,35 @@
       const bodyVal = (document.getElementById("newSavedReplyBody").value || "").trim();
       if (!titleVal && !bodyVal) return;
 
-      const list = getSavedReplies();
-      const idx = list.findIndex(item => item.id === activeAutoSaveItemId);
       const record = {
         id: activeAutoSaveItemId,
         title: titleVal || "quick",
-        text: bodyVal
+        text: bodyVal,
+        source: "shared",
+        created_by: currentMod || "moderator",
+        updated_at: Date.now()
       };
 
-      if (idx >= 0) {
-        list[idx] = record;
-      } else {
-        list.unshift(record);
-      }
-      persistSavedReplies(list);
+      const idx = sharedSavedRepliesCache.findIndex(item => item.id === activeAutoSaveItemId);
+      if (idx >= 0) sharedSavedRepliesCache[idx] = record;
+      else sharedSavedRepliesCache.unshift(record);
       renderSavedRepliesList();
+
+      clearTimeout(autoSaveDebounceTimer);
+      autoSaveDebounceTimer = setTimeout(async () => {
+        try {
+          await fetch("/api/saved-replies", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-mod-pass": modPass },
+            body: JSON.stringify(record)
+          });
+          const statusEl = document.getElementById("savedReplyAutoStatus");
+          if (statusEl) {
+            statusEl.innerText = "💾 Auto Saved (All Mods)";
+            setTimeout(() => { statusEl.innerText = "🌐 Shared Auto Save"; }, 1400);
+          }
+        } catch (e) {}
+      }, 250);
     }
 
     function finishAutoSavedReply() {
@@ -453,6 +470,7 @@
       if (sticker) sticker.classList.add("hidden");
       const nextOpen = typeof forceState === "boolean" ? forceState : panel.classList.contains("hidden");
       if (nextOpen) {
+        loadSharedSavedReplies();
         renderSavedRepliesList();
         panel.classList.remove("hidden");
       } else {
@@ -575,6 +593,7 @@
       document.getElementById("activeModBadge").innerText = `👤 ${currentMod}`;
       const data = await res.json();
       renderBatch(data);
+      loadSharedSavedReplies();
     }
 
     function switchBucket(bucket) {
@@ -1038,6 +1057,7 @@
       document.getElementById("modLoginModal").classList.add("hidden");
       document.getElementById("activeModBadge").innerText = `👤 ${currentMod}`;
       fetchBatch(true);
+      loadSharedSavedReplies();
     }
 
     setInterval(() => {
