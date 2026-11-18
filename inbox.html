@@ -52,6 +52,35 @@
     </div>
   </div>
 
+  <!-- Ad Preview Modal (Video / Picture + External Link) -->
+  <div id="adPreviewModal" class="hidden fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-xl w-full overflow-hidden shadow-2xl">
+      <div class="px-4 py-3 bg-slate-800/90 border-b border-slate-700 flex items-center justify-between gap-2">
+        <div class="min-w-0">
+          <div id="modalAdTitle" class="text-sm font-bold text-amber-400 truncate">Ad Preview</div>
+          <div id="modalAdSub" class="text-[11px] text-slate-400 truncate"></div>
+        </div>
+        <button type="button" onclick="closeAdPreviewModal()" class="text-slate-300 hover:text-white bg-slate-700/70 hover:bg-slate-700 px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer">✕ বন্ধ</button>
+      </div>
+
+      <div id="modalAdMediaBox" class="p-4 bg-slate-950 flex flex-col items-center justify-center min-h-[220px] max-h-[65vh] overflow-auto">
+        <video id="modalAdVideo" controls autoplay playsinline class="hidden max-h-[55vh] w-full rounded-xl bg-black"></video>
+        <img id="modalAdImg" src="" alt="Ad Media" class="hidden max-h-[55vh] rounded-xl object-contain">
+        <div id="modalAdFallbackNote" class="hidden text-center text-xs text-slate-400 space-y-2 py-6">
+          <div class="text-3xl">📢</div>
+          <p>এই মেসেজের সাথে সরাসরি ভিডিও/ছবির ফাইল অ্যাটাচমেন্ট নেই। নিচের বাটন থেকে ফেসবুক অ্যাড/পেজ লিংক ওপেন করে দেখুন।</p>
+        </div>
+      </div>
+
+      <div class="px-4 py-3 bg-slate-900 border-t border-slate-800 flex items-center justify-between gap-2">
+        <span id="modalAdTypeBadge" class="text-[11px] px-2.5 py-1 rounded-full bg-slate-800 text-slate-300">Media</span>
+        <a id="modalAdExternalLink" href="#" target="_blank" rel="noopener noreferrer" class="bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold px-4 py-2 rounded-lg transition">
+          ↗ Facebook-এ অ্যাড খুলুন
+        </a>
+      </div>
+    </div>
+  </div>
+
   <!-- Top Header -->
   <header class="bg-slate-900 border-b border-slate-800 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
     <div class="flex flex-wrap items-center gap-3">
@@ -148,26 +177,78 @@
           </div>
         </div>
 
-        <!-- Ad Referral Banner with View Ad Button -->
+        <!-- Ad Referral Banner with Video / Picture Preview Trigger -->
         <div id="adBanner" class="bg-amber-500/10 border-b border-amber-500/30 px-4 py-2.5 flex items-center justify-between gap-3">
           <div class="flex items-center gap-3 min-w-0">
-            <a id="adThumbLink" href="#" target="_blank" rel="noopener noreferrer" class="shrink-0">
+            <button type="button" id="adThumbBtn" onclick="openAdPreviewModal()" class="shrink-0 cursor-pointer">
               <img id="adThumb" src="" alt="Ad" class="w-12 h-12 rounded-lg object-cover border border-amber-500/50 hidden">
-            </a>
+            </button>
             <div class="min-w-0">
               <div class="text-[11px] font-bold text-amber-400">📢 Ad / Product Source:</div>
               <div id="adTitleText" class="text-xs font-semibold text-slate-200 truncate">Direct Messenger / Ad Query</div>
               <div id="adIdText" class="text-[10px] text-slate-400 font-mono truncate"></div>
             </div>
           </div>
-          <a id="adPostLink" href="#" target="_blank" rel="noopener noreferrer" class="bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold px-3.5 py-2 rounded-lg transition shrink-0 flex items-center gap-1.5">
-            <span>🔗</span>
+          <button type="button" id="adViewBtn" onclick="openAdPreviewModal()" class="bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold px-3.5 py-2 rounded-lg transition shrink-0 flex items-center gap-1.5 cursor-pointer">
+            <span>🎬</span>
             <span id="adPostBtnLabel">অ্যাড দেখুন</span>
-          </a>
+          </button>
         </div>
 
         <!-- Messages Stream -->
         <div id="messagesContainer" class="flex-1 overflow-y-auto p-4 space-y-3"></div>
+
+        <!-- Saved Replies Panel (Search + Add new + Auto Save + Delete) -->
+        <div id="savedRepliesPanel" class="hidden px-4 py-3 bg-slate-900 border-t border-slate-800 space-y-2.5">
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
+              <span class="text-sm font-bold text-white">Saved replies</span>
+              <span id="savedReplyAutoStatus" class="text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full">💾 Auto Save</span>
+            </div>
+            <div class="flex items-center gap-3">
+              <button type="button" onclick="openNewSavedReplyCreator()" class="text-xs font-bold text-sky-400 hover:text-sky-300 cursor-pointer">+ Add new</button>
+              <button type="button" onclick="toggleSavedRepliesPanel(false)" class="text-xs text-slate-400 hover:text-white cursor-pointer">✕</button>
+            </div>
+          </div>
+
+          <!-- Search Box -->
+          <div class="relative">
+            <input type="text" id="savedReplySearch" oninput="renderSavedRepliesList()" placeholder="🔍 Search saved replies..." class="w-full bg-slate-800 text-white text-xs px-3 py-2 rounded-lg border border-slate-700 outline-none focus:border-sky-500">
+          </div>
+
+          <!-- Inline Auto-Save Add New Reply Box -->
+          <div id="addNewSavedReplyBox" class="hidden bg-slate-800/80 border border-slate-700 rounded-xl p-2.5 space-y-2">
+            <div class="flex items-center justify-between text-[11px] text-slate-400">
+              <span>নতুন Saved Reply (টাইপ করলেই Auto Save হবে)</span>
+              <button type="button" onclick="finishAutoSavedReply()" class="text-emerald-400 font-bold hover:underline cursor-pointer">✓ সম্পন্ন</button>
+            </div>
+            <input type="text" id="newSavedReplyTitle" oninput="autoSaveDraftSavedReply()" placeholder="Title (যেমন: number, kon, mark)..." class="w-full bg-slate-900 text-white text-xs font-bold px-3 py-1.5 rounded-lg border border-slate-700 outline-none focus:border-sky-500">
+            <textarea id="newSavedReplyBody" rows="2" oninput="autoSaveDraftSavedReply()" placeholder="এখানে রিপ্লাই মেসেজ লিখুন..." class="w-full bg-slate-900 text-white text-xs px-3 py-1.5 rounded-lg border border-slate-700 outline-none focus:border-sky-500"></textarea>
+          </div>
+
+          <!-- Saved Replies List -->
+          <div id="savedRepliesList" class="space-y-1.5 max-h-48 overflow-y-auto pr-1"></div>
+        </div>
+
+        <!-- Sticker / Emoji Popover -->
+        <div id="stickerPanel" class="hidden px-4 py-2.5 bg-slate-900 border-t border-slate-800 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-amber-400">😊 Post Sticker / Emoji</span>
+            <button type="button" onclick="toggleStickerPanel(false)" class="text-xs text-slate-400 hover:text-white cursor-pointer">✕</button>
+          </div>
+          <div id="stickerGrid" class="flex flex-wrap gap-2">
+            <button type="button" onclick="sendStickerNow('😊')" class="text-2xl hover:scale-110 transition px-1.5 py-0.5 rounded bg-slate-800/70 cursor-pointer">😊</button>
+            <button type="button" onclick="sendStickerNow('❤️')" class="text-2xl hover:scale-110 transition px-1.5 py-0.5 rounded bg-slate-800/70 cursor-pointer">❤️</button>
+            <button type="button" onclick="sendStickerNow('🔥')" class="text-2xl hover:scale-110 transition px-1.5 py-0.5 rounded bg-slate-800/70 cursor-pointer">🔥</button>
+            <button type="button" onclick="sendStickerNow('😍')" class="text-2xl hover:scale-110 transition px-1.5 py-0.5 rounded bg-slate-800/70 cursor-pointer">😍</button>
+            <button type="button" onclick="sendStickerNow('🙏')" class="text-2xl hover:scale-110 transition px-1.5 py-0.5 rounded bg-slate-800/70 cursor-pointer">🙏</button>
+            <button type="button" onclick="sendStickerNow('✨')" class="text-2xl hover:scale-110 transition px-1.5 py-0.5 rounded bg-slate-800/70 cursor-pointer">✨</button>
+            <button type="button" onclick="sendStickerNow('🎉')" class="text-2xl hover:scale-110 transition px-1.5 py-0.5 rounded bg-slate-800/70 cursor-pointer">🎉</button>
+            <button type="button" onclick="sendStickerNow('👌')" class="text-2xl hover:scale-110 transition px-1.5 py-0.5 rounded bg-slate-800/70 cursor-pointer">👌</button>
+            <button type="button" onclick="sendStickerNow('❄️')" class="text-2xl hover:scale-110 transition px-1.5 py-0.5 rounded bg-slate-800/70 cursor-pointer">❄️</button>
+            <button type="button" onclick="sendStickerNow('💯')" class="text-2xl hover:scale-110 transition px-1.5 py-0.5 rounded bg-slate-800/70 cursor-pointer">💯</button>
+          </div>
+        </div>
 
         <!-- Selected Multiple Images Preview Bar -->
         <div id="imagePreviewBar" class="hidden px-4 py-2 bg-slate-900 border-t border-slate-800 flex items-center gap-3">
@@ -176,17 +257,36 @@
           <button type="button" onclick="clearSelectedImage()" class="text-xs text-rose-400 hover:underline px-2 py-1 cursor-pointer shrink-0">✕ বাতিল</button>
         </div>
 
-        <!-- Auto-Save Status + Reply Input with Multiple Picture Upload -->
+        <!-- Auto-Save Status + Reply Input + 4 Action Buttons -->
         <form onsubmit="event.preventDefault(); sendReply();" class="p-3 bg-slate-900 border-t border-slate-800 space-y-1.5">
           <div class="flex items-center justify-between px-1 text-[11px] text-slate-400">
             <span id="autoSaveBadge" class="text-emerald-400/90">💾 Auto Save সক্রিয়</span>
             <span>একসাথে একাধিক ছবি বা দ্রুত রিপ্লাই পাঠান</span>
           </div>
+
           <div class="flex items-center gap-2">
             <input type="file" id="imageFileInput" accept="image/*" multiple class="hidden" onchange="handleImageSelect(event)">
-            <button type="button" onclick="document.getElementById('imageFileInput').click()" title="একাধিক ছবি পাঠান" class="bg-slate-800 hover:bg-slate-700 text-slate-200 p-3 rounded-xl border border-slate-700 transition cursor-pointer shrink-0">
-              📷
+
+            <!-- 1. Attach File -->
+            <button type="button" onclick="document.getElementById('imageFileInput').click()" title="Attach File (একাধিক ছবি)" class="bg-slate-800 hover:bg-slate-700 text-slate-200 p-3 rounded-xl border border-slate-700 transition cursor-pointer shrink-0">
+              📎
             </button>
+
+            <!-- 2. Insert Saved Reply -->
+            <button type="button" onclick="toggleSavedRepliesPanel()" title="Insert Saved Reply" class="bg-slate-800 hover:bg-slate-700 text-sky-300 p-3 rounded-xl border border-slate-700 transition cursor-pointer shrink-0">
+              💬
+            </button>
+
+            <!-- 3. Post Sticker -->
+            <button type="button" onclick="toggleStickerPanel()" title="Post Sticker" class="bg-slate-800 hover:bg-slate-700 text-amber-300 p-3 rounded-xl border border-slate-700 transition cursor-pointer shrink-0">
+              😊
+            </button>
+
+            <!-- 4. Like -->
+            <button type="button" onclick="sendLikeNow()" title="Send Like (👍)" class="bg-slate-800 hover:bg-slate-700 text-blue-400 p-3 rounded-xl border border-slate-700 transition cursor-pointer shrink-0 font-bold">
+              👍
+            </button>
+
             <input type="text" id="replyInput" oninput="handleDraftInput()" placeholder="এখানে রিপ্লাই লিখুন..." autocomplete="off" class="flex-1 bg-slate-800 text-white text-sm px-4 py-3 rounded-xl border border-slate-700 outline-none focus:border-blue-500">
             <button type="submit" id="sendBtn" class="bg-blue-600 hover:bg-blue-500 text-white font-semibold px-6 py-3 rounded-xl transition cursor-pointer shrink-0">
               Send
@@ -207,6 +307,167 @@
     let selectedImagesList = [];
     let currentMessagesCache = [];
     let isSendingMessage = false;
+    let activeAutoSaveItemId = null;
+
+    const DEFAULT_SAVED_REPLIES = [
+      {
+        id: "sr_1",
+        title: "number",
+        text: "📞 বিস্তারিত জানতে অনুগ্রহ করে আপনার মোবাইল নাম্বারটি দিন। চ্যাটে অনেক সময় লাগতে পারে, তাই আমাদের প্রতিনিধি আপনাকে ফোন করে বিস্তারিত জানিয়ে দেবে। 😊"
+      },
+      {
+        id: "sr_2",
+        title: "kon",
+        text: "স্যার, আপনি কি এমন কোনো প্রোডাক্ট খুঁজছিলেন? আপনার পছন্দের কালার বা ডিজাইনটি জানালে আমি বিস্তারিত জানাচ্ছি। 😊"
+      },
+      {
+        id: "sr_3",
+        title: "kon",
+        text: "কোন সাইজ লাগবে জানাবেন স্যার / ম্যাম ?"
+      },
+      {
+        id: "sr_4",
+        title: "mark",
+        text: "কোন কালার টি চাচ্ছেন স্যার ছবির উপর মার্ক করে দিন"
+      }
+    ];
+
+    function getSavedReplies() {
+      try {
+        const raw = localStorage.getItem("mod_saved_replies_v2");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length) return parsed;
+        }
+      } catch (e) {}
+      const initial = DEFAULT_SAVED_REPLIES.slice();
+      try { localStorage.setItem("mod_saved_replies_v2", JSON.stringify(initial)); } catch (e) {}
+      return initial;
+    }
+
+    function persistSavedReplies(list) {
+      try {
+        localStorage.setItem("mod_saved_replies_v2", JSON.stringify(list));
+        const statusEl = document.getElementById("savedReplyAutoStatus");
+        if (statusEl) {
+          statusEl.innerText = "💾 Auto Saved";
+          setTimeout(() => { statusEl.innerText = "💾 Auto Save"; }, 1400);
+        }
+      } catch (e) {}
+    }
+
+    function escHtml(s) {
+      return String(s || "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+
+    function renderSavedRepliesList() {
+      const box = document.getElementById("savedRepliesList");
+      const q = ((document.getElementById("savedReplySearch") && document.getElementById("savedReplySearch").value) || "").trim().toLowerCase();
+      const list = getSavedReplies();
+      const filtered = q
+        ? list.filter(item => String(item.title || "").toLowerCase().includes(q) || String(item.text || "").toLowerCase().includes(q))
+        : list;
+
+      if (!filtered.length) {
+        box.innerHTML = `<div class="text-xs text-slate-500 py-3 text-center">কোনো Saved Reply পাওয়া যায়নি</div>`;
+        return;
+      }
+
+      box.innerHTML = filtered.map((item) => {
+        const encodedText = encodeURIComponent(item.text || "");
+        return `
+          <div class="flex items-start justify-between gap-2 bg-slate-800/80 hover:bg-slate-800 border border-slate-700/80 rounded-xl p-2.5 transition">
+            <button type="button" onclick="insertSavedReplyByEncoded('${encodedText}')" class="flex-1 flex items-start gap-2.5 text-left cursor-pointer min-w-0">
+              <div class="w-8 h-8 rounded-lg bg-slate-900 border border-slate-700 flex items-center justify-center text-slate-400 shrink-0 mt-0.5">💬</div>
+              <div class="min-w-0">
+                <div class="text-xs font-bold text-white truncate">${escHtml(item.title || "Reply")}</div>
+                <div class="text-xs text-slate-300 whitespace-pre-line break-words mt-0.5">${escHtml(item.text || "")}</div>
+              </div>
+            </button>
+            <button type="button" onclick="deleteSavedReply('${item.id}')" title="মুছে ফেলুন" class="text-xs text-slate-400 hover:text-rose-400 px-1.5 py-0.5 cursor-pointer shrink-0">🗑️</button>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function insertSavedReplyByEncoded(encoded) {
+      const chosen = decodeURIComponent(encoded || "");
+      if (!chosen) return;
+      const input = document.getElementById("replyInput");
+      input.value = input.value ? `${input.value.trim()} ${chosen}` : chosen;
+      saveCurrentDraft();
+      toggleSavedRepliesPanel(false);
+      input.focus();
+    }
+
+    function deleteSavedReply(id) {
+      const list = getSavedReplies().filter(item => item.id !== id);
+      persistSavedReplies(list);
+      renderSavedRepliesList();
+    }
+
+    function openNewSavedReplyCreator() {
+      const addBox = document.getElementById("addNewSavedReplyBox");
+      activeAutoSaveItemId = "sr_" + Date.now();
+      document.getElementById("newSavedReplyTitle").value = "";
+      document.getElementById("newSavedReplyBody").value = "";
+      addBox.classList.remove("hidden");
+      document.getElementById("newSavedReplyTitle").focus();
+    }
+
+    function autoSaveDraftSavedReply() {
+      if (!activeAutoSaveItemId) return;
+      const titleVal = (document.getElementById("newSavedReplyTitle").value || "").trim();
+      const bodyVal = (document.getElementById("newSavedReplyBody").value || "").trim();
+      if (!titleVal && !bodyVal) return;
+
+      const list = getSavedReplies();
+      const idx = list.findIndex(item => item.id === activeAutoSaveItemId);
+      const record = {
+        id: activeAutoSaveItemId,
+        title: titleVal || "quick",
+        text: bodyVal
+      };
+
+      if (idx >= 0) {
+        list[idx] = record;
+      } else {
+        list.unshift(record);
+      }
+      persistSavedReplies(list);
+      renderSavedRepliesList();
+    }
+
+    function finishAutoSavedReply() {
+      autoSaveDraftSavedReply();
+      activeAutoSaveItemId = null;
+      document.getElementById("addNewSavedReplyBox").classList.add("hidden");
+      document.getElementById("newSavedReplyTitle").value = "";
+      document.getElementById("newSavedReplyBody").value = "";
+      renderSavedRepliesList();
+    }
+
+    function toggleSavedRepliesPanel(forceState) {
+      const panel = document.getElementById("savedRepliesPanel");
+      const sticker = document.getElementById("stickerPanel");
+      if (sticker) sticker.classList.add("hidden");
+      const nextOpen = typeof forceState === "boolean" ? forceState : panel.classList.contains("hidden");
+      if (nextOpen) {
+        renderSavedRepliesList();
+        panel.classList.remove("hidden");
+      } else {
+        panel.classList.add("hidden");
+      }
+    }
+
+    function toggleStickerPanel(forceState) {
+      const panel = document.getElementById("stickerPanel");
+      const replies = document.getElementById("savedRepliesPanel");
+      if (replies) replies.classList.add("hidden");
+      const nextOpen = typeof forceState === "boolean" ? forceState : panel.classList.contains("hidden");
+      if (nextOpen) panel.classList.remove("hidden");
+      else panel.classList.add("hidden");
+    }
 
     function getDraftKey(cust) {
       if (!cust || !cust.page_id || !cust.sender_id) return "";
@@ -412,12 +673,19 @@
       }).join("");
     }
 
+    let currentActiveAdData = null;
+
+    function isVideoMediaUrl(url) {
+      if (!url) return false;
+      const u = String(url).toLowerCase();
+      return u.includes(".mp4") || u.includes(".mov") || u.includes(".webm") || u.includes("/video") || u.includes("video_url");
+    }
+
     function showAdBanner(adData, customer) {
+      currentActiveAdData = adData || null;
       const titleEl = document.getElementById("adTitleText");
       const idEl = document.getElementById("adIdText");
       const thumb = document.getElementById("adThumb");
-      const thumbLink = document.getElementById("adThumbLink");
-      const link = document.getElementById("adPostLink");
       const btnLabel = document.getElementById("adPostBtnLabel");
 
       const badUrl = adData && (adData.photo_url || adData.post_url || "").includes("39178562_1505197616293642");
@@ -428,28 +696,78 @@
 
       if (!adData || badUrl) {
         titleEl.innerText = `${customer ? customer.page_name : 'Page'} — Ad / Product Check`;
-        idEl.innerText = "অ্যাড রেফারাল না থাকলে অ্যাড লাইব্রেরি/পেজ অ্যাড খুলে প্রোডাক্ট দেখে রিপ্লাই দিন";
+        idEl.innerText = "ক্লিক করে অ্যাড/প্রোডাক্ট প্রিভিউ বা ফেসবুক অ্যাড দেখুন";
         thumb.classList.add("hidden");
-        link.href = fallbackAdUrl;
         btnLabel.innerText = "অ্যাড দেখুন";
-        link.classList.remove("hidden");
+        currentActiveAdData = {
+          ad_title: `${customer ? customer.page_name : 'Page'} Ad / Product`,
+          ad_id: "",
+          post_url: fallbackAdUrl,
+          photo_url: ""
+        };
         return;
       }
 
-      titleEl.innerText = adData.ad_title || "Facebook Ad";
-      idEl.innerText = adData.ad_id ? `Ad ID: ${adData.ad_id}` : "Product / Ad Source";
+      const mediaUrl = adData.photo_url || adData.post_url || fallbackAdUrl;
+      const isVid = isVideoMediaUrl(mediaUrl);
 
-      if (adData.photo_url) {
+      titleEl.innerText = adData.ad_title || "Facebook Ad";
+      idEl.innerText = (adData.ad_id ? `Ad ID: ${adData.ad_id} · ` : "") + (isVid ? "Video Ad" : "Image / Ad Source");
+
+      if (adData.photo_url && !isVid) {
         thumb.src = adData.photo_url;
-        thumbLink.href = adData.post_url || adData.photo_url || fallbackAdUrl;
         thumb.classList.remove("hidden");
       } else {
         thumb.classList.add("hidden");
       }
 
-      link.href = adData.post_url || adData.photo_url || fallbackAdUrl;
-      btnLabel.innerText = "অ্যাড দেখুন";
-      link.classList.remove("hidden");
+      btnLabel.innerText = isVid ? "ভিডিও অ্যাড দেখুন" : "অ্যাড দেখুন";
+    }
+
+    function openAdPreviewModal() {
+      const ad = currentActiveAdData || {};
+      const pageSlug = (selectedCustomer && selectedCustomer.page_id) || "102803132669088";
+      const extUrl = ad.post_url || ad.photo_url || (ad.ad_id
+        ? `https://www.facebook.com/ads/library/?id=${encodeURIComponent(ad.ad_id)}`
+        : `https://www.facebook.com/${encodeURIComponent(pageSlug)}/ads`);
+
+      const mediaUrl = ad.photo_url || ad.post_url || "";
+      const isVid = isVideoMediaUrl(mediaUrl);
+
+      document.getElementById("modalAdTitle").innerText = ad.ad_title || "Facebook Ad";
+      document.getElementById("modalAdSub").innerText = ad.ad_id ? `Ad ID: ${ad.ad_id}` : (selectedCustomer ? selectedCustomer.page_name : "Ad");
+      document.getElementById("modalAdExternalLink").href = extUrl;
+
+      const vidEl = document.getElementById("modalAdVideo");
+      const imgEl = document.getElementById("modalAdImg");
+      const noteEl = document.getElementById("modalAdFallbackNote");
+      const badgeEl = document.getElementById("modalAdTypeBadge");
+
+      vidEl.pause();
+      vidEl.classList.add("hidden");
+      imgEl.classList.add("hidden");
+      noteEl.classList.add("hidden");
+
+      if (isVid && mediaUrl) {
+        vidEl.src = mediaUrl;
+        vidEl.classList.remove("hidden");
+        badgeEl.innerText = "🎬 Video Content Ad";
+      } else if (ad.photo_url) {
+        imgEl.src = ad.photo_url;
+        imgEl.classList.remove("hidden");
+        badgeEl.innerText = "🖼️ Picture Content Ad";
+      } else {
+        noteEl.classList.remove("hidden");
+        badgeEl.innerText = "🔗 External Ad Link";
+      }
+
+      document.getElementById("adPreviewModal").classList.remove("hidden");
+    }
+
+    function closeAdPreviewModal() {
+      const vidEl = document.getElementById("modalAdVideo");
+      if (vidEl) { vidEl.pause(); vidEl.src = ""; }
+      document.getElementById("adPreviewModal").classList.add("hidden");
     }
 
     function paintMessages(msgs) {
@@ -477,6 +795,8 @@
       saveCurrentDraft();
       selectedCustomer = customer;
       clearSelectedImage();
+      toggleSavedRepliesPanel(false);
+      toggleStickerPanel(false);
       restoreCustomerDraft(customer);
       document.getElementById("emptyChatState").classList.add("hidden");
       document.getElementById("activeChatBox").classList.remove("hidden");
@@ -573,12 +893,66 @@
       input.focus();
     }
 
+    async function sendDirectTextMessage(msgText) {
+      if (!selectedCustomer || isSendingMessage || !msgText) return;
+      isSendingMessage = true;
+      const targetCust = { ...selectedCustomer };
+      const sendTime = Date.now();
+
+      paintMessages([
+        ...currentMessagesCache,
+        {
+          sender: "page",
+          text: msgText,
+          image_url: null,
+          moderator: currentMod,
+          time: sendTime
+        }
+      ]);
+
+      try {
+        const res = await fetch("/api/mod/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-mod-pass": modPass },
+          body: JSON.stringify({
+            page_id: targetCust.page_id,
+            sender_id: targetCust.sender_id,
+            text: msgText,
+            imageBase64: "",
+            moderator: currentMod
+          })
+        });
+        const result = await res.json();
+        if (result.error) {
+          alert("মেসেজ পাঠাতে সমস্যা হয়েছে: " + result.error);
+        }
+      } catch (e) {
+        alert("নেটওয়ার্ক সমস্যা: মেসেজ পাঠানো যায়নি।");
+      } finally {
+        isSendingMessage = false;
+      }
+    }
+
+    async function sendStickerNow(stickerChar) {
+      toggleStickerPanel(false);
+      await sendDirectTextMessage(stickerChar);
+    }
+
+    async function sendLikeNow() {
+      toggleSavedRepliesPanel(false);
+      toggleStickerPanel(false);
+      await sendDirectTextMessage("👍");
+    }
+
     async function sendReply() {
       if (!selectedCustomer || isSendingMessage) return;
       const input = document.getElementById("replyInput");
       const text = input.value.trim();
       const imgsToSend = selectedImagesList.slice();
       if (!text && !imgsToSend.length) return;
+
+      toggleSavedRepliesPanel(false);
+      toggleStickerPanel(false);
 
       isSendingMessage = true;
       const targetCust = { ...selectedCustomer };
