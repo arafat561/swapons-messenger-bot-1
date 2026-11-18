@@ -202,7 +202,6 @@
     .empty { padding: 36px 24px; text-align: center; color: var(--muted); }
     .empty b { display: block; color: var(--text); margin-bottom: 4px; }
 
-    /* ---------- campaign / ads dropdown + Off/On switch ---------- */
     .sub-drop-row td { padding: 0 !important; background: var(--bg) !important; border-bottom: 2px solid var(--line); }
     .sub-drop-box { padding: 16px 24px 20px; background: rgba(0, 0, 0, .18); }
     [data-theme="light"] .sub-drop-box { background: rgba(15, 36, 48, .03); }
@@ -255,7 +254,7 @@
     .ad-state-txt.on { color: var(--ok); }
     .ad-state-txt.off { color: var(--bad); }
 
-    .mrow { display: grid; grid-template-columns: 38px minmax(100px, 1.1fr) minmax(60px, 1.3fr) 80px 88px 76px 100px 100px; gap: 12px; align-items: center; padding: 12px 24px; }
+    .mrow { display: grid; grid-template-columns: 38px minmax(120px, 1.2fr) minmax(60px, 1.2fr) 80px 88px 76px 100px 100px; gap: 12px; align-items: center; padding: 12px 24px; }
     .mhead { background: var(--raised); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: .8rem; font-weight: 600; color: var(--faint); padding-top: 10px; padding-bottom: 10px; }
     .mhead span:nth-child(n+4), .board .mrow > span:nth-child(n+4) { text-align: right; }
     .board { list-style: none; padding: 0 0 8px; }
@@ -523,8 +522,8 @@
             <thead>
               <tr>
                 <th>Account</th>
+                <th>Remaining balance $</th>
                 <th>Total spend</th>
-                <th>Remaining $</th>
                 <th>Messages</th>
                 <th>Cost / message</th>
                 <th>Orders</th>
@@ -1066,8 +1065,8 @@
             '<tr class="acc-row' + (isOpen ? ' expanded' : '') + '" data-acc-id="' + esc(a.id) + '" title="ক্লিক করে ভেতরের Ads দেখুন">' +
               '<td><div class="acc-name"><span class="chev">▸</span><span>' + esc(a.name) + '</span><span class="sub-drop-badge" style="padding:1px 7px;font-size:.72rem">' + campCount + ' ads</span></div><div class="acc-id">' + esc(a.id) + '</div>' +
                 (a.error ? '<span class="warn-flag">Could not load: ' + esc(a.error) + '</span>' : '') + '</td>' +
-              '<td><div class="num strong">' + money(a.spend) + '</div><div class="share" title="' + share + '% of spend"><i style="width:' + share + '%"></i></div></td>' +
               '<td>' + remHtml + '</td>' +
+              '<td><div class="num strong">' + money(a.spend) + '</div><div class="share" title="' + share + '% of spend"><i style="width:' + share + '%"></i></div></td>' +
               '<td><div class="num strong c-msg">' + fmt(a.messages) + '</div><div class="detail num">spend ' + money(a.msg_spend) + '</div></td>' +
               '<td><span class="pill msg num">' + esc(a.cost_per_msg_cents) + '¢</span></td>' +
               '<td><div class="num strong c-sale">' + fmt(a.orders) + '</div><div class="detail num">spend ' + money(a.sales_spend) + '</div></td>' +
@@ -1088,8 +1087,8 @@
 
         foot.innerHTML = '<tr>' +
           '<td>Total</td>' +
-          '<td class="num">' + money(sum.total_spend) + '</td>' +
           '<td class="num c-msg">' + footRem + '</td>' +
+          '<td class="num">' + money(sum.total_spend) + '</td>' +
           '<td class="num c-msg">' + fmt(sum.total_messages) + '</td>' +
           '<td class="num">' + esc(sum.avg_cost_per_msg_cents || "0.0") + '¢</td>' +
           '<td class="num c-sale">' + fmt(sum.total_orders) + '</td>' +
