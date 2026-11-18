@@ -119,94 +119,94 @@ const MODERATORS = [
   {
     name: "mony",
     fb_link: "https://www.facebook.com/profile.php?id=61594030833722",
-    aliases: ["mony", "61594030833722"]
+    aliases: ["61594030833722"]
   },
   {
     name: "shuvro",
     fb_link: "https://www.facebook.com/profile.php?id=61594801244167",
-    aliases: ["shuvro", "শুভ্র", "61594801244167"]
+    aliases: ["61594801244167"]
   },
   {
     name: "shihab",
     fb_link: "https://www.facebook.com/share/19iBuYADbj/?mibextid=wwXIfr",
-    aliases: ["shihab", "19iBuYADbj"]
+    aliases: ["19iBuYADbj"]
   },
   {
     name: "Faria",
     fb_link: "https://www.facebook.com/faria.rahman.800321",
-    aliases: ["Faria", "faria", "faria.rahman.800321"]
+    aliases: ["faria.rahman.800321"]
   },
   {
     name: "Sanjana",
     fb_link: "https://www.facebook.com/share/1PHGk91SEz/",
-    aliases: ["Sanjana", "sanjana", "সানজানা", "1PHGk91SEz"]
+    aliases: ["1PHGk91SEz"]
   },
   {
     name: "ashraful",
     fb_link: "https://www.facebook.com/profile.php?id=61592130331098&sk=about",
-    aliases: ["ashraful", "আশরাফুল", "61592130331098"]
+    aliases: ["61592130331098"]
   },
   {
     name: "tania",
     fb_link: "https://www.facebook.com/profile.php?id=61591664456446",
-    aliases: ["tania", "তানিয়া", "61591664456446"]
+    aliases: ["61591664456446"]
   },
   {
     name: "eram",
     fb_link: "https://www.facebook.com/share/1CRG2mozpQ/",
-    aliases: ["eram", "ইরাম", "1CRG2mozpQ"]
+    aliases: ["1CRG2mozpQ"]
   },
   {
     name: "fahim",
     fb_link: "https://www.facebook.com/ferdous.fahim.921",
-    aliases: ["fahim", "ফাহিম", "ferdous.fahim.921"]
+    aliases: ["ferdous.fahim.921"]
   },
   {
     name: "jaber",
     fb_link: "https://www.facebook.com/share/19kYfdY2fr/",
-    aliases: ["jaber", "জাবের", "19kYfdY2fr"]
+    aliases: ["19kYfdY2fr"]
   },
   {
     name: "apon",
     fb_link: "https://www.facebook.com/profile.php?id=61593951013042&mibextid=ZbWKwL",
-    aliases: ["apon", "আপন", "61593951013042"]
+    aliases: ["61593951013042"]
   },
   {
     name: "rifat",
     fb_link: "https://www.facebook.com/profile.php?id=61594203401850",
-    aliases: ["rifat", "রিফাত", "Muhammad Rifat Molla", "61594203401850"]
+    aliases: ["61594203401850"]
   },
   {
     name: "halim",
     fb_link: "https://www.facebook.com/profile.php?id=61594028540149",
-    aliases: ["halim", "হালিম", "61594028540149"]
+    aliases: ["61594028540149"]
   },
   {
     name: "farjana",
     fb_link: "https://www.facebook.com/share/1PoAchCNQh/",
-    aliases: ["farjana", "ফারজানা", "1PoAchCNQh"]
+    aliases: ["1PoAchCNQh"]
   },
   {
     name: "apurbo",
     fb_link: "https://www.facebook.com/profile.php?id=61592804760356",
-    aliases: ["apurbo", "অপুর্ব", "অপূর্ব", "61592804760356"]
+    aliases: ["61592804760356"]
   },
   {
     name: "ruman",
     fb_link: "https://www.facebook.com/ruman.hossen.342329",
-    aliases: ["ruman", "রুমান", "Ruman Hossen", "ruman.hossen.342329"]
+    aliases: ["ruman.hossen.342329"]
   },
   {
     name: "saidul",
     fb_link: "https://www.facebook.com/profile.php?id=61592488485671",
-    aliases: ["saidul", "সাইদুল", "61592488485671"]
+    aliases: ["61592488485671"]
   }
 ];
 
 function extractFbIdentifier(raw) {
   if (!raw) return null;
   const s = String(raw).trim();
-  if (s.length > 140 || /\s{3,}/.test(s)) return null;
+  if (!s || s.length > 140) return null;
 
   const idQuery = s.match(/[?&]id=(\d{5,})/i);
   if (idQuery) return idQuery[1];
@@ -264,37 +264,6 @@ function detectModeratorByFbLink(rawOrText) {
     }
   }
 
-  return null;
-}
-
-const BN_RANGE = "\\u0980-\\u09FF";
-
-function escapeRegex(s) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-const MODERATOR_RULES = MODERATORS.map((m) => {
-  const names = [m.name, ...(m.aliases || [])].filter((x) => !/^\d+$/.test(String(x).trim()));
-  const alt = names
-    .map((a) => String(a).normalize("NFC").trim().split(/\s+/).map(escapeRegex).join("\\s+"))
-    .join("|");
-  return {
-    name: m.name,
-    re: alt ? new RegExp(`(?<![${BN_RANGE}])আমি\\s+(?:${alt})(?![${BN_RANGE}])`, "i") : null
-  };
-});
-
-function detectModeratorFromText(text) {
-  if (!text) return null;
-  const byLink = detectModeratorByFbLink(text);
-  if (byLink) return byLink;
-
-  const clean = String(text).normalize("NFC");
-  for (const rule of MODERATOR_RULES) {
-    if (rule.re && rule.re.test(clean)) {
-      return rule.name;
-    }
-  }
   return null;
 }
 
@@ -723,19 +692,13 @@ function extractAdReferral(event) {
 }
 
 async function resolveEchoModeratorByFbLink(pageId, customerId, event) {
-  const replyText = (event.message && event.message.text) || "";
-  const textMatch = detectModeratorFromText(replyText);
-  if (textMatch) return textMatch;
-
   if (event.message && event.message.from && String(event.message.from.id) !== String(pageId)) {
     const fromIdMatch = detectModeratorByFbLink(event.message.from.id);
     if (fromIdMatch) return fromIdMatch;
     if (event.message.from.name) {
       const fromNameMatch = detectModeratorByFbLink(event.message.from.name);
       if (fromNameMatch) return fromNameMatch;
-      return String(event.message.from.name).trim();
     }
-    return `FB ID: ${String(event.message.from.id).trim()}`;
   }
 
   const token = getPageToken(pageId);
@@ -749,9 +712,7 @@ async function resolveEchoModeratorByFbLink(pageId, customerId, event) {
         if (msgInfo.from.name) {
           const matchByName = detectModeratorByFbLink(msgInfo.from.name);
           if (matchByName) return matchByName;
-          return String(msgInfo.from.name).trim();
         }
-        return `FB ID: ${String(msgInfo.from.id).trim()}`;
       }
     } catch (e) {}
   }
