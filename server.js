@@ -115,41 +115,94 @@ function pageClause(ids, col) {
   return { sql: ` AND ${column} IN (${ids.map(() => "?").join(",")})`, params: ids };
 }
 
-// Maps each FB ID / profile handle to its Facebook profile display name
-const FB_ID_TO_PROFILE_NAME = new Map([
-  ["61594030833722", "61594030833722"],
-  ["61594801244167", "61594801244167"],
-  ["19ibuyadbj", "19iBuYADbj"],
+const FB_ID_TO_PROFILE = new Map([
+  ["61594030833722", "Iram"],
+  ["61594801244167", "Shuvro"],
+  ["19ibuyadbj", "Ashraful"],
   ["faria.rahman.800321", "Faria Rahman"],
-  ["1phgk91sez", "1PHGk91SEz"],
-  ["61592130331098", "61592130331098"],
-  ["61591664456446", "61591664456446"],
-  ["1crg2mozpq", "1CRG2mozpQ"],
+  ["1phgk91sez", "Saidul"],
+  ["61592130331098", "Tania"],
+  ["61591664456446", "Arif"],
+  ["1crg2mozpq", "Halim"],
   ["ferdous.fahim.921", "Ferdous Fahim"],
-  ["19kyfdy2fr", "19kYfdY2fr"],
-  ["61593951013042", "61593951013042"],
-  ["61594203401850", "61594203401850"],
-  ["61594028540149", "61594028540149"],
-  ["1poachcnqh", "1PoAchCNQh"]
+  ["19kyfdy2fr", "Al Amin"],
+  ["61593951013042", "San Jana"],
+  ["61594203401850", "Shanta"],
+  ["61594028540149", "Zakir"],
+  ["1poachcnqh", "Samir"]
 ]);
 
-// Resolves sender identity from FB sender/actor ID or profile name
-function resolveFbProfileName(rawIdOrName, fallbackText) {
-  const candidates = [rawIdOrName, fallbackText].filter(Boolean);
-  for (const cand of candidates) {
-    const str = String(cand).trim();
-    const low = str.toLowerCase();
-    if (FB_ID_TO_PROFILE_NAME.has(low)) {
-      return FB_ID_TO_PROFILE_NAME.get(low);
-    }
-    for (const [k, v] of FB_ID_TO_PROFILE_NAME.entries()) {
-      if (low.includes(k)) return v;
-    }
-  }
-  return rawIdOrName ? String(rawIdOrName).trim() : null;
+const MODERATORS = [
+  { name: "ফাহিম", aliases: ["ফাহিম", "ferdous.fahim.921"] },
+  { name: "আজাদ", aliases: ["আজাদ"] },
+  { name: "অপুর্ব", aliases: ["অপুর্ব", "অপূর্ব"] },
+  { name: "আশরাফুল", aliases: ["আশরাফুল", "19ibuyadbj"] },
+  { name: "সাইদুল", aliases: ["সাইদুল", "1phgk91sez"] },
+  { name: "জাবের", aliases: ["জাবের"] },
+  { name: "রিফাত", aliases: ["রিফাত"] },
+  { name: "হালিম", aliases: ["হালিম", "1crg2mozpq"] },
+  { name: "আল আমিন", aliases: ["আল আমিন", "আলআমিন", "19kyfdy2fr"] },
+  { name: "সানজানা", aliases: ["সানজানা", "san jana", "61593951013042"] },
+  { name: "শান্তা", aliases: ["শান্তা", "61594203401850"] },
+  { name: "জাকির", aliases: ["জাকির", "61594028540149"] },
+  { name: "সামির", aliases: ["সামির", "1poachcnqh"] },
+  { name: "ইরাম", aliases: ["ইরাম", "61594030833722"] },
+  { name: "শুভ্র", aliases: ["শুভ্র", "61594801244167"] },
+  { name: "তানিয়া", aliases: ["তানিয়া", "61592130331098"] },
+  { name: "আরিফ", aliases: ["আরিফ", "61591664456446"] },
+  { name: "আপন", aliases: ["আপন"] },
+  { name: "ফারজানা", aliases: ["ফারজানা"] },
+  { name: "Faria Rahman", aliases: ["faria.rahman.800321", "ফারিয়া"] },
+  { name: "Ferdous Fahim", aliases: ["ferdous.fahim.921", "ফাহিম"] }
+];
+
+const BN_RANGE = "\\u0980-\\u09FF";
+
+function escapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function isOrderConfirmText(text) {
+const MODERATOR_RULES = MODERATORS.map((m) => {
+  const alt = m.aliases
+    .map((a) => a.normalize("NFC").trim().split(/\s+/).map(escapeRegex).join("\\s+"))
+    .join("|");
+  return {
+    name: m.name,
+    re: new RegExp(`(?<![${BN_RANGE}])(?:আমি\\s+)?(?:${alt})(?![${BN_RANGE}])`, "i")
+  };
+});
+
+function resolveFbProfileDisplay(rawActorId, text) {
+  if (rawActorId) {
+    const cleanId = String(rawActorId).trim().toLowerCase();
+    if (FB_ID_TO_PROFILE.has(cleanId)) return FB_ID_TO_PROFILE.get(cleanId);
+    for (const [k, v] of FB_ID_TO_PROFILE.entries()) {
+      if (cleanId.includes(k)) return v;
+    }
+  }
+  if (text) {
+    const clean = String(text).normalize("NFC");
+    const low = clean.toLowerCase();
+    for (const [k, v] of FB_ID_TO_PROFILE.entries()) {
+      if (low.includes(k)) return v;
+    }
+    let best = null;
+    for (const rule of MODERATOR_RULES) {
+      const m = rule.re.exec(clean);
+      if (m && (best === null || m.index < best.index)) {
+        best = { index: m.index, name: rule.name };
+      }
+    }
+    if (best) return best.name;
+  }
+  return rawActorId ? String(rawActorId).trim() : null;
+}
+
+function detectModerator(text) {
+  return resolveFbProfileDisplay(null, text);
+}
+
+function isOrderConfirmMatch(text) {
   if (!text) return false;
   const t = String(text).toLowerCase();
   return t.includes("your order is confirm") || t.includes("your order confirm") || t.includes("conversation");
@@ -254,6 +307,18 @@ function isBlockedStickerUrl(url) {
   if (!url) return false;
   const u = String(url);
   return u.includes("39178562_1505197616293642") || u.includes("/stickers/");
+}
+
+function isValidProductAttachment(att) {
+  if (!att) return null;
+  if (att.mime_type && String(att.mime_type).includes("sticker")) return null;
+  const imgData = att.image_data || {};
+  const imgUrl = imgData.url || att.file_url || "";
+  if (!imgUrl || isBlockedStickerUrl(imgUrl)) return null;
+  const w = Number(imgData.width || 0);
+  const h = Number(imgData.height || 0);
+  if ((w > 0 && w <= 120) || (h > 0 && h <= 120)) return null;
+  return imgUrl;
 }
 
 const stmts = {
@@ -606,12 +671,9 @@ async function handleMessagingEvent(pageId, event) {
       }
     }
 
-    // Identify the FB profile/ID that sent this message
-    const rawActorId =
-      (event.message.from && event.message.from.id) ||
-      (event.sender && String(event.sender.id) !== String(pageId) ? event.sender.id : null);
-    const profileName = resolveFbProfileName(rawActorId, replyText);
-    const isConfirm = isOrderConfirmText(replyText) ? 1 : 0;
+    const actorId = (event.message.from && event.message.from.id) || null;
+    const profileName = resolveFbProfileDisplay(actorId, replyText);
+    const isConfirm = isOrderConfirmMatch(replyText) ? 1 : 0;
     const firstOwner = ensureFirstCustomerOwner(pageId, customerId, day, profileName, ts);
 
     const exists = db.prepare(`SELECT id FROM replies WHERE message_id = ?`).get(event.message.mid);
@@ -702,7 +764,7 @@ app.get("/api/mod/search-phone", requireModAuth, (req, res) => {
 });
 
 app.get("/api/mod/list", (req, res) => {
-  res.json({ moderators: Array.from(FB_ID_TO_PROFILE_NAME.values()) });
+  res.json({ moderators: MODERATORS.map((m) => m.name) });
 });
 
 app.post("/api/mod/batch", requireModAuth, async (req, res) => {
@@ -710,7 +772,7 @@ app.post("/api/mod/batch", requireModAuth, async (req, res) => {
     const { moderator, requestNew, pageFilter, bucket } = req.body;
     if (!moderator) return res.status(400).json({ error: "Moderator name required" });
 
-    const profileName = resolveFbProfileName(moderator) || moderator;
+    const profileName = resolveFbProfileDisplay(null, moderator) || moderator;
     const today = dhakaDate();
     const activeBucket = ["pending", "average", "good", "poor"].includes(bucket) ? bucket : "pending";
     const scope = resolveScope(pageFilter || "all");
@@ -798,7 +860,7 @@ app.get("/api/mod/chat", requireModAuth, async (req, res) => {
   try {
     const { page_id, sender_id } = req.query;
     const incoming = db.prepare(`
-      SELECT 'customer' as sender, COALESCE(NULLIF(message_text, ''), '👍') as text, image_url, ad_info, message_time as time, phone_number
+      SELECT 'customer' as sender, COALESCE(NULLIF(message_text, ''), '👍') as text, image_url, ad_info, message_time as time
       FROM messages
       WHERE page_id = ? AND sender_id = ?
     `).all(page_id, sender_id);
@@ -837,7 +899,7 @@ app.post("/api/mod/send", requireModAuth, async (req, res) => {
 
     const baseNow = Date.now();
     const day = dhakaDate(baseNow);
-    const profileName = resolveFbProfileName(moderator) || moderator;
+    const profileName = resolveFbProfileDisplay(null, moderator) || moderator;
     const firstOwner = ensureFirstCustomerOwner(page_id, sender_id, day, profileName, baseNow);
 
     const host = req.get("host");
@@ -856,7 +918,7 @@ app.post("/api/mod/send", requireModAuth, async (req, res) => {
     }
 
     const cleanText = (text || "").trim();
-    const isConfirm = isOrderConfirmText(cleanText) ? 1 : 0;
+    const isConfirm = isOrderConfirmMatch(cleanText) ? 1 : 0;
 
     for (let i = 0; i < savedUrls.length; i++) {
       const t = baseNow + i;
@@ -883,7 +945,7 @@ app.post("/api/mod/send", requireModAuth, async (req, res) => {
     }
 
     stmts.markReplied.run(page_id, sender_id, day);
-    res.json({ success: true, owner: firstOwner, sent_by: profileName, image_urls: savedUrls });
+    res.json({ success: true, owner: firstOwner, image_urls: savedUrls });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1087,7 +1149,6 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       [targetDate, ...pc.params]
     );
 
-    // Seen for at least 5 minutes without reply
     const readNoReply = count(
       `SELECT COUNT(DISTINCT ${CUST_M}) AS count
        FROM messages m
@@ -1103,7 +1164,6 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       [nowMs, SEEN_NO_REPLY_MS, targetDate, ...pcM.params, targetDate]
     );
 
-    // Confirmed orders matching "your order is confirm" or "conversation"
     const orderConfirms = count(
       `SELECT COUNT(DISTINCT ${CUST}) AS count FROM replies
        WHERE (
@@ -1114,7 +1174,6 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       [targetDate, ...pc.params]
     );
 
-    // 11-digit phone numbers
     const phoneCount = count(
       `SELECT COUNT(DISTINCT phone_number) AS count FROM messages
        WHERE phone_number GLOB '01[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
@@ -1127,7 +1186,6 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
     const shiftReplySql = isShift ? " AND r.reply_time >= ? AND r.reply_time < ?" : "";
     const shiftParams = isShift ? [win.startMs, win.endMs] : [];
 
-    // First FB profile/ID to knock/message owns Customer count
     const custRows = db
       .prepare(
         `SELECT a.moderator AS raw_key,
@@ -1138,7 +1196,6 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       )
       .all(targetDate, ...shiftParams, ...pcA.params);
 
-    // Each sent message counts under whichever FB profile/ID sent it
     const msgRows = db
       .prepare(
         `SELECT r.moderator AS raw_key,
@@ -1150,7 +1207,6 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       )
       .all(targetDate, ...shiftParams, ...pcR.params);
 
-    // 11-digit phone numbers belong to the first FB profile/ID that knocked/messaged
     const phoneRows = db
       .prepare(
         `SELECT a.moderator AS raw_key,
@@ -1166,20 +1222,20 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
 
     const custMap = new Map();
     custRows.forEach((c) => {
-      const profileName = resolveFbProfileName(c.raw_key) || c.raw_key;
-      custMap.set(profileName, (custMap.get(profileName) || 0) + (c.total_conversations || 0));
+      const label = resolveFbProfileDisplay(c.raw_key, c.raw_key) || c.raw_key;
+      custMap.set(label, (custMap.get(label) || 0) + (c.total_conversations || 0));
     });
 
     const msgMap = new Map();
     msgRows.forEach((m) => {
-      const profileName = resolveFbProfileName(m.raw_key) || m.raw_key;
-      msgMap.set(profileName, (msgMap.get(profileName) || 0) + (m.total_messages || 0));
+      const label = resolveFbProfileDisplay(m.raw_key, m.raw_key) || m.raw_key;
+      msgMap.set(label, (msgMap.get(label) || 0) + (m.total_messages || 0));
     });
 
     const phoneMap = new Map();
     phoneRows.forEach((p) => {
-      const profileName = resolveFbProfileName(p.raw_key) || p.raw_key;
-      phoneMap.set(profileName, (phoneMap.get(profileName) || 0) + (p.phones || 0));
+      const label = resolveFbProfileDisplay(p.raw_key, p.raw_key) || p.raw_key;
+      phoneMap.set(label, (phoneMap.get(label) || 0) + (p.phones || 0));
     });
 
     const names = new Set([...custMap.keys(), ...msgMap.keys(), ...phoneMap.keys()]);
