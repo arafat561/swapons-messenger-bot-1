@@ -17,8 +17,8 @@ const DASHBOARD_PASS = process.env.DASHBOARD_PASS || "swapon123";
 const MOD_PASS = process.env.MOD_PASS || "mod123";
 const META_ACCESS_TOKEN = process.env.META_ACCESS_TOKEN || "";
 const META_API_VERSION = process.env.META_API_VERSION || "v25.0";
-const TIKTOK_ACCESS_TOKEN = process.env.TIKTOK_ACCESS_TOKEN || "";
-const TIKTOK_API_VERSION = process.env.TIKTOK_API_VERSION || "v1.3";
+
+const SEEN_NO_REPLY_MS = 5 * 60 * 1000;
 
 const SESSION_MINUTES = Number(process.env.SESSION_MINUTES || 0);
 const SESSION_MS = SESSION_MINUTES > 0 ? SESSION_MINUTES * 60 * 1000 : 0;
@@ -99,9 +99,7 @@ const AD_ACCOUNTS = [
   { id: "act_7707351539304206", name: "ZXC20 (Stone Rose)", brand: "swapons", platform: "meta" },
   { id: "act_770104971706610", name: "ST-09 (Stone Rose)", brand: "swapons", platform: "meta" },
   { id: "act_722336793300354", name: "ST-07 (Stone Rose)", brand: "stone", platform: "meta" },
-  { id: "act_3681717408727534", name: "ST-10 (Stone Rose)", brand: "stone", platform: "meta" },
-  { id: "7547244221146087432", name: "Swapon's World (TikTok)", brand: "swapons", platform: "tiktok", statusNote: "Active / TikTok Ads" },
-  { id: "7535761847878762497", name: "VNTIKTOK_Swapons World T62", brand: "swapons", platform: "tiktok", statusNote: "TikTok Ads" }
+  { id: "act_3681717408727534", name: "ST-10 (Stone Rose)", brand: "stone", platform: "meta" }
 ];
 
 function resolveScope(raw) {
@@ -117,26 +115,44 @@ function pageClause(ids, col) {
   return { sql: ` AND ${column} IN (${ids.map(() => "?").join(",")})`, params: ids };
 }
 
+const PROVIDED_FB_MAP = new Map([
+  ["61594030833722", "FB ID: 61594030833722"],
+  ["61594801244167", "FB ID: 61594801244167"],
+  ["19ibuyadbj", "FB Share: 19iBuYADbj"],
+  ["faria.rahman.800321", "Faria Rahman"],
+  ["1phgk91sez", "FB Share: 1PHGk91SEz"],
+  ["61592130331098", "FB ID: 61592130331098"],
+  ["61591664456446", "FB ID: 61591664456446"],
+  ["1crg2mozpq", "FB Share: 1CRG2mozpQ"],
+  ["ferdous.fahim.921", "Ferdous Fahim"],
+  ["19kyfdy2fr", "FB Share: 19kYfdY2fr"],
+  ["61593951013042", "FB ID: 61593951013042"],
+  ["61594203401850", "FB ID: 61594203401850"],
+  ["61594028540149", "FB ID: 61594028540149"],
+  ["1poachcnqh", "FB Share: 1PoAchCNQh"]
+]);
+
 const MODERATORS = [
-  { name: "ফাহিম", aliases: ["ফাহিম"] },
-  { name: "আজাদ", aliases: ["আজাদ"] },
-  { name: "অপুর্ব", aliases: ["অপুর্ব", "অপূর্ব"] },
-  { name: "আশরাফুল", aliases: ["আশরাফুল"] },
-  { name: "সাইদুল", aliases: ["সাইদুল"] },
-  { name: "জাবের", aliases: ["জাবের"] },
-  { name: "রিফাত", aliases: ["রিফাত"] },
-  { name: "হালিম", aliases: ["হালিম"] },
-  { name: "আল আমিন", aliases: ["আল আমিন", "আলআমিন"] },
-  { name: "সানজানা", aliases: ["সানজানা"] },
-  { name: "শান্তা", aliases: ["শান্তা"] },
-  { name: "জাকির", aliases: ["জাকির"] },
-  { name: "সামির", aliases: ["সামির"] },
-  { name: "ইরাম", aliases: ["ইরাম"] },
-  { name: "শুভ্র", aliases: ["শুভ্র"] },
-  { name: "তানিয়া", aliases: ["তানিয়া"] },
-  { name: "আরিফ", aliases: ["আরিফ"] },
-  { name: "আপন", aliases: ["আপন"] },
-  { name: "ফারজানা", aliases: ["ফারজানা"] }
+  { name: "ফাহিম", fbProfile: "Ferdous Fahim", aliases: ["ফাহিম", "ferdous.fahim.921"] },
+  { name: "ফারিয়া", fbProfile: "Faria Rahman", aliases: ["ফারিয়া", "faria.rahman.800321"] },
+  { name: "আজাদ", fbProfile: "FB ID: 61594030833722", aliases: ["আজাদ"] },
+  { name: "অপুর্ব", fbProfile: "FB ID: 61594801244167", aliases: ["অপুর্ব", "অপূর্ব"] },
+  { name: "আশরাফুল", fbProfile: "FB Share: 19iBuYADbj", aliases: ["আশরাফুল"] },
+  { name: "সাইদুল", fbProfile: "FB Share: 1PHGk91SEz", aliases: ["সাইদুল"] },
+  { name: "জাবের", fbProfile: "FB ID: 61592130331098", aliases: ["জাবের"] },
+  { name: "রিফাত", fbProfile: "FB ID: 61591664456446", aliases: ["রিফাত"] },
+  { name: "হালিম", fbProfile: "FB Share: 1CRG2mozpQ", aliases: ["হালিম"] },
+  { name: "আল আমিন", fbProfile: "FB Share: 19kYfdY2fr", aliases: ["আল আমিন", "আলআমিন"] },
+  { name: "সানজানা", fbProfile: "FB ID: 61593951013042", aliases: ["সানজানা"] },
+  { name: "শান্তা", fbProfile: "FB ID: 61594203401850", aliases: ["শান্তা"] },
+  { name: "জাকির", fbProfile: "FB ID: 61594028540149", aliases: ["জাকির"] },
+  { name: "সামির", fbProfile: "FB Share: 1PoAchCNQh", aliases: ["সামির"] },
+  { name: "ইরাম", fbProfile: "FB ID: 61594030833722", aliases: ["ইরাম"] },
+  { name: "শুভ্র", fbProfile: "FB ID: 61594801244167", aliases: ["শুভ্র"] },
+  { name: "তানিয়া", fbProfile: "FB ID: 61592130331098", aliases: ["তানিয়া"] },
+  { name: "আরিফ", fbProfile: "FB ID: 61591664456446", aliases: ["আরিফ"] },
+  { name: "আপন", fbProfile: "FB ID: 61593951013042", aliases: ["আপন"] },
+  { name: "ফারজানা", fbProfile: "FB ID: 61594203401850", aliases: ["ফারজানা"] }
 ];
 
 const BN_RANGE = "\\u0980-\\u09FF";
@@ -151,24 +167,61 @@ const MODERATOR_RULES = MODERATORS.map((m) => {
     .join("|");
   return {
     name: m.name,
-    re: new RegExp(`(?<![${BN_RANGE}])আমি\\s+(?:${alt})(?![${BN_RANGE}])`)
+    fbProfile: m.fbProfile,
+    re: new RegExp(`(?<![${BN_RANGE}])আমি\\s+(?:${alt})(?![${BN_RANGE}])`, "i")
   };
 });
 
-function detectModerator(text) {
-  if (!text) return null;
-  const clean = String(text).normalize("NFC");
-  let best = null;
-  for (const rule of MODERATOR_RULES) {
-    const m = rule.re.exec(clean);
-    if (m && (best === null || m.index < best.index)) {
-      best = { index: m.index, name: rule.name };
+function resolveFbProfileLabel(explicitModOrId, text) {
+  if (explicitModOrId) {
+    const raw = String(explicitModOrId).trim();
+    const low = raw.toLowerCase();
+
+    if (PROVIDED_FB_MAP.has(low)) return PROVIDED_FB_MAP.get(low);
+    for (const [k, v] of PROVIDED_FB_MAP.entries()) {
+      if (low.includes(k)) return v;
     }
+
+    const foundMod = MODERATORS.find(
+      (m) => m.name.toLowerCase() === low || m.fbProfile.toLowerCase() === low
+    );
+    if (foundMod) return foundMod.fbProfile;
+
+    return raw;
   }
-  return best ? best.name : null;
+
+  if (text) {
+    const clean = String(text).normalize("NFC");
+    for (const [k, v] of PROVIDED_FB_MAP.entries()) {
+      if (clean.toLowerCase().includes(k)) return v;
+    }
+    let best = null;
+    for (const rule of MODERATOR_RULES) {
+      const m = rule.re.exec(clean);
+      if (m && (best === null || m.index < best.index)) {
+        best = { index: m.index, fbProfile: rule.fbProfile };
+      }
+    }
+    if (best) return best.fbProfile;
+  }
+
+  return null;
 }
 
-app.use(express.json({ limit: "15mb" }));
+function isOrderConfirmText(text) {
+  if (!text) return false;
+  const t = String(text).toLowerCase();
+  return t.includes("your order is confirm") || t.includes("your order confirm") || t.includes("conversation");
+}
+
+function extractElevenDigitPhone(text) {
+  if (!text) return null;
+  const cleaned = String(text).replace(/[\s\-()+]/g, "");
+  const match = cleaned.match(/(?:88)?(01\d{9})/);
+  return match ? match[1] : null;
+}
+
+app.use(express.json({ limit: "35mb" }));
 
 const dbDir = process.env.DATA_DIR || (fs.existsSync("/data") ? "/data" : ".");
 const uploadDir = path.join(dbDir, "uploads");
@@ -238,76 +291,17 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
   CREATE INDEX IF NOT EXISTS idx_messages_status ON messages(status);
   CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(page_id, sender_id);
+  CREATE INDEX IF NOT EXISTS idx_messages_phone ON messages(phone_number);
   CREATE INDEX IF NOT EXISTS idx_replies_sender ON replies(page_id, sender_id);
   CREATE INDEX IF NOT EXISTS idx_replies_created_at ON replies(created_at);
+  CREATE INDEX IF NOT EXISTS idx_replies_moderator ON replies(moderator);
   CREATE INDEX IF NOT EXISTS idx_assign_day ON moderator_assignments(day);
 `);
-
-try { db.exec(`ALTER TABLE messages ADD COLUMN read_time INTEGER;`); } catch (e) {}
-try { db.exec(`ALTER TABLE messages ADD COLUMN phone_number TEXT;`); } catch (e) {}
-try { db.exec(`ALTER TABLE messages ADD COLUMN assigned_moderator TEXT;`); } catch (e) {}
-try { db.exec(`ALTER TABLE messages ADD COLUMN image_url TEXT;`); } catch (e) {}
-try { db.exec(`ALTER TABLE messages ADD COLUMN ad_info TEXT;`); } catch (e) {}
-try { db.exec(`ALTER TABLE replies ADD COLUMN moderator TEXT;`); } catch (e) {}
-try { db.exec(`ALTER TABLE replies ADD COLUMN is_order_confirm INTEGER DEFAULT 0;`); } catch (e) {}
-try { db.exec(`ALTER TABLE replies ADD COLUMN image_url TEXT;`); } catch (e) {}
-try { db.exec(`ALTER TABLE customers ADD COLUMN ad_info TEXT;`); } catch (e) {}
-try { db.exec(`ALTER TABLE customers ADD COLUMN profile_pic TEXT;`); } catch (e) {}
-try { db.exec(`ALTER TABLE moderator_assignments ADD COLUMN bucket TEXT DEFAULT 'pending';`); } catch (e) {}
-
-try {
-  db.prepare(`UPDATE customers SET ad_info = NULL WHERE ad_info LIKE '%39178562_1505197616293642%'`).run();
-  db.prepare(`UPDATE messages SET ad_info = NULL WHERE ad_info LIKE '%39178562_1505197616293642%'`).run();
-} catch (e) {}
 
 function isBlockedStickerUrl(url) {
   if (!url) return false;
   const u = String(url);
   return u.includes("39178562_1505197616293642") || u.includes("/stickers/");
-}
-
-function isValidProductAttachment(att) {
-  if (!att) return null;
-  if (att.mime_type && String(att.mime_type).includes("sticker")) return null;
-  const imgData = att.image_data || {};
-  const imgUrl = imgData.url || att.file_url || "";
-  if (!imgUrl || isBlockedStickerUrl(imgUrl)) return null;
-
-  const w = Number(imgData.width || 0);
-  const h = Number(imgData.height || 0);
-  if ((w > 0 && w <= 120) || (h > 0 && h <= 120)) return null;
-
-  return imgUrl;
-}
-
-function createdAtToDay(createdAt) {
-  const ms = Date.parse(String(createdAt).replace(" ", "T") + "Z");
-  return Number.isNaN(ms) ? null : dhakaDate(ms);
-}
-
-if (db.pragma("user_version", { simple: true }) < 1) {
-  const rows = db
-    .prepare(`SELECT id, page_id, sender_id, reply_text, reply_time, created_at FROM replies ORDER BY id ASC`)
-    .all();
-
-  const insertAssign = db.prepare(`
-    INSERT OR IGNORE INTO moderator_assignments (page_id, sender_id, day, moderator, assigned_at, bucket)
-    VALUES (?, ?, ?, ?, ?, 'pending')
-  `);
-  const fixReply = db.prepare(`UPDATE replies SET moderator = ? WHERE id = ?`);
-
-  const rebuild = db.transaction((list) => {
-    for (const r of list) {
-      const mod = detectModerator(r.reply_text);
-      fixReply.run(mod, r.id);
-      if (!mod) continue;
-      const day = createdAtToDay(r.created_at);
-      if (day) insertAssign.run(r.page_id, r.sender_id, day, mod, r.reply_time || null);
-    }
-  });
-
-  rebuild(rows);
-  db.pragma("user_version = 1");
 }
 
 const stmts = {
@@ -318,7 +312,7 @@ const stmts = {
   `),
   markRead: db.prepare(`
     UPDATE messages
-    SET status = 'read', read_time = ?
+    SET status = 'read', read_time = COALESCE(read_time, ?)
     WHERE page_id = ? AND sender_id = ? AND message_time <= ? AND status = 'unread'
   `),
   insertReply: db.prepare(`
@@ -326,7 +320,7 @@ const stmts = {
     (page_id, sender_id, message_id, reply_text, image_url, reply_time, moderator, is_order_confirm)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `),
-  assignModerator: db.prepare(`
+  assignFirstCustomerOwner: db.prepare(`
     INSERT OR IGNORE INTO moderator_assignments (page_id, sender_id, day, moderator, assigned_at, bucket)
     VALUES (?, ?, ?, ?, ?, 'pending')
   `),
@@ -342,10 +336,18 @@ const stmts = {
   purgeSessions: db.prepare(`DELETE FROM sessions WHERE created_at < ?`)
 };
 
-function extractPhoneNumber(text) {
-  if (!text) return null;
-  const match = text.match(/(?:\+?88)?01[3-9]\d{8}\b/);
-  return match ? match[0] : null;
+function getFirstCustomerOwner(pageId, senderId, day) {
+  const row = db.prepare(`
+    SELECT moderator FROM moderator_assignments
+    WHERE page_id = ? AND sender_id = ? AND day = ?
+  `).get(pageId, senderId, day);
+  return row ? row.moderator : null;
+}
+
+function ensureFirstCustomerOwner(pageId, senderId, day, fbLabel, ts) {
+  if (!fbLabel) return null;
+  stmts.assignFirstCustomerOwner.run(pageId, senderId, day, fbLabel, ts || Date.now());
+  return getFirstCustomerOwner(pageId, senderId, day) || fbLabel;
 }
 
 const fbAgent = new https.Agent({ keepAlive: true, maxSockets: 20 });
@@ -353,9 +355,7 @@ const fbAgent = new https.Agent({ keepAlive: true, maxSockets: 20 });
 function sendFacebookPayload(pageId, bodyObj) {
   return new Promise((resolve, reject) => {
     const token = getPageToken(pageId);
-    if (!token) {
-      return reject(new Error(`Page ID (${pageId}) এর জন্য Railway Variables-এ SWAPONS_WORLD_PAGE_TOKEN বা STONE_ROSE_PAGE_TOKEN সেট করা নেই!`));
-    }
+    if (!token) return reject(new Error(`Page ID (${pageId}) এর জন্য টোকেন সেট করা নেই!`));
 
     const payload = JSON.stringify(bodyObj);
     const options = {
@@ -390,87 +390,19 @@ function sendFacebookPayload(pageId, bodyObj) {
   });
 }
 
-async function syncCustomerAndAdFromGraph(pageId, senderId) {
-  const token = getPageToken(pageId);
-  if (!token) return null;
-
-  try {
-    const existing = db.prepare(`SELECT name, profile_pic, ad_info FROM customers WHERE page_id = ? AND sender_id = ?`).get(pageId, senderId);
-    let fullName = (existing && existing.name && !existing.name.startsWith("Customer_")) ? existing.name : "";
-    let picUrl = (existing && existing.profile_pic) ? existing.profile_pic : "";
-
-    let parsedExistingAd = null;
-    if (existing && existing.ad_info) {
-      try {
-        const tmp = JSON.parse(existing.ad_info);
-        if (tmp && !isBlockedStickerUrl(tmp.photo_url) && !isBlockedStickerUrl(tmp.post_url)) {
-          parsedExistingAd = tmp;
-        }
-      } catch (e) {}
-    }
-
-    if (!fullName || !picUrl) {
-      const profile = await httpsGetJson(`https://graph.facebook.com/${META_API_VERSION}/${senderId}?fields=first_name,last_name,name,profile_pic&access_token=${token}`);
-      if (profile && !profile.error) {
-        if (profile.name || profile.first_name) {
-          fullName = profile.name || `${profile.first_name || ""} ${profile.last_name || ""}`.trim();
-        }
-        if (profile.profile_pic) {
-          picUrl = profile.profile_pic;
-        }
-      }
-    }
-
-    const convUrl = `https://graph.facebook.com/${META_API_VERSION}/me/conversations?user_id=${senderId}&fields=participants,messages.limit(8){message,attachments,sticker,from}&access_token=${token}`;
-    const conv = await httpsGetJson(convUrl);
-    if (conv && conv.data && conv.data[0]) {
-      const thread = conv.data[0];
-
-      if (!fullName && thread.participants && thread.participants.data) {
-        const custPart = thread.participants.data.find((p) => String(p.id) === String(senderId));
-        if (custPart && custPart.name) {
-          fullName = custPart.name;
-        }
-      }
-
-      if (!parsedExistingAd && thread.messages && thread.messages.data) {
-        for (const m of thread.messages.data) {
-          if (m.sticker) continue;
-          if (m.attachments && m.attachments.data && m.attachments.data.length > 0 && m.from && String(m.from.id) === String(senderId)) {
-            const validImg = isValidProductAttachment(m.attachments.data[0]);
-            if (validImg) {
-              const adObj = {
-                ad_id: "",
-                ad_title: m.message || "Customer Sent Product Photo",
-                post_url: validImg,
-                photo_url: validImg
-              };
-              db.prepare(`
-                INSERT INTO customers (page_id, sender_id, name, profile_pic, ad_info) VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(page_id, sender_id) DO UPDATE SET 
-                  name = COALESCE(NULLIF(excluded.name, ''), customers.name),
-                  profile_pic = COALESCE(NULLIF(excluded.profile_pic, ''), customers.profile_pic),
-                  ad_info = excluded.ad_info
-              `).run(pageId, senderId, fullName || `Customer_${senderId.slice(-4)}`, picUrl, JSON.stringify(adObj));
-              return adObj;
-            }
-          }
-        }
-      }
-    }
-
-    if (fullName || picUrl) {
-      db.prepare(`
-        INSERT INTO customers (page_id, sender_id, name, profile_pic) VALUES (?, ?, ?, ?)
-        ON CONFLICT(page_id, sender_id) DO UPDATE SET 
-          name = COALESCE(NULLIF(excluded.name, ''), customers.name),
-          profile_pic = COALESCE(NULLIF(excluded.profile_pic, ''), customers.profile_pic)
-      `).run(pageId, senderId, fullName || `Customer_${senderId.slice(-4)}`, picUrl);
-    }
-
-    return parsedExistingAd;
-  } catch (e) {}
-  return null;
+function httpsGetJson(url) {
+  return new Promise((resolve) => {
+    const req = https.get(url, { timeout: 12000, agent: fbAgent }, (res) => {
+      let raw = "";
+      res.setEncoding("utf8");
+      res.on("data", (chunk) => { raw += chunk; });
+      res.on("end", () => {
+        try { resolve(JSON.parse(raw)); } catch (e) { resolve(null); }
+      });
+    });
+    req.on("timeout", () => req.destroy(new Error("timeout")));
+    req.on("error", () => resolve(null));
+  });
 }
 
 function safeEqual(a, b) {
@@ -543,11 +475,8 @@ app.post("/api/login", (req, res) => {
   }
 
   const count = (rec && !rec.until ? rec.count : 0) + 1;
-  if (count >= MAX_FAILS) {
-    failedLogins.set(ip, { count: 0, until: Date.now() + BLOCK_MS });
-  } else {
-    failedLogins.set(ip, { count });
-  }
+  if (count >= MAX_FAILS) failedLogins.set(ip, { count: 0, until: Date.now() + BLOCK_MS });
+  else failedLogins.set(ip, { count });
   return res.status(401).json({ error: "Wrong username or password." });
 });
 
@@ -561,41 +490,26 @@ app.post("/api/logout", (req, res) => {
 function requireAuth(req, res, next) {
   const header = req.headers.authorization || "";
   const [scheme, token] = header.split(" ");
-
-  if (scheme === "Bearer" && sessionValid(token)) {
-    return next();
-  }
+  if (scheme === "Bearer" && sessionValid(token)) return next();
   return res.status(401).json({ error: "Session ended. Please sign in again." });
 }
 
 function requireModAuth(req, res, next) {
   const modPass = req.headers["x-mod-pass"];
-  if (modPass === MOD_PASS || modPass === DASHBOARD_PASS || modPass === "swapon123") {
-    return next();
-  }
+  if (modPass === MOD_PASS || modPass === DASHBOARD_PASS || modPass === "swapon123") return next();
   return res.status(401).json({ error: "ভুল মডারেটর পাসওয়ার্ড!" });
 }
 
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "index.html"));
-});
-
-app.get("/inbox", (req, res) => {
-  res.sendFile(path.join(__dirname, "inbox.html"));
-});
-
+app.get("/", (req, res) => res.sendFile(path.join(__dirname, "index.html")));
+app.get("/inbox", (req, res) => res.sendFile(path.join(__dirname, "inbox.html")));
 app.get("/healthz", (req, res) => res.json({ ok: true }));
 
 app.get("/webhook", (req, res) => {
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
-
-  if (mode && token === VERIFY_TOKEN) {
-    res.status(200).send(challenge);
-  } else {
-    res.sendStatus(403);
-  }
+  if (mode && token === VERIFY_TOKEN) return res.status(200).send(challenge);
+  return res.sendStatus(403);
 });
 
 function extractAdReferral(event) {
@@ -616,7 +530,8 @@ function extractAdReferral(event) {
 }
 
 async function handleMessagingEvent(pageId, event) {
-  const today = dhakaDate();
+  const ts = event.timestamp || Date.now();
+  const day = dhakaDate(ts);
   const senderId = event.sender && event.sender.id;
   const adInfoJson = extractAdReferral(event);
 
@@ -638,6 +553,8 @@ async function handleMessagingEvent(pageId, event) {
     }
 
     const displayText = rawText || (imageUrl ? "[ছবি পাঠিয়েছেন]" : "👍");
+    const phone11 = extractElevenDigitPhone(rawText);
+    const firstOwner = getFirstCustomerOwner(pageId, senderId, day);
 
     stmts.insertMessage.run(
       pageId,
@@ -646,25 +563,29 @@ async function handleMessagingEvent(pageId, event) {
       displayText,
       imageUrl,
       adInfoJson,
-      event.timestamp,
-      extractPhoneNumber(rawText)
+      ts,
+      phone11
     );
+
+    if (firstOwner) {
+      db.prepare(`
+        UPDATE messages SET assigned_moderator = ?
+        WHERE page_id = ? AND sender_id = ? AND ${DAY} = ? AND (assigned_moderator IS NULL OR assigned_moderator = '')
+      `).run(firstOwner, pageId, senderId, day);
+    }
 
     db.prepare(`
       UPDATE moderator_assignments SET bucket = 'pending'
       WHERE page_id = ? AND sender_id = ? AND day = ? AND bucket != 'pending'
-    `).run(pageId, senderId, today);
+    `).run(pageId, senderId, day);
 
-    syncCustomerAndAdFromGraph(pageId, senderId).catch(() => {});
     return;
   }
 
   if (event.postback || event.referral) {
-    const ts = event.timestamp || Date.now();
     const mid = (event.postback && event.postback.mid) || `ref_${senderId}_${ts}`;
     const text = (event.postback && (event.postback.title || event.postback.payload)) || "📢 Ad থেকে ইনবক্সে এসেছেন";
-    stmts.insertMessage.run(pageId, senderId, mid, text, null, adInfoJson, ts, extractPhoneNumber(text));
-    syncCustomerAndAdFromGraph(pageId, senderId).catch(() => {});
+    stmts.insertMessage.run(pageId, senderId, mid, text, null, adInfoJson, ts, extractElevenDigitPhone(text));
     return;
   }
 
@@ -681,22 +602,38 @@ async function handleMessagingEvent(pageId, event) {
       }
     }
 
-    const replyTime = event.timestamp || Date.now();
-    const isConfirm = replyText.toLowerCase().includes("your order confirm") ? 1 : 0;
-    const mod = detectModerator(replyText);
+    const isConfirm = isOrderConfirmText(replyText) ? 1 : 0;
+    const fbLabel = resolveFbProfileLabel(null, replyText);
+    const firstCustomerOwner = ensureFirstCustomerOwner(pageId, customerId, day, fbLabel, ts);
 
     const exists = db.prepare(`SELECT id FROM replies WHERE message_id = ?`).get(event.message.mid);
     if (!exists) {
-      stmts.insertReply.run(pageId, customerId, event.message.mid, replyText || (replyImg ? "[ছবি]" : "👍"), replyImg, replyTime, mod, isConfirm);
+      stmts.insertReply.run(
+        pageId,
+        customerId,
+        event.message.mid,
+        replyText || (replyImg ? "[ছবি]" : "👍"),
+        replyImg,
+        ts,
+        fbLabel || firstCustomerOwner,
+        isConfirm
+      );
     }
 
-    if (mod) stmts.assignModerator.run(pageId, customerId, today, mod, replyTime);
-    stmts.markReplied.run(pageId, customerId, today);
+    if (firstCustomerOwner) {
+      db.prepare(`
+        UPDATE messages SET assigned_moderator = ?
+        WHERE page_id = ? AND sender_id = ? AND ${DAY} = ? AND (assigned_moderator IS NULL OR assigned_moderator = '')
+      `).run(firstCustomerOwner, pageId, customerId, day);
+    }
+
+    stmts.markReplied.run(pageId, customerId, day);
     return;
   }
 
   if (event.read) {
-    stmts.markRead.run(Date.now(), pageId, senderId, event.read.watermark);
+    const readAt = event.read.watermark || ts;
+    stmts.markRead.run(readAt, pageId, senderId, readAt);
   }
 }
 
@@ -712,12 +649,58 @@ app.post("/webhook", (req, res) => {
       });
     }
   }
-
   return res.status(200).send("EVENT_RECEIVED");
 });
 
+app.get("/api/mod/search-phone", requireModAuth, (req, res) => {
+  try {
+    const qRaw = String(req.query.phone || "").replace(/[\s\-()+]/g, "");
+    if (!qRaw) return res.status(400).json({ error: "ফোন নম্বর দিন" });
+
+    const rows = db.prepare(`
+      SELECT
+        m.page_id,
+        m.sender_id,
+        m.phone_number,
+        m.message_text,
+        m.message_time,
+        COALESCE(NULLIF(c.name, ''), 'Customer_' || substr(m.sender_id, -4)) AS customer_name,
+        (
+          SELECT a.moderator FROM moderator_assignments a
+          WHERE a.page_id = m.page_id AND a.sender_id = m.sender_id AND a.day = date(m.created_at, '+6 hours')
+          LIMIT 1
+        ) AS first_owner_fb_profile,
+        (
+          SELECT GROUP_CONCAT(DISTINCT r.moderator) FROM replies r
+          WHERE r.page_id = m.page_id AND r.sender_id = m.sender_id AND r.moderator IS NOT NULL
+        ) AS sent_by_fb_profiles
+      FROM messages m
+      LEFT JOIN customers c ON m.page_id = c.page_id AND m.sender_id = c.sender_id
+      WHERE m.phone_number LIKE ?
+      ORDER BY m.message_time DESC
+      LIMIT 30
+    `).all(`%${qRaw}%`);
+
+    res.json({
+      query: qRaw,
+      matches: rows.map((r) => ({
+        ...r,
+        page_name: PAGE_NAMES[r.page_id] || "Page"
+      }))
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get("/api/mod/list", (req, res) => {
-  res.json({ moderators: MODERATORS.map((m) => m.name) });
+  res.json({
+    moderators: MODERATORS.map((m) => ({
+      name: m.name,
+      fb_profile: m.fbProfile
+    })),
+    mapped_profiles: Array.from(PROVIDED_FB_MAP.values())
+  });
 });
 
 app.post("/api/mod/batch", requireModAuth, async (req, res) => {
@@ -725,6 +708,7 @@ app.post("/api/mod/batch", requireModAuth, async (req, res) => {
     const { moderator, requestNew, pageFilter, bucket } = req.body;
     if (!moderator) return res.status(400).json({ error: "Moderator name required" });
 
+    const fbLabel = resolveFbProfileLabel(moderator, null) || moderator;
     const today = dhakaDate();
     const activeBucket = ["pending", "average", "good", "poor"].includes(bucket) ? bucket : "pending";
     const scope = resolveScope(pageFilter || "all");
@@ -751,11 +735,10 @@ app.post("/api/mod/batch", requireModAuth, async (req, res) => {
           ${pcM.sql}
         GROUP BY m.page_id, m.sender_id
         ORDER BY MIN(m.id) ASC
-      `).all(today, moderator, targetBucket, today, ...pcM.params);
+      `).all(today, fbLabel, targetBucket, today, ...pcM.params);
     };
 
     let pendingQueue = getBucketCustomers("pending");
-
     const slotsNeeded = 10 - pendingQueue.length;
     if (slotsNeeded > 0 && (activeBucket === "pending" || requestNew)) {
       const unassignedCustomers = db.prepare(`
@@ -774,93 +757,37 @@ app.post("/api/mod/batch", requireModAuth, async (req, res) => {
       const assignTransaction = db.transaction((list) => {
         const now = Date.now();
         for (const item of list) {
-          stmts.assignModerator.run(item.page_id, item.sender_id, today, moderator, now);
+          stmts.assignFirstCustomerOwner.run(item.page_id, item.sender_id, today, fbLabel, now);
         }
       });
       assignTransaction(unassignedCustomers);
-
       pendingQueue = getBucketCustomers("pending");
     }
 
-    let currentList = activeBucket === "pending" ? pendingQueue : getBucketCustomers(activeBucket);
-
-    const missingProfiles = currentList.filter(
-      (q) => !q.profile_pic || q.customer_name.startsWith("Customer_")
-    );
-    if (missingProfiles.length > 0) {
-      Promise.all(
-        missingProfiles.slice(0, 5).map((q) => syncCustomerAndAdFromGraph(q.page_id, q.sender_id))
-      ).catch(() => {});
-    }
-
+    const currentList = activeBucket === "pending" ? pendingQueue : getBucketCustomers(activeBucket);
     const countRows = db.prepare(`
       SELECT COALESCE(NULLIF(a.bucket, ''), 'pending') as b, COUNT(DISTINCT a.page_id || ':' || a.sender_id) as cnt
       FROM moderator_assignments a
       JOIN messages m ON m.page_id = a.page_id AND m.sender_id = a.sender_id AND ${DAY_M} = ?
       WHERE a.day = ? AND a.moderator = ? ${pcM.sql}
       GROUP BY b
-    `).all(today, today, moderator, ...pcM.params);
+    `).all(today, today, fbLabel, ...pcM.params);
 
     const counts = { pending: 0, average: 0, good: 0, poor: 0 };
     countRows.forEach((r) => {
       if (counts[r.b] !== undefined) counts[r.b] = r.cnt;
     });
 
-    const globalUnassigned = db.prepare(`
-      SELECT COUNT(DISTINCT m.page_id || ':' || m.sender_id) as count
-      FROM messages m
-      LEFT JOIN moderator_assignments a 
-        ON a.page_id = m.page_id AND a.sender_id = m.sender_id AND a.day = ?
-      WHERE a.moderator IS NULL
-        AND m.status != 'replied'
-        AND ${DAY_M} = ?
-        ${pcM.sql}
-    `).get(today, today, ...pcM.params).count;
-
     res.json({
-      moderator,
+      moderator: moderator,
+      fb_profile: fbLabel,
       bucket: activeBucket,
       counts,
-      queue: currentList.map((q) => {
-        let parsedAd = null;
-        if (q.ad_info) {
-          try {
-            const tmp = JSON.parse(q.ad_info);
-            if (tmp && !isBlockedStickerUrl(tmp.photo_url) && !isBlockedStickerUrl(tmp.post_url)) {
-              parsedAd = tmp;
-            }
-          } catch (e) {}
-        }
-        return {
-          ...q,
-          ad_data: parsedAd,
-          page_name: PAGE_NAMES[q.page_id] || "Page"
-        };
-      }),
-      global_unassigned: globalUnassigned
+      queue: currentList.map((q) => ({
+        ...q,
+        page_name: PAGE_NAMES[q.page_id] || "Page"
+      }))
     });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post("/api/mod/classify", requireModAuth, (req, res) => {
-  try {
-    const { page_id, sender_id, moderator, bucket } = req.body;
-    if (!page_id || !sender_id || !moderator || !["pending", "average", "good", "poor"].includes(bucket)) {
-      return res.status(400).json({ error: "Invalid request" });
-    }
-
-    const today = dhakaDate();
-    const now = Date.now();
-
-    db.prepare(`
-      INSERT INTO moderator_assignments (page_id, sender_id, day, moderator, assigned_at, bucket)
-      VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT(page_id, sender_id, day) DO UPDATE SET moderator = excluded.moderator, bucket = excluded.bucket
-    `).run(page_id, sender_id, today, moderator, now, bucket);
-
-    res.json({ success: true, bucket });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -869,39 +796,26 @@ app.post("/api/mod/classify", requireModAuth, (req, res) => {
 app.get("/api/mod/chat", requireModAuth, async (req, res) => {
   try {
     const { page_id, sender_id } = req.query;
-
     const incoming = db.prepare(`
-      SELECT 'customer' as sender, COALESCE(NULLIF(message_text, ''), '👍') as text, image_url, ad_info, message_time as time
+      SELECT 'customer' as sender, COALESCE(NULLIF(message_text, ''), '👍') as text, image_url, ad_info, message_time as time, phone_number, NULL as sent_by_fb_profile
       FROM messages
       WHERE page_id = ? AND sender_id = ?
     `).all(page_id, sender_id);
 
     const outgoing = db.prepare(`
-      SELECT 'page' as sender, COALESCE(NULLIF(reply_text, ''), '👍') as text, image_url, reply_time as time, moderator
+      SELECT 'page' as sender, COALESCE(NULLIF(reply_text, ''), '👍') as text, image_url, NULL as ad_info, reply_time as time, NULL as phone_number, moderator as sent_by_fb_profile
       FROM replies
       WHERE page_id = ? AND sender_id = ?
     `).all(page_id, sender_id);
 
-    let custRow = db.prepare(`SELECT name, profile_pic, ad_info FROM customers WHERE page_id = ? AND sender_id = ?`).get(page_id, sender_id);
-    let adData = null;
-    const rawAd = (custRow && custRow.ad_info) || (incoming.find((i) => i.ad_info) || {}).ad_info;
-    if (rawAd) {
-      try {
-        const tmp = JSON.parse(rawAd);
-        if (tmp && !isBlockedStickerUrl(tmp.photo_url) && !isBlockedStickerUrl(tmp.post_url)) {
-          adData = tmp;
-        }
-      } catch (e) {}
-    }
-
-    if (!adData || !custRow || !custRow.profile_pic) {
-      syncCustomerAndAdFromGraph(page_id, sender_id).catch(() => {});
-    }
-
+    const custRow = db.prepare(`SELECT name, profile_pic, ad_info FROM customers WHERE page_id = ? AND sender_id = ?`).get(page_id, sender_id);
     const merged = [...incoming, ...outgoing].sort((a, b) => (a.time || 0) - (b.time || 0));
+
     res.json({
-      messages: merged,
-      ad_data: adData,
+      messages: merged.map((m) => ({
+        ...m,
+        sent_by_label: m.sender === "page" && m.sent_by_fb_profile ? `Sent by ${m.sent_by_fb_profile}` : null
+      })),
       customer: {
         name: (custRow && custRow.name) || `Customer_${String(sender_id).slice(-4)}`,
         profile_pic: (custRow && custRow.profile_pic) || ""
@@ -914,59 +828,55 @@ app.get("/api/mod/chat", requireModAuth, async (req, res) => {
 
 app.post("/api/mod/send", requireModAuth, async (req, res) => {
   try {
-    const { page_id, sender_id, text, imageBase64, moderator } = req.body;
-    if (!page_id || !sender_id || !moderator || (!text && !imageBase64)) {
+    const { page_id, sender_id, text, imageBase64, imagesBase64, moderator } = req.body;
+    const imgList = Array.isArray(imagesBase64) && imagesBase64.length > 0
+      ? imagesBase64
+      : (imageBase64 ? [imageBase64] : []);
+
+    if (!page_id || !sender_id || !moderator || (!text && imgList.length === 0)) {
       return res.status(400).json({ error: "মেসেজ অথবা ছবি দিন" });
     }
 
-    const now = Date.now();
-    const today = dhakaDate();
-    let savedImageUrl = null;
-    const mid = `mod_${now}_${crypto.randomBytes(3).toString("hex")}`;
+    const baseNow = Date.now();
+    const day = dhakaDate(baseNow);
+    const fbLabel = resolveFbProfileLabel(moderator, text) || moderator;
+    const firstCustomerOwner = ensureFirstCustomerOwner(page_id, sender_id, day, fbLabel, baseNow);
 
-    if (imageBase64) {
-      const match = imageBase64.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
+    const host = req.get("host");
+    const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
+    const savedUrls = [];
+
+    for (let i = 0; i < imgList.length; i++) {
+      const b64 = imgList[i];
+      const match = String(b64).match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
       if (!match) return res.status(400).json({ error: "Invalid image format" });
 
       const ext = match[1].split("/")[1].replace("jpeg", "jpg");
-      const filename = `img_${now}_${crypto.randomBytes(4).toString("hex")}.${ext}`;
+      const filename = `img_${baseNow}_${i}_${crypto.randomBytes(3).toString("hex")}.${ext}`;
       fs.writeFileSync(path.join(uploadDir, filename), Buffer.from(match[2], "base64"));
-
-      const host = req.get("host");
-      const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
-      savedImageUrl = `${protocol}://${host}/uploads/${filename}`;
+      savedUrls.push(`${protocol}://${host}/uploads/${filename}`);
     }
 
     const cleanText = (text || "").trim();
-    const isConfirm = cleanText.toLowerCase().includes("your order confirm") ? 1 : 0;
+    const isConfirm = isOrderConfirmText(cleanText) ? 1 : 0;
 
-    stmts.insertReply.run(
-      page_id,
-      sender_id,
-      mid,
-      cleanText || "[ছবি পাঠানো হয়েছে]",
-      savedImageUrl,
-      now,
-      moderator,
-      isConfirm
-    );
-    stmts.assignModerator.run(page_id, sender_id, today, moderator, now);
-    stmts.markReplied.run(page_id, sender_id, today);
-
-    if (savedImageUrl) {
+    for (let i = 0; i < savedUrls.length; i++) {
+      const t = baseNow + i;
+      const mid = `mod_${t}_${crypto.randomBytes(3).toString("hex")}`;
+      stmts.insertReply.run(page_id, sender_id, mid, "[ছবি পাঠানো হয়েছে]", savedUrls[i], t, fbLabel, 0);
       await sendFacebookPayload(page_id, {
         recipient: { id: sender_id },
         message: {
-          attachment: {
-            type: "image",
-            payload: { url: savedImageUrl, is_reusable: true }
-          }
+          attachment: { type: "image", payload: { url: savedUrls[i], is_reusable: true } }
         },
         messaging_type: "RESPONSE"
       });
     }
 
     if (cleanText) {
+      const tText = baseNow + savedUrls.length;
+      const midText = `mod_${tText}_${crypto.randomBytes(3).toString("hex")}`;
+      stmts.insertReply.run(page_id, sender_id, midText, cleanText, null, tText, fbLabel, isConfirm);
       await sendFacebookPayload(page_id, {
         recipient: { id: sender_id },
         message: { text: cleanText },
@@ -974,71 +884,34 @@ app.post("/api/mod/send", requireModAuth, async (req, res) => {
       });
     }
 
-    res.json({ success: true, message_id: mid, image_url: savedImageUrl });
+    stmts.markReplied.run(page_id, sender_id, day);
+    res.json({
+      success: true,
+      customer_owner: firstCustomerOwner,
+      sent_by_fb_profile: fbLabel,
+      sent_by_label: `Sent by ${fbLabel}`,
+      image_urls: savedUrls
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-/* ------------------------------------------------------------------ */
-/* Meta & TikTok Ads                                                   */
-/* ------------------------------------------------------------------ */
-function httpsGetJson(url) {
-  return new Promise((resolve) => {
-    const req = https.get(url, { timeout: 12000, agent: fbAgent }, (res) => {
-      let raw = "";
-      res.setEncoding("utf8");
-      res.on("data", (chunk) => { raw += chunk; });
-      res.on("end", () => {
-        try { resolve(JSON.parse(raw)); } catch (e) { resolve(null); }
-      });
-    });
-    req.on("timeout", () => req.destroy(new Error("timeout")));
-    req.on("error", () => resolve(null));
+function fetchAllInsights(url) {
+  return new Promise(async (resolve) => {
+    let rows = [];
+    let next = url;
+    let guard = 0;
+    while (next && guard < 20) {
+      const r = await httpsGetJson(next);
+      if (!r) return resolve({ rows, error: "Meta API-তে সংযোগ হয়নি" });
+      if (r.error) return resolve({ rows, error: r.error.message || "Meta API error" });
+      if (Array.isArray(r.data)) rows = rows.concat(r.data);
+      next = r.paging && r.paging.next ? r.paging.next : null;
+      guard += 1;
+    }
+    resolve({ rows, error: null });
   });
-}
-
-function tiktokGetJson(urlPath) {
-  return new Promise((resolve) => {
-    if (!TIKTOK_ACCESS_TOKEN) return resolve(null);
-    const options = {
-      hostname: "business-api.tiktok.com",
-      path: urlPath,
-      method: "GET",
-      timeout: 12000,
-      headers: {
-        "Access-Token": TIKTOK_ACCESS_TOKEN,
-        "Content-Type": "application/json"
-      }
-    };
-    const req = https.request(options, (res) => {
-      let raw = "";
-      res.setEncoding("utf8");
-      res.on("data", (chunk) => { raw += chunk; });
-      res.on("end", () => {
-        try { resolve(JSON.parse(raw)); } catch (e) { resolve(null); }
-      });
-    });
-    req.on("timeout", () => req.destroy(new Error("timeout")));
-    req.on("error", () => resolve(null));
-    req.end();
-  });
-}
-
-async function fetchAllInsights(url) {
-  let rows = [];
-  let next = url;
-  let guard = 0;
-
-  while (next && guard < 20) {
-    const r = await httpsGetJson(next);
-    if (!r) return { rows, error: "Meta API-তে সংযোগ হয়নি" };
-    if (r.error) return { rows, error: r.error.message || "Meta API error" };
-    if (Array.isArray(r.data)) rows = rows.concat(r.data);
-    next = r.paging && r.paging.next ? r.paging.next : null;
-    guard += 1;
-  }
-  return { rows, error: null };
 }
 
 async function fetchMetaAccountRow(acc, targetDate) {
@@ -1052,9 +925,7 @@ async function fetchMetaAccountRow(acc, targetDate) {
       access_token: META_ACCESS_TOKEN,
       fields: "spend_cap,amount_spent"
     });
-    const accInfo = await httpsGetJson(
-      `https://graph.facebook.com/${META_API_VERSION}/${cleanId}?${accParams.toString()}`
-    );
+    const accInfo = await httpsGetJson(`https://graph.facebook.com/${META_API_VERSION}/${cleanId}?${accParams.toString()}`);
     if (accInfo && !accInfo.error) {
       const capRaw = parseFloat(accInfo.spend_cap || 0);
       const spentRaw = parseFloat(accInfo.amount_spent || 0);
@@ -1080,109 +951,33 @@ async function fetchMetaAccountRow(acc, targetDate) {
     const { rows, error } = await fetchAllInsights(url);
     if (error && !accountError) accountError = error;
 
-    const statusMap = new Map();
-    try {
-      const campParams = new URLSearchParams({
-        access_token: META_ACCESS_TOKEN,
-        fields: "id,status",
-        limit: "500"
-      });
-      const campRes = await httpsGetJson(
-        `https://graph.facebook.com/${META_API_VERSION}/${cleanId}/campaigns?${campParams.toString()}`
-      );
-      if (campRes && Array.isArray(campRes.data)) {
-        campRes.data.forEach((c) => {
-          if (c && c.id) statusMap.set(String(c.id), String(c.status || "ACTIVE").toUpperCase());
-        });
-      }
-    } catch (e) {}
-
     let totalSpend = 0;
     let totalMessages = 0;
     let totalOrders = 0;
     let msgSpend = 0;
     let salesSpend = 0;
-    const campaignList = [];
 
     rows.forEach((camp) => {
       const campSpend = parseFloat(camp.spend || 0);
       totalSpend += campSpend;
-
       let campMsgs = 0;
       let campOrders = 0;
-
       if (camp.actions) {
-        const msgAction = camp.actions.find(
-          (a) => a.action_type === "onsite_conversion.messaging_conversation_started_7d"
-        );
+        const msgAction = camp.actions.find((a) => a.action_type === "onsite_conversion.messaging_conversation_started_7d");
         if (msgAction) campMsgs = parseInt(msgAction.value || 0, 10);
-
-        const orderAction = camp.actions.find(
-          (a) => a.action_type === "purchase" || a.action_type === "offsite_conversion.fb_pixel_purchase"
-        );
+        const orderAction = camp.actions.find((a) => a.action_type === "purchase" || a.action_type === "offsite_conversion.fb_pixel_purchase");
         if (orderAction) campOrders = parseInt(orderAction.value || 0, 10);
       }
-
       totalMessages += campMsgs;
       totalOrders += campOrders;
 
-      const obj = (camp.objective || "").toUpperCase();
-      const isMsgObj = obj.includes("MESSAGES") || obj.includes("ENGAGEMENT");
-      const isSalesObj = obj.includes("OUTCOME_SALES") || obj.includes("CONVERSIONS");
-
-      let cMsgSpend = 0;
-      let cSalesSpend = 0;
-
-      if (campMsgs > 0 && campOrders === 0) {
-        cMsgSpend = campSpend;
-      } else if (campOrders > 0 && campMsgs === 0) {
-        cSalesSpend = campSpend;
-      } else if (isMsgObj && !isSalesObj) {
-        cMsgSpend = campSpend;
-      } else if (isSalesObj && !isMsgObj) {
-        cSalesSpend = campSpend;
-      } else {
-        if (campMsgs > 0) cMsgSpend = campSpend / 2;
-        if (campOrders > 0) cSalesSpend = campSpend / 2;
+      if (campMsgs > 0 && campOrders === 0) msgSpend += campSpend;
+      else if (campOrders > 0 && campMsgs === 0) salesSpend += campSpend;
+      else {
+        if (campMsgs > 0) msgSpend += campSpend / 2;
+        if (campOrders > 0) salesSpend += campSpend / 2;
       }
-
-      msgSpend += cMsgSpend;
-      salesSpend += cSalesSpend;
-
-      const cCostPerMsg =
-        campMsgs > 0 && cMsgSpend > 0 ? ((cMsgSpend / campMsgs) * 100).toFixed(1) : "0.0";
-      const cCostPerOrder =
-        campOrders > 0 && cSalesSpend > 0 ? (cSalesSpend / campOrders).toFixed(2) : "0.00";
-
-      const campIdStr = String(camp.campaign_id || "");
-      campaignList.push({
-        id: campIdStr,
-        name: camp.campaign_name || "Unnamed Ad Campaign",
-        objective: camp.objective || "",
-        status: statusMap.get(campIdStr) || "ACTIVE",
-        spend: campSpend.toFixed(2),
-        messages: campMsgs,
-        msg_spend: cMsgSpend.toFixed(2),
-        cost_per_msg_cents: cCostPerMsg,
-        orders: campOrders,
-        sales_spend: cSalesSpend.toFixed(2),
-        cost_per_order_usd: cCostPerOrder
-      });
     });
-
-    campaignList.sort((a, b) => parseFloat(b.spend) - parseFloat(a.spend));
-
-    let costPerMsgCents = "0.0";
-    if (totalMessages > 0) {
-      const costSpend = msgSpend > 0 ? msgSpend : totalOrders === 0 ? totalSpend : 0;
-      if (costSpend > 0) costPerMsgCents = ((costSpend / totalMessages) * 100).toFixed(1);
-    }
-
-    let costPerOrderUsd = "0.00";
-    if (totalOrders > 0) {
-      const costSpend = salesSpend > 0 ? salesSpend : totalMessages === 0 ? totalSpend : 0;
-      if (costSpend > 0) costPerOrderUsd = (costSpend / totalOrders).toFixed(2);
-    }
 
     return {
       id: cleanId,
@@ -1194,11 +989,11 @@ async function fetchMetaAccountRow(acc, targetDate) {
       spend: totalSpend.toFixed(2),
       messages: totalMessages,
       msg_spend: msgSpend.toFixed(2),
-      cost_per_msg_cents: costPerMsgCents,
+      cost_per_msg_cents: totalMessages > 0 && msgSpend > 0 ? ((msgSpend / totalMessages) * 100).toFixed(1) : "0.0",
       orders: totalOrders,
       sales_spend: salesSpend.toFixed(2),
-      cost_per_order_usd: costPerOrderUsd,
-      campaigns: campaignList,
+      cost_per_order_usd: totalOrders > 0 && salesSpend > 0 ? (salesSpend / totalOrders).toFixed(2) : "0.00",
+      campaigns: [],
       error: accountError
     };
   } catch (err) {
@@ -1222,72 +1017,10 @@ async function fetchMetaAccountRow(acc, targetDate) {
   }
 }
 
-async function fetchTikTokAccountRow(acc, targetDate) {
-  const advId = String(acc.id).replace(/\s+/g, "");
-  let spend = 0;
-  let orders = 0;
-  let remainingUsd = null;
-  let errMsg = null;
-
-  if (TIKTOK_ACCESS_TOKEN) {
-    try {
-      const query = new URLSearchParams({
-        advertiser_id: advId,
-        report_type: "BASIC",
-        dimensions: JSON.stringify(["advertiser_id"]),
-        metrics: JSON.stringify(["spend", "conversion"]),
-        data_level: "AUCTION_ADVERTISER",
-        start_date: targetDate,
-        end_date: targetDate
-      }).toString();
-
-      const rep = await tiktokGetJson(`/open_api/${TIKTOK_API_VERSION}/report/integrated/get/?${query}`);
-      if (rep && rep.code === 0 && rep.data && Array.isArray(rep.data.list) && rep.data.list[0]) {
-        const m = rep.data.list[0].metrics || {};
-        spend = parseFloat(m.spend || 0);
-        orders = parseInt(m.conversion || 0, 10);
-      } else if (rep && rep.code !== 0 && rep.message) {
-        errMsg = rep.message;
-      }
-
-      const info = await tiktokGetJson(
-        `/open_api/${TIKTOK_API_VERSION}/advertiser/info/?advertiser_ids=${encodeURIComponent(JSON.stringify([advId]))}&fields=${encodeURIComponent(JSON.stringify(["balance"]))}`
-      );
-      if (info && info.code === 0 && info.data && info.data.list && info.data.list[advId]) {
-        const bal = parseFloat(info.data.list[advId].balance);
-        if (!Number.isNaN(bal)) remainingUsd = bal;
-      }
-    } catch (e) {
-      errMsg = e.message;
-    }
-  }
-
-  return {
-    id: advId,
-    name: acc.name,
-    brand: acc.brand,
-    platform: "tiktok",
-    status_note: acc.statusNote || "TikTok Ads",
-    remaining_usd: remainingUsd !== null ? remainingUsd.toFixed(2) : null,
-    spending_limit_usd: null,
-    spend: spend.toFixed(2),
-    messages: 0,
-    msg_spend: "0.00",
-    cost_per_msg_cents: "0.0",
-    orders: orders,
-    sales_spend: spend.toFixed(2),
-    cost_per_order_usd: orders > 0 && spend > 0 ? (spend / orders).toFixed(2) : "0.00",
-    campaigns: [],
-    error: errMsg
-  };
-}
-
 async function fetchAdsMetrics(targetDate, brand) {
   const accounts = AD_ACCOUNTS.filter((a) => brand === "all" || a.brand === brand);
-
   const results = await Promise.all(
     accounts.map((acc) => {
-      if (acc.platform === "tiktok") return fetchTikTokAccountRow(acc, targetDate);
       if (!META_ACCESS_TOKEN) {
         return Promise.resolve({
           id: acc.id,
@@ -1317,20 +1050,16 @@ async function fetchAdsMetrics(targetDate, brand) {
   const totalOrdersSum = results.reduce((acc, cur) => acc + cur.orders, 0);
   const totalMsgSpendSum = sum("msg_spend");
   const totalSalesSpendSum = sum("sales_spend");
-
   const hasAnyRemaining = results.some((r) => r.remaining_usd !== null && r.remaining_usd !== undefined);
   const totalRemainingSum = results.reduce(
     (acc, cur) => acc + (cur.remaining_usd !== null && cur.remaining_usd !== undefined ? parseFloat(cur.remaining_usd) : 0),
     0
   );
 
-  const metaResults = results.filter((r) => r.platform === "meta");
-
   return {
-    configured: Boolean(META_ACCESS_TOKEN || TIKTOK_ACCESS_TOKEN),
+    configured: Boolean(META_ACCESS_TOKEN),
     meta_configured: Boolean(META_ACCESS_TOKEN),
-    tiktok_configured: Boolean(TIKTOK_ACCESS_TOKEN),
-    has_error: metaResults.some((r) => r.error),
+    has_error: results.some((r) => r.error),
     accounts: results,
     summary: {
       total_spend: totalSpendSum.toFixed(2),
@@ -1338,12 +1067,10 @@ async function fetchAdsMetrics(targetDate, brand) {
       has_remaining: hasAnyRemaining,
       total_messages: totalMsgsSum,
       msg_spend: totalMsgSpendSum.toFixed(2),
-      avg_cost_per_msg_cents:
-        totalMsgsSum > 0 && totalMsgSpendSum > 0 ? ((totalMsgSpendSum / totalMsgsSum) * 100).toFixed(1) : "0.0",
+      avg_cost_per_msg_cents: totalMsgsSum > 0 && totalMsgSpendSum > 0 ? ((totalMsgSpendSum / totalMsgsSum) * 100).toFixed(1) : "0.0",
       total_orders: totalOrdersSum,
       sales_spend: totalSalesSpendSum.toFixed(2),
-      avg_cost_per_order_usd:
-        totalOrdersSum > 0 && totalSalesSpendSum > 0 ? (totalSalesSpendSum / totalOrdersSum).toFixed(2) : "0.00"
+      avg_cost_per_order_usd: totalOrdersSum > 0 && totalSalesSpendSum > 0 ? (totalSalesSpendSum / totalOrdersSum).toFixed(2) : "0.00"
     }
   };
 }
@@ -1353,70 +1080,11 @@ async function getAdsMetrics(date, brand) {
   const key = `${date}|${brand}`;
   const hit = adsCache.get(key);
   if (hit && Date.now() - hit.t < 60 * 1000) return hit.v;
-
   const v = await fetchAdsMetrics(date, brand);
   if (!v.has_error) adsCache.set(key, { t: Date.now(), v });
   if (adsCache.size > 100) adsCache.clear();
   return v;
 }
-
-function postMetaCampaignStatus(campaignId, status) {
-  return new Promise((resolve, reject) => {
-    if (!META_ACCESS_TOKEN) return reject(new Error("META_ACCESS_TOKEN সেট করা নেই"));
-    const body = new URLSearchParams({
-      status: status,
-      access_token: META_ACCESS_TOKEN
-    }).toString();
-
-    const options = {
-      hostname: "graph.facebook.com",
-      path: `/${META_API_VERSION}/${encodeURIComponent(campaignId)}`,
-      method: "POST",
-      agent: fbAgent,
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "Content-Length": Buffer.byteLength(body)
-      }
-    };
-
-    const req = https.request(options, (res) => {
-      let raw = "";
-      res.setEncoding("utf8");
-      res.on("data", (chunk) => { raw += chunk; });
-      res.on("end", () => {
-        try {
-          const parsed = JSON.parse(raw);
-          if (parsed.error) reject(new Error(parsed.error.message || "Meta API error"));
-          else resolve(parsed);
-        } catch (e) {
-          reject(e);
-        }
-      });
-    });
-
-    req.on("error", (err) => reject(err));
-    req.setTimeout(10000, () => req.destroy(new Error("Meta API timeout")));
-    req.write(body);
-    req.end();
-  });
-}
-
-app.post("/api/ads/toggle", requireAuth, async (req, res) => {
-  try {
-    const campaignId = String((req.body && req.body.campaign_id) || "").trim();
-    const targetStatus = String((req.body && req.body.status) || "").toUpperCase();
-
-    if (!campaignId || !["ACTIVE", "PAUSED"].includes(targetStatus)) {
-      return res.status(400).json({ error: "Invalid campaign_id or status (ACTIVE / PAUSED)" });
-    }
-
-    await postMetaCampaignStatus(campaignId, targetStatus);
-    adsCache.clear();
-    res.json({ ok: true, campaign_id: campaignId, status: targetStatus });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
 
 app.get("/api/daily-report", requireAuth, async (req, res) => {
   try {
@@ -1424,10 +1092,12 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
     const targetDate = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : dhakaDate();
     const scope = resolveScope(req.query.page_id || req.query.scope);
     const win = shiftWindow(targetDate, String(req.query.shift || "all"));
+    const nowMs = Date.now();
 
     const pc = pageClause(scope.ids);
     const pcM = pageClause(scope.ids, "m.page_id");
     const pcA = pageClause(scope.ids, "a.page_id");
+    const pcR = pageClause(scope.ids, "r.page_id");
 
     const CUST = "page_id || ':' || sender_id";
     const CUST_M = "m.page_id || ':' || m.sender_id";
@@ -1467,47 +1137,63 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       [targetDate, ...pc.params]
     );
 
-    const readNoReply = count(
+    const seenNoReply5Min = count(
       `SELECT COUNT(DISTINCT ${CUST_M}) AS count
        FROM messages m
-       WHERE m.status = 'read' AND ${DAY_M} = ?${pcM.sql}
+       WHERE m.status = 'read'
+         AND m.read_time IS NOT NULL
+         AND (? - m.read_time) >= ?
+         AND ${DAY_M} = ?${pcM.sql}
          AND NOT EXISTS (
            SELECT 1 FROM replies r
            WHERE r.sender_id = m.sender_id AND r.page_id = m.page_id
              AND ${DAY_R} = ?
          )`,
-      [targetDate, ...pcM.params, targetDate]
+      [nowMs, SEEN_NO_REPLY_MS, targetDate, ...pcM.params, targetDate]
     );
 
     const orderConfirms = count(
       `SELECT COUNT(DISTINCT ${CUST}) AS count FROM replies
-       WHERE is_order_confirm = 1 AND ${DAY} = ?${pc.sql}`,
+       WHERE (
+         is_order_confirm = 1
+         OR lower(reply_text) LIKE '%your order is confirm%'
+         OR lower(reply_text) LIKE '%conversation%'
+       ) AND ${DAY} = ?${pc.sql}`,
       [targetDate, ...pc.params]
     );
 
     const phoneCount = count(
       `SELECT COUNT(DISTINCT phone_number) AS count FROM messages
-       WHERE phone_number IS NOT NULL AND phone_number != '' AND ${DAY} = ?${pc.sql}`,
+       WHERE phone_number GLOB '01[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
+         AND ${DAY} = ?${pc.sql}`,
       [targetDate, ...pc.params]
     );
 
     const isShift = win.key !== "all";
-    const shiftSql = isShift ? " AND a.assigned_at >= ? AND a.assigned_at < ?" : "";
+    const shiftAssignSql = isShift ? " AND a.assigned_at >= ? AND a.assigned_at < ?" : "";
+    const shiftReplySql = isShift ? " AND r.reply_time >= ? AND r.reply_time < ?" : "";
     const shiftParams = isShift ? [win.startMs, win.endMs] : [];
 
-    const modRows = db
+    const custRows = db
       .prepare(
         `SELECT a.moderator AS name,
-                COUNT(DISTINCT a.page_id || ':' || a.sender_id) AS total_conversations,
-                COUNT(r.id) AS total_messages
+                COUNT(DISTINCT a.page_id || ':' || a.sender_id) AS total_customers
          FROM moderator_assignments a
-         LEFT JOIN replies r
-           ON r.page_id = a.page_id AND r.sender_id = a.sender_id
-          AND r.created_at >= ? AND r.created_at < ?
-         WHERE a.day = ?${shiftSql}${pcA.sql}
+         WHERE a.day = ?${shiftAssignSql}${pcA.sql}
          GROUP BY a.moderator`
       )
-      .all(win.start, win.end, targetDate, ...shiftParams, ...pcA.params);
+      .all(targetDate, ...shiftParams, ...pcA.params);
+
+    const msgRows = db
+      .prepare(
+        `SELECT r.moderator AS name,
+                COUNT(r.id) AS total_messages
+         FROM replies r
+         WHERE r.moderator IS NOT NULL AND r.moderator != ''
+           AND ${DAY_R} = ?${shiftReplySql}${pcR.sql}
+         GROUP BY r.moderator`
+      )
+      .all(targetDate, ...shiftParams, ...pcR.params);
 
     const phoneRows = db
       .prepare(
@@ -1516,52 +1202,48 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
          FROM messages m
          JOIN moderator_assignments a
            ON a.page_id = m.page_id AND a.sender_id = m.sender_id AND a.day = ?
-         WHERE m.phone_number IS NOT NULL AND m.phone_number != ''
-           AND ${DAY_M} = ?${shiftSql}${pcA.sql}
+         WHERE m.phone_number GLOB '01[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'
+           AND ${DAY_M} = ?${shiftAssignSql}${pcA.sql}
          GROUP BY a.moderator`
       )
       .all(targetDate, targetDate, ...shiftParams, ...pcA.params);
 
-    const phoneByMod = new Map(phoneRows.map((p) => [p.name, p.phones]));
-    const board = modRows.map((m) => ({
-      name: m.name,
-      total_conversations: m.total_conversations,
-      total_messages: m.total_messages
-    }));
-    board.sort(
-      (a, b) =>
-        b.total_conversations - a.total_conversations ||
-        b.total_messages - a.total_messages ||
-        (phoneByMod.get(b.name) || 0) - (phoneByMod.get(a.name) || 0) ||
-        (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
-    );
+    const custByName = new Map(custRows.map((c) => [c.name, c.total_customers]));
+    const msgByName = new Map(msgRows.map((m) => [m.name, m.total_messages]));
+    const phoneByName = new Map(phoneRows.map((p) => [p.name, p.phones]));
 
-    const moderatorStats = board.map((m) => ({
-      name: m.name,
-      total_conversations: m.total_conversations,
-      total_messages: m.total_messages,
-      phone_numbers: phoneByMod.get(m.name) || 0,
-      msgs_per_customer: m.total_conversations
-        ? Math.round((m.total_messages / m.total_conversations) * 10) / 10
-        : 0,
-      avg_minutes_per_message:
-        win.elapsed_minutes && m.total_messages
-          ? Math.round((win.elapsed_minutes / m.total_messages) * 10) / 10
-          : null
-    }));
+    const allNames = new Set([
+      ...custByName.keys(),
+      ...msgByName.keys(),
+      ...phoneByName.keys()
+    ]);
+
+    const moderatorStats = Array.from(allNames)
+      .map((name) => {
+        const custCount = custByName.get(name) || 0;
+        const msgCount = msgByName.get(name) || 0;
+        return {
+          name,
+          total_customers: custCount,
+          total_conversations: custCount,
+          total_messages: msgCount,
+          phone_numbers: phoneByName.get(name) || 0,
+          msgs_per_customer: custCount ? Math.round((msgCount / custCount) * 10) / 10 : 0,
+          avg_minutes_per_message:
+            win.elapsed_minutes && msgCount
+              ? Math.round((win.elapsed_minutes / msgCount) * 10) / 10
+              : null
+        };
+      })
+      .sort((a, b) => b.total_customers - a.total_customers || b.total_messages - a.total_messages);
 
     const adsData = await getAdsMetrics(targetDate, scope.key);
 
     res.json({
       date: targetDate,
-      generated_at: Date.now(),
+      generated_at: nowMs,
       scope: { key: scope.key, label: scope.label },
-      shift: {
-        key: win.key,
-        label: win.label,
-        minutes: win.minutes,
-        elapsed_minutes: win.elapsed_minutes
-      },
+      shift: { key: win.key, label: win.label, minutes: win.minutes, elapsed_minutes: win.elapsed_minutes },
       page_id: req.query.page_id || "all",
       page_name: scope.label,
       stats: {
@@ -1571,7 +1253,8 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
         new_customers: Math.max(0, totalReceived - returningCustomers),
         total_replied: totalReplied,
         unread_pending: unreadPending,
-        read_without_reply: readNoReply,
+        read_without_reply: seenNoReply5Min,
+        seen_no_reply_grace_minutes: 5,
         total_confirmed_orders: orderConfirms,
         total_phone_numbers: phoneCount
       },
