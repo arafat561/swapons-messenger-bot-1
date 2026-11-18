@@ -203,9 +203,12 @@ const MODERATORS = [
   }
 ];
 
+const KNOWN_MODERATOR_NAMES = new Set(MODERATORS.map((m) => m.name.toLowerCase()));
+
 function extractFbIdentifier(raw) {
   if (!raw) return null;
   const s = String(raw).trim();
+  if (s.length > 140 || /\s{3,}/.test(s)) return null;
 
   const idQuery = s.match(/[?&]id=(\d{5,})/i);
   if (idQuery) return idQuery[1];
@@ -218,7 +221,7 @@ function extractFbIdentifier(raw) {
     return userPath[1];
   }
 
-  const fbIdPrefix = s.match(/^(?:FB ID|FB Share):\s*(.+)$/i);
+  const fbIdPrefix = s.match(/^(?:FB ID|FB Share):\s*([A-Za-z0-9._-]+)$/i);
   if (fbIdPrefix) return fbIdPrefix[1].trim();
 
   return s;
@@ -241,6 +244,7 @@ for (const mod of MODERATORS) {
 function detectModeratorByFbLink(rawOrText) {
   if (!rawOrText) return null;
   const str = String(rawOrText).trim();
+  if (!str) return null;
   const lower = str.toLowerCase();
 
   if (FB_LINK_TO_MODERATOR.has(lower)) {
@@ -252,13 +256,15 @@ function detectModeratorByFbLink(rawOrText) {
     return FB_LINK_TO_MODERATOR.get(extracted.toLowerCase());
   }
 
-  for (const mod of MODERATORS) {
-    const linkId = extractFbIdentifier(mod.fb_link);
-    if (linkId && lower.includes(linkId.toLowerCase())) {
-      return mod.name;
-    }
-    if (mod.fb_link && lower.includes(mod.fb_link.toLowerCase())) {
-      return mod.name;
+  if (str.includes("facebook.com/")) {
+    for (const mod of MODERATORS) {
+      const linkId = extractFbIdentifier(mod.fb_link);
+      if (linkId && lower.includes(linkId.toLowerCase())) {
+        return mod.name;
+      }
+      if (mod.fb_link && lower.includes(mod.fb_link.toLowerCase())) {
+        return mod.name;
+      }
     }
   }
 
@@ -269,7 +275,12 @@ function normalizeModeratorName(rawMod) {
   if (!rawMod) return null;
   const trimmed = String(rawMod).trim();
   if (!trimmed) return null;
-  return detectModeratorByFbLink(trimmed) || trimmed;
+  const byLink = detectModeratorByFbLink(trimmed);
+  if (byLink) return byLink;
+  if (KNOWN_MODERATOR_NAMES.has(trimmed.toLowerCase())) {
+    return trimmed;
+  }
+  return null;
 }
 
 app.use(express.json({ limit: "15mb" }));
@@ -362,6 +373,18 @@ try { db.exec(`ALTER TABLE moderator_assignments ADD COLUMN bucket TEXT DEFAULT 
 try {
   db.prepare(`UPDATE customers SET ad_info = NULL WHERE ad_info LIKE '%39178562_1505197616293642%'`).run();
   db.prepare(`UPDATE messages SET ad_info = NULL WHERE ad_info LIKE '%39178562_1505197616293642%'`).run();
+  const nonModNames = [
+    "mony", "shuvro", "shihab", "Faria", "Sanjana", "ashraful",
+    "tania", "eram", "fahim", "jaber", "apon", "rifat",
+    "halim", "farjana", "apurbo", "ruman", "saidul"
+  ];
+  const placeholders = nonModNames.map(() => "?").join(",");
+  db.prepare(`DELETE FROM moderator_assignments WHERE lower(moderator) NOT IN (${placeholders})`).run(
+    ...nonModNames.map((n) => n.toLowerCase())
+  );
+  db.prepare(`UPDATE replies SET moderator = NULL WHERE moderator IS NOT NULL AND lower(moderator) NOT IN (${placeholders})`).run(
+    ...nonModNames.map((n) => n.toLowerCase())
+  );
 } catch (e) {}
 
 function isBlockedStickerUrl(url) {
@@ -716,7 +739,7 @@ async function resolveEchoModeratorByFbLink(pageId, customerId, event) {
   }
 
   const replyText = (event.message && event.message.text) || "";
-  return normalizeModeratorName(replyText);
+  return detectModeratorByFbLink(replyText);
 }
 
 async function handleMessagingEvent(pageId, event) {
@@ -1498,7 +1521,6 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
     const shiftReplySql = isShift ? " AND r.reply_time >= ? AND r.reply_time < ?" : "";
     const shiftParams = isShift ? [win.startMs, win.endMs] : [];
 
-    // 1. Customer count goes ONLY to the moderator who replied FIRST in that conversation
     const convRows = db
       .prepare(
         `SELECT a.moderator AS raw_mod,
@@ -1510,7 +1532,6 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       )
       .all(targetDate, ...shiftParams, ...pcA.params);
 
-    // 2. Every reply message goes to whichever moderator actually sent that message
     const replyRows = db
       .prepare(
         `SELECT r.moderator AS raw_mod,
@@ -1522,7 +1543,6 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       )
       .all(targetDate, ...shiftParams, ...pcR.params);
 
-    // 3. Phone number from that conversation goes to the first-replying moderator
     const phoneRows = db
       .prepare(
         `SELECT a.moderator AS raw_mod,
