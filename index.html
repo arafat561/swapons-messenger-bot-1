@@ -60,7 +60,7 @@
       color-scheme: light;
     }
 
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     [hidden] { display: none !important; }
     html { scroll-behavior: smooth; }
     body {
@@ -177,7 +177,7 @@
     .block-head span { color: var(--muted); font-size: .86rem; }
     .hint { color: var(--muted); font-size: .86rem; padding: 0 24px 14px; max-width: 90ch; }
     .scroll { overflow-x: auto; }
-    table { width: 100%; border-collapse: collapse; min-width: 820px; }
+    table { width: 100%; border-collapse: collapse; min-width: 880px; }
     th { text-align: left; font-weight: 600; font-size: .82rem; color: var(--faint); padding: 10px 16px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); background: var(--raised); white-space: nowrap; }
     th:first-child, td:first-child { padding-left: 24px; }
     td { padding: 14px 16px; border-bottom: 1px solid var(--line); vertical-align: middle; }
@@ -524,6 +524,7 @@
               <tr>
                 <th>Account</th>
                 <th>Total spend</th>
+                <th>Remaining $</th>
                 <th>Messages</th>
                 <th>Cost / message</th>
                 <th>Orders</th>
@@ -531,7 +532,7 @@
               </tr>
             </thead>
             <tbody id="adsTableBody">
-              <tr><td colspan="6" class="empty">Loading ad accounts…</td></tr>
+              <tr><td colspan="7" class="empty">Loading ad accounts…</td></tr>
             </tbody>
             <tfoot id="adsTableFoot"></tfoot>
           </table>
@@ -1002,7 +1003,7 @@
           '</div>';
 
         if (!camps.length) {
-          return '<div class="sub-drop-box">' + headerHtml + '<div class="empty" style="padding:18px">এই অ্যাড অ্যাকাউন্টে আজকের তারিখে কোনো অ্যাকটিভ অ্যাড/ক্যাম্পেইন পাওয়া যায়নি।</div></div>';
+          return '<div class="sub-drop-box">' + headerHtml + '<div class="empty" style="padding:18px">এই অ্যাড অ্যাকাউন্টে আজকের তারিখে কোনো অ্যাকটিভ অ্যাড/ক্যাম্পেইন পাওয়া যায়নি।</div></div>';
         }
 
         var rowsHtml = camps.map(function (c) {
@@ -1036,7 +1037,7 @@
         $("accountsMeta").textContent = scopeLabel + " · " + accounts.length + (accounts.length === 1 ? " account" : " accounts");
 
         if (!accounts.length) {
-          body.innerHTML = '<tr><td colspan="6" class="empty"><b>No ad data for this selection</b>Pick another date or channel.</td></tr>';
+          body.innerHTML = '<tr><td colspan="7" class="empty"><b>No ad data for this selection</b>Pick another date or channel.</td></tr>';
           foot.innerHTML = "";
           return;
         }
@@ -1052,11 +1053,21 @@
           var share = totalSpend > 0 ? Math.round(parseFloat(a.spend) / totalSpend * 100) : 0;
           var campCount = (a.campaigns && a.campaigns.length) || 0;
 
+          var remNum = a.has_spend_cap && a.remaining_usd !== null ? parseFloat(a.remaining_usd) : null;
+          var remHtml = remNum !== null
+            ? '<span class="pill ' + (remNum <= 10 ? 'sale' : 'msg') + ' num">' + money(remNum) + '</span>' +
+              '<div class="detail num">cap ' + money(a.spend_cap_usd) + '</div>'
+            : '<span class="detail">No cap</span>' +
+              (parseFloat(a.balance_due_usd || 0) > 0
+                ? '<div class="detail num">due ' + money(a.balance_due_usd) + '</div>'
+                : '');
+
           htmlParts.push(
             '<tr class="acc-row' + (isOpen ? ' expanded' : '') + '" data-acc-id="' + esc(a.id) + '" title="ক্লিক করে ভেতরের Ads দেখুন">' +
               '<td><div class="acc-name"><span class="chev">▸</span><span>' + esc(a.name) + '</span><span class="sub-drop-badge" style="padding:1px 7px;font-size:.72rem">' + campCount + ' ads</span></div><div class="acc-id">' + esc(a.id) + '</div>' +
                 (a.error ? '<span class="warn-flag">Could not load: ' + esc(a.error) + '</span>' : '') + '</td>' +
               '<td><div class="num strong">' + money(a.spend) + '</div><div class="share" title="' + share + '% of spend"><i style="width:' + share + '%"></i></div></td>' +
+              '<td>' + remHtml + '</td>' +
               '<td><div class="num strong c-msg">' + fmt(a.messages) + '</div><div class="detail num">spend ' + money(a.msg_spend) + '</div></td>' +
               '<td><span class="pill msg num">' + esc(a.cost_per_msg_cents) + '¢</span></td>' +
               '<td><div class="num strong c-sale">' + fmt(a.orders) + '</div><div class="detail num">spend ' + money(a.sales_spend) + '</div></td>' +
@@ -1066,16 +1077,19 @@
 
           if (isOpen) {
             htmlParts.push(
-              '<tr class="sub-drop-row"><td colspan="6">' + buildCampaignsSubHtml(a) + '</td></tr>'
+              '<tr class="sub-drop-row"><td colspan="7">' + buildCampaignsSubHtml(a) + '</td></tr>'
             );
           }
         });
 
         body.innerHTML = htmlParts.join("");
 
+        var footRem = sum.has_remaining_cap ? money(sum.total_remaining_usd) : "—";
+
         foot.innerHTML = '<tr>' +
           '<td>Total</td>' +
           '<td class="num">' + money(sum.total_spend) + '</td>' +
+          '<td class="num c-msg">' + footRem + '</td>' +
           '<td class="num c-msg">' + fmt(sum.total_messages) + '</td>' +
           '<td class="num">' + esc(sum.avg_cost_per_msg_cents || "0.0") + '¢</td>' +
           '<td class="num c-sale">' + fmt(sum.total_orders) + '</td>' +
@@ -1102,7 +1116,7 @@
             });
           }).then(function (r) {
             if (!r.ok) {
-              toast(r.data.error || "অ্যাড স্ট্যাটাস পরিবর্তন করা যায়নি");
+              toast(r.data.error || "অ্যাড স্ট্যাটাস পরিবর্তন করা যায়নি");
               toggleBtn.disabled = false;
               return;
             }
@@ -1112,11 +1126,11 @@
                 if (String(c.id) === String(campId)) c.status = nextStatus;
               });
               var dropBox = toggleBtn.closest(".sub-drop-row");
-              if (dropBox) dropBox.innerHTML = '<td colspan="6">' + buildCampaignsSubHtml(accObj) + '</td>';
+              if (dropBox) dropBox.innerHTML = '<td colspan="7">' + buildCampaignsSubHtml(accObj) + '</td>';
             }
-            toast(nextStatus === "PAUSED" ? "অ্যাডটি OFF (Paused) করা হয়েছে" : "অ্যাডটি ON (Active) করা হয়েছে");
+            toast(nextStatus === "PAUSED" ? "অ্যাডটি OFF (Paused) করা হয়েছে" : "অ্যাডটি ON (Active) করা হয়েছে");
           }).catch(function () {
-            toast("নেটওয়ার্ক সমস্যা: স্ট্যাটাস আপডেট হয়নি");
+            toast("নেটওয়ার্ক সমস্যা: স্ট্যাটাস আপডেট হয়নি");
             toggleBtn.disabled = false;
           });
           return;
@@ -1143,7 +1157,7 @@
         var accObj = state.accountsMap[rowAccId];
         var dropTr = document.createElement("tr");
         dropTr.className = "sub-drop-row";
-        dropTr.innerHTML = '<td colspan="6">' + buildCampaignsSubHtml(accObj || { name: rowAccId, campaigns: [] }) + '</td>';
+        dropTr.innerHTML = '<td colspan="7">' + buildCampaignsSubHtml(accObj || { name: rowAccId, campaigns: [] }) + '</td>';
         row.parentNode.insertBefore(dropTr, row.nextSibling);
       });
 
