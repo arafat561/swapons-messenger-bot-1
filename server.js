@@ -307,7 +307,7 @@ function normalizeModeratorName(rawMod) {
   return detectModeratorByFbLink(trimmed) || detectModeratorFromWelcomeText(trimmed) || trimmed;
 }
 
-app.use(express.json({ limit: "15mb" }));
+app.use(express.json({ limit: "25mb" }));
 
 const dbDir = process.env.DATA_DIR || (fs.existsSync("/data") ? "/data" : ".");
 const uploadDir = path.join(dbDir, "uploads");
@@ -496,6 +496,21 @@ function sendFacebookPayload(pageId, bodyObj) {
     req.setTimeout(8000, () => req.destroy(new Error("Meta API timeout")));
     req.write(payload);
     req.end();
+  });
+}
+
+function httpsGetJson(url) {
+  return new Promise((resolve) => {
+    const req = https.get(url, { timeout: 12000, agent: fbAgent }, (res) => {
+      let raw = "";
+      res.setEncoding("utf8");
+      res.on("data", (chunk) => { raw += chunk; });
+      res.on("end", () => {
+        try { resolve(JSON.parse(raw)); } catch (e) { resolve(null); }
+      });
+    });
+    req.on("timeout", () => req.destroy(new Error("timeout")));
+    req.on("error", () => resolve(null));
   });
 }
 
@@ -708,17 +723,24 @@ app.get("/webhook", (req, res) => {
 });
 
 function extractAdReferral(event) {
-  const ref = event.referral || (event.message && event.message.referral) || (event.postback && event.postback.referral);
+  const ref =
+    event.referral ||
+    (event.message && event.message.referral) ||
+    (event.postback && event.postback.referral) ||
+    (event.message && event.message.ad);
   if (!ref) return null;
   const ctx = ref.ads_context_data || {};
-  const adId = ref.ad_id || "";
-  const postUrl = ctx.post_url || (adId ? `https://www.facebook.com/ads/library/?id=${adId}` : "");
-  const photoUrl = ctx.photo_url || ctx.video_url || "";
+  const adId = ref.ad_id || ref.id || "";
+  const postUrl =
+    ctx.post_url ||
+    ref.ad_url ||
+    (adId ? `https://www.facebook.com/ads/library/?id=${adId}` : "");
+  const photoUrl = ctx.photo_url || ctx.video_url || ref.image_url || "";
   if (isBlockedStickerUrl(photoUrl) || isBlockedStickerUrl(postUrl)) return null;
 
   return JSON.stringify({
     ad_id: adId,
-    ad_title: ctx.ad_title || ref.ref || (adId ? `Facebook Ad #${adId}` : "Facebook Ad"),
+    ad_title: ctx.ad_title || ref.title || ref.ref || (adId ? `Facebook Ad #${adId}` : "Facebook Ad"),
     post_url: postUrl,
     photo_url: photoUrl
   });
@@ -727,11 +749,9 @@ function extractAdReferral(event) {
 async function resolveEchoModerator(pageId, customerId, event) {
   const replyText = String((event.message && event.message.text) || "").trim();
 
-  // 1. Welcome message name ("আমি <নাম>")
   const welcomeName = detectModeratorFromWelcomeText(replyText);
   if (welcomeName) return welcomeName;
 
-  // 2. Personal FB ID / FB Link / name from echo payload
   if (event.message && event.message.from && String(event.message.from.id) !== String(pageId)) {
     const fromIdMatch = detectModeratorByFbLink(event.message.from.id);
     if (fromIdMatch) return fromIdMatch;
@@ -744,7 +764,6 @@ async function resolveEchoModerator(pageId, customerId, event) {
   const token = getPageToken(pageId);
   const mid = event.message && event.message.mid;
 
-  // 3. Graph API /{mid}?fields=from
   if (token && mid) {
     try {
       const msgUrl = `https://graph.facebook.com/${META_API_VERSION}/${encodeURIComponent(mid)}?fields=from&access_token=${encodeURIComponent(token)}`;
@@ -760,7 +779,6 @@ async function resolveEchoModerator(pageId, customerId, event) {
     } catch (e) {}
   }
 
-  // 4. Graph API conversation messages for sender FB ID/link
   if (token && customerId) {
     try {
       const convUrl = `https://graph.facebook.com/${META_API_VERSION}/me/conversations?user_id=${encodeURIComponent(customerId)}&fields=messages.limit(6){id,message,from}&access_token=${encodeURIComponent(token)}`;
@@ -1155,21 +1173,6 @@ app.post("/api/mod/send", requireModAuth, async (req, res) => {
 /* ------------------------------------------------------------------ */
 /* Meta Ads                                                            */
 /* ------------------------------------------------------------------ */
-function httpsGetJson(url) {
-  return new Promise((resolve) => {
-    const req = https.get(url, { timeout: 12000, agent: fbAgent }, (res) => {
-      let raw = "";
-      res.setEncoding("utf8");
-      res.on("data", (chunk) => { raw += chunk; });
-      res.on("end", () => {
-        try { resolve(JSON.parse(raw)); } catch (e) { resolve(null); }
-      });
-    });
-    req.on("timeout", () => req.destroy(new Error("timeout")));
-    req.on("error", () => resolve(null));
-  });
-}
-
 async function fetchAllInsights(url) {
   let rows = [];
   let next = url;
