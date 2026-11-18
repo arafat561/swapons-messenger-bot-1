@@ -3,70 +3,54 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Boss Admin Panel — Moderator Performance & Saved Replies</title>
+  <title>Moderator Monitoring — Boss Panel</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     body { font-family: 'Hind Siliguri', sans-serif; background-color: #070b14; color: #f1f5f9; }
-    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 10px; }
   </style>
 </head>
 <body class="min-h-screen flex flex-col">
 
-  <!-- Admin Login Modal -->
-  <div id="adminLoginModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-lg p-4">
-    <div class="bg-slate-900 max-w-md w-full p-8 rounded-3xl border border-slate-800 shadow-2xl space-y-5">
-      <div class="text-center space-y-1">
-        <div class="text-4xl mb-2">👑</div>
-        <h2 class="text-2xl font-bold text-white">Boss Admin Panel</h2>
-        <p class="text-xs text-slate-400">সব মডারেটরের পারফরম্যান্স ও শেয়ারড Saved Replies দেখুন</p>
-      </div>
-      <form onsubmit="event.preventDefault(); adminLogin();" class="space-y-4">
-        <div>
-          <label class="block text-xs font-semibold text-slate-300 mb-1">Username</label>
-          <input type="text" id="adminUserInput" value="swapon" required class="w-full bg-slate-800 text-white text-sm px-4 py-3 rounded-xl border border-slate-700 outline-none focus:border-blue-500">
-        </div>
-        <div>
-          <label class="block text-xs font-semibold text-slate-300 mb-1">Password</label>
-          <input type="password" id="adminPassInput" required placeholder="••••••" class="w-full bg-slate-800 text-white text-sm px-4 py-3 rounded-xl border border-slate-700 outline-none focus:border-blue-500">
-        </div>
-        <div id="adminLoginErr" class="text-xs text-rose-400 text-center hidden">ভুল ইউজারনেম বা পাসওয়ার্ড!</div>
-        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 rounded-xl transition cursor-pointer">
-          প্যানেলে প্রবেশ করুন
-        </button>
-      </form>
-    </div>
-  </div>
-
   <!-- Top Bar -->
   <header class="bg-slate-900 border-b border-slate-800 px-5 py-3 flex flex-wrap items-center justify-between gap-3">
-    <div class="flex items-center gap-3">
-      <span class="bg-amber-500/20 text-amber-300 border border-amber-500/30 px-3 py-1 rounded-full text-sm font-bold">👑 Boss Admin Panel</span>
-      <a href="/inbox" class="bg-slate-800 hover:bg-slate-700 text-sky-300 text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-700">💬 Moderator Inbox</a>
+    <div class="flex flex-wrap items-center gap-3">
+      <span class="bg-amber-500/20 text-amber-300 border border-amber-500/30 px-3 py-1 rounded-full text-sm font-bold">
+        👑 Moderator Monitoring
+      </span>
+      <a href="/" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-700 transition">
+        ← Main Dashboard
+      </a>
+      <a href="/inbox" class="bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/40 text-xs font-semibold px-3 py-1.5 rounded-lg transition">
+        💬 Moderator Inbox
+      </a>
+      <span id="liveStatusLabel" class="text-[11px] text-emerald-400">● Live Monitoring</span>
     </div>
 
     <div class="flex flex-wrap items-center gap-2">
-      <input type="date" id="reportDateInput" onchange="loadBossReport()" class="bg-slate-800 text-white text-xs px-3 py-2 rounded-lg border border-slate-700">
-      <select id="reportPageFilter" onchange="loadBossReport()" class="bg-slate-800 text-white text-xs font-semibold px-3 py-2 rounded-lg border border-slate-700">
+      <input type="date" id="reportDateInput" onchange="loadMonitoring()" class="bg-slate-800 text-white text-xs px-3 py-2 rounded-lg border border-slate-700 outline-none focus:border-blue-500">
+      <select id="reportPageFilter" onchange="loadMonitoring()" class="bg-slate-800 text-white text-xs font-semibold px-3 py-2 rounded-lg border border-slate-700 outline-none focus:border-blue-500 cursor-pointer">
         <option value="all">🌐 All Pages</option>
         <option value="swapons">🔵 Swapons World</option>
         <option value="stone">🟣 Stone Rose BD</option>
       </select>
-      <select id="reportShiftFilter" onchange="loadBossReport()" class="bg-slate-800 text-white text-xs font-semibold px-3 py-2 rounded-lg border border-slate-700">
+      <select id="reportShiftFilter" onchange="loadMonitoring()" class="bg-slate-800 text-white text-xs font-semibold px-3 py-2 rounded-lg border border-slate-700 outline-none focus:border-blue-500 cursor-pointer">
         <option value="all">Full day</option>
         <option value="morning">Morning (9am–5pm)</option>
         <option value="evening">Evening (5:15pm–12am)</option>
       </select>
-      <button onclick="loadBossReport()" class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-3.5 py-2 rounded-lg cursor-pointer">রিফ্রেশ</button>
-      <button onclick="adminLogout()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs px-3 py-2 rounded-lg cursor-pointer">লগআউট</button>
+      <button onclick="loadMonitoring()" class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-3.5 py-2 rounded-lg transition cursor-pointer">
+        রিফ্রেশ
+      </button>
     </div>
   </header>
 
   <main class="flex-1 p-5 max-w-7xl w-full mx-auto space-y-6">
 
-    <!-- Summary Cards -->
-    <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+    <!-- Moderator Monitoring Summary Cards -->
+    <section class="grid grid-cols-2 md:grid-cols-5 gap-3">
       <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4">
         <div class="text-xs text-slate-400">Total Customers</div>
         <div id="sumCustomers" class="text-2xl font-bold text-white mt-1">0</div>
@@ -76,76 +60,54 @@
         <div id="sumModSms" class="text-2xl font-bold text-emerald-400 mt-1">0</div>
       </div>
       <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4">
-        <div class="text-xs text-slate-400">Avg SMS / Customer</div>
+        <div class="text-xs text-slate-400">Average (SMS / Cust)</div>
         <div id="sumAvgSms" class="text-2xl font-bold text-sky-400 mt-1">0</div>
       </div>
       <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4">
-        <div class="text-xs text-slate-400">Confirmed Orders</div>
+        <div class="text-xs text-slate-400">Order Confirms</div>
         <div id="sumConfirmed" class="text-2xl font-bold text-purple-400 mt-1">0</div>
       </div>
       <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4">
         <div class="text-xs text-slate-400">Phone Numbers</div>
         <div id="sumPhones" class="text-2xl font-bold text-amber-400 mt-1">0</div>
       </div>
-    </div>
+    </section>
 
-    <!-- Moderator Performance Table -->
+    <!-- All Moderators Monitoring Table -->
     <section class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
-      <div class="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
+      <div class="px-5 py-4 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h3 class="text-base font-bold text-white">📊 All Moderators Performance</h3>
-          <p class="text-xs text-slate-400">প্রতিটি মডারেটরের Total SMS, Average, Confirm, Customers এবং Phones</p>
+          <h2 class="text-base font-bold text-white">📊 All Moderators Monitoring</h2>
+          <p class="text-xs text-slate-400">প্রতিটি মডারেটরের Customers, Total SMS, Average, Confirm, Phones এবং গতি</p>
         </div>
+        <span id="lastUpdatedBadge" class="text-xs text-slate-400"></span>
       </div>
+
       <div class="overflow-x-auto">
-        <table class="w-full text-left text-sm">
+        <table class="w-full text-left text-xs sm:text-sm">
           <thead class="bg-slate-950/70 text-slate-400 text-xs border-b border-slate-800">
             <tr>
               <th class="py-3 px-4">#</th>
               <th class="py-3 px-4">Moderator</th>
+              <th class="py-3 px-4 w-44">Workload</th>
               <th class="py-3 px-4">Customers</th>
               <th class="py-3 px-4">Total SMS</th>
-              <th class="py-3 px-4">Average (SMS/Cust)</th>
+              <th class="py-3 px-4">Average</th>
               <th class="py-3 px-4">Confirm</th>
               <th class="py-3 px-4">Phones</th>
               <th class="py-3 px-4">Min / SMS</th>
             </tr>
           </thead>
           <tbody id="modPerfBody" class="divide-y divide-slate-800/70">
-            <tr><td colspan="8" class="py-6 text-center text-xs text-slate-500">লোড হচ্ছে...</td></tr>
+            <tr><td colspan="9" class="py-6 text-center text-xs text-slate-500">মনিটরিং ডাটা লোড হচ্ছে...</td></tr>
           </tbody>
         </table>
       </div>
     </section>
 
-    <!-- Shared Saved Replies + Meta Sync Panel -->
-    <section class="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
-      <div class="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h3 class="text-base font-bold text-white">💾 Shared Saved Replies (Meta Sync + Auto Save)</h3>
-          <p class="text-xs text-slate-400">এখানে সেভ করলে বা Meta থেকে সিংক করলে সব মডারেটর একসাথে ব্যবহার করতে পারবেন</p>
-        </div>
-        <div class="flex items-center gap-2">
-          <button onclick="syncMetaReplies()" id="bossSyncMetaBtn" class="bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold px-3.5 py-2 rounded-lg cursor-pointer">🔄 Meta থেকে Sync করুন</button>
-        </div>
-      </div>
-
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-2.5 bg-slate-950/60 p-3 rounded-xl border border-slate-800">
-        <input type="text" id="bossSrTitle" oninput="bossAutoSaveReply()" placeholder="Title (যেমন: price, number)..." class="bg-slate-900 text-white text-xs font-bold px-3 py-2 rounded-lg border border-slate-700 outline-none focus:border-blue-500">
-        <input type="text" id="bossSrText" oninput="bossAutoSaveReply()" placeholder="রিপ্লাই টেক্সট লিখুন (টাইপ করলেই Auto Save হবে)..." class="md:col-span-2 bg-slate-900 text-white text-xs px-3 py-2 rounded-lg border border-slate-700 outline-none focus:border-blue-500">
-      </div>
-      <div id="bossSrStatus" class="text-[11px] text-emerald-400">🌐 Shared Auto Save সক্রিয়</div>
-
-      <div id="bossSavedRepliesList" class="grid grid-cols-1 md:grid-cols-2 gap-2.5"></div>
-    </section>
-
   </main>
 
   <script>
-    let authToken = sessionStorage.getItem("boss_token") || "";
-    let currentBossSrId = null;
-    let bossSrTimer = null;
-
     function todayDhaka() {
       const now = new Date(Date.now() + 6 * 3600 * 1000);
       return now.toISOString().slice(0, 10);
@@ -157,52 +119,12 @@
       return String(s || "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
     }
 
-    async function adminLogin() {
-      const username = document.getElementById("adminUserInput").value.trim();
-      const password = document.getElementById("adminPassInput").value;
-      const res = await fetch("/api/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password })
-      });
-      if (!res.ok) {
-        document.getElementById("adminLoginErr").classList.remove("hidden");
-        return;
-      }
-      const data = await res.json();
-      authToken = data.token;
-      sessionStorage.setItem("boss_token", authToken);
-      document.getElementById("adminLoginModal").classList.add("hidden");
-      loadBossReport();
-      loadBossSavedReplies();
-    }
-
-    function adminLogout() {
-      sessionStorage.removeItem("boss_token");
-      location.reload();
-    }
-
-    async function loadBossReport() {
-      if (!authToken) return;
-      const date = document.getElementById("reportDateInput").value || todayDhaka();
-      const page = document.getElementById("reportPageFilter").value;
-      const shift = document.getElementById("reportShiftFilter").value;
-
-      const res = await fetch(`/api/daily-report?date=${encodeURIComponent(date)}&page_id=${encodeURIComponent(page)}&shift=${encodeURIComponent(shift)}`, {
-        headers: { Authorization: `Bearer ${authToken}` }
-      });
-      if (res.status === 401) {
-        sessionStorage.removeItem("boss_token");
-        document.getElementById("adminLoginModal").classList.remove("hidden");
-        return;
-      }
-      const data = await res.json();
-      const mods = data.moderators || [];
-
-      const totalCust = mods.reduce((a, b) => a + (b.total_conversations || 0), 0);
-      const totalSms = mods.reduce((a, b) => a + (b.total_messages || 0), 0);
-      const totalConf = mods.reduce((a, b) => a + (b.confirmed_orders || 0), 0);
-      const totalPh = mods.reduce((a, b) => a + (b.phone_numbers || 0), 0);
+    function renderModeratorRows(mods) {
+      const list = Array.isArray(mods) ? mods : [];
+      const totalCust = list.reduce((a, b) => a + (b.total_conversations || 0), 0);
+      const totalSms = list.reduce((a, b) => a + (b.total_messages || 0), 0);
+      const totalConf = list.reduce((a, b) => a + (b.confirmed_orders || 0), 0);
+      const totalPh = list.reduce((a, b) => a + (b.phone_numbers || 0), 0);
       const avgSms = totalCust ? (Math.round((totalSms / totalCust) * 10) / 10) : 0;
 
       document.getElementById("sumCustomers").innerText = totalCust;
@@ -212,100 +134,75 @@
       document.getElementById("sumPhones").innerText = totalPh;
 
       const tbody = document.getElementById("modPerfBody");
-      if (!mods.length) {
-        tbody.innerHTML = `<tr><td colspan="8" class="py-6 text-center text-xs text-slate-500">এই তারিখে কোনো মডারেটর ডাটা নেই</td></tr>`;
+      if (!list.length) {
+        tbody.innerHTML = `<tr><td colspan="9" class="py-6 text-center text-xs text-slate-500">এই তারিখে কোনো মডারেটর ডাটা নেই</td></tr>`;
         return;
       }
 
-      tbody.innerHTML = mods.map((m, idx) => `
-        <tr class="hover:bg-slate-800/40">
-          <td class="py-3 px-4 text-slate-400">${idx + 1}</td>
-          <td class="py-3 px-4 font-bold text-white">${esc(m.name)}</td>
-          <td class="py-3 px-4 font-semibold text-slate-200">${m.total_conversations || 0}</td>
-          <td class="py-3 px-4 font-bold text-emerald-400">${m.total_messages || 0}</td>
-          <td class="py-3 px-4 font-semibold text-sky-400">${m.msgs_per_customer ?? 0}</td>
-          <td class="py-3 px-4 font-bold text-purple-400">${m.confirmed_orders || 0}</td>
-          <td class="py-3 px-4 font-semibold text-amber-400">${m.phone_numbers || 0}</td>
-          <td class="py-3 px-4 text-slate-300">${m.avg_minutes_per_message ?? "-"}</td>
-        </tr>
-      `).join("");
+      const maxSms = Math.max(1, ...list.map(m => m.total_messages || 0));
+      tbody.innerHTML = list.map((m, idx) => {
+        const sms = m.total_messages || 0;
+        const pct = Math.min(100, Math.round((sms / maxSms) * 100));
+        return `
+          <tr class="hover:bg-slate-800/40">
+            <td class="py-3 px-4 text-slate-400">${idx + 1}</td>
+            <td class="py-3 px-4 font-bold text-white">${esc(m.name)}</td>
+            <td class="py-3 px-4">
+              <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                <div class="h-full bg-emerald-400 rounded-full" style="width:${pct}%"></div>
+              </div>
+            </td>
+            <td class="py-3 px-4 font-bold text-slate-200">${m.total_conversations || 0}</td>
+            <td class="py-3 px-4 font-bold text-emerald-400">${sms}</td>
+            <td class="py-3 px-4 font-semibold text-sky-400">${m.msgs_per_customer ?? 0}</td>
+            <td class="py-3 px-4 font-bold text-purple-400">${m.confirmed_orders || 0}</td>
+            <td class="py-3 px-4 font-semibold text-amber-400">${m.phone_numbers || 0}</td>
+            <td class="py-3 px-4 text-slate-300">${m.avg_minutes_per_message ?? "-"}</td>
+          </tr>
+        `;
+      }).join("");
     }
 
-    async function loadBossSavedReplies() {
-      if (!authToken) return;
-      const res = await fetch("/api/saved-replies", {
-        headers: { Authorization: `Bearer ${authToken}` }
-      });
-      if (!res.ok) return;
-      const data = await res.json();
-      const box = document.getElementById("bossSavedRepliesList");
-      const list = data.replies || [];
-      box.innerHTML = list.map(item => `
-        <div class="bg-slate-800/80 border border-slate-700/80 rounded-xl p-3 flex items-start justify-between gap-2">
-          <div class="min-w-0">
-            <div class="text-xs font-bold text-white">${esc(item.title)} <span class="text-[10px] text-slate-400 font-normal">[${esc(item.source || "shared")}]</span></div>
-            <div class="text-xs text-slate-300 whitespace-pre-line break-words mt-0.5">${esc(item.text)}</div>
-          </div>
-          <button onclick="deleteBossSr('${item.id}')" class="text-xs text-slate-400 hover:text-rose-400 cursor-pointer shrink-0">🗑️</button>
-        </div>
-      `).join("");
-    }
+    async function loadMonitoring() {
+      const date = document.getElementById("reportDateInput").value || todayDhaka();
+      const page = document.getElementById("reportPageFilter").value;
+      const shift = document.getElementById("reportShiftFilter").value;
+      const token = sessionStorage.getItem("dash_token") || sessionStorage.getItem("boss_token") || "";
 
-    function bossAutoSaveReply() {
-      const title = document.getElementById("bossSrTitle").value.trim();
-      const text = document.getElementById("bossSrText").value.trim();
-      if (!title && !text) return;
-      if (!currentBossSrId) currentBossSrId = "sr_boss_" + Date.now();
-
-      clearTimeout(bossSrTimer);
-      bossSrTimer = setTimeout(async () => {
-        const res = await fetch("/api/saved-replies", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
-          body: JSON.stringify({
-            id: currentBossSrId,
-            title: title || "quick",
-            text,
-            created_by: "boss"
-          })
-        });
-        if (res.ok) {
-          document.getElementById("bossSrStatus").innerText = "💾 Auto Saved — সব মডারেটর এখন এটি দেখতে পাবেন";
-          loadBossSavedReplies();
-        }
-      }, 250);
-    }
-
-    async function deleteBossSr(id) {
-      await fetch(`/api/saved-replies/${encodeURIComponent(id)}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${authToken}` }
-      });
-      loadBossSavedReplies();
-    }
-
-    async function syncMetaReplies() {
-      const btn = document.getElementById("bossSyncMetaBtn");
-      btn.innerText = "⏳ Syncing...";
       try {
-        const res = await fetch("/api/saved-replies/sync-meta", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` }
-        });
-        const data = await res.json();
-        document.getElementById("bossSrStatus").innerText =
-          data.imported ? `✓ Meta থেকে ${data.imported}টি Saved Reply সিংক হয়েছে` : "✓ Meta Saved Replies চেক সম্পন্ন হয়েছে";
-        loadBossSavedReplies();
-      } finally {
-        btn.innerText = "🔄 Meta থেকে Sync করুন";
-      }
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        const res = await fetch(`/api/daily-report?date=${encodeURIComponent(date)}&page_id=${encodeURIComponent(page)}&shift=${encodeURIComponent(shift)}`, { headers });
+
+        if (res.ok) {
+          const data = await res.json();
+          renderModeratorRows(data.moderators || []);
+          document.getElementById("lastUpdatedBadge").innerText = `Updated: ${new Date().toLocaleTimeString()}`;
+          return;
+        }
+      } catch (e) {}
+
+      // Fallback: show registered moderators if report endpoint requires separate auth
+      try {
+        const modRes = await fetch("/api/mod/list");
+        if (modRes.ok) {
+          const modData = await modRes.json();
+          const fallbackMods = (modData.moderators || []).map(name => ({
+            name,
+            total_conversations: 0,
+            total_messages: 0,
+            msgs_per_customer: 0,
+            confirmed_orders: 0,
+            phone_numbers: 0,
+            avg_minutes_per_message: "-"
+          }));
+          renderModeratorRows(fallbackMods);
+          document.getElementById("lastUpdatedBadge").innerText = "Moderator list loaded";
+        }
+      } catch (e) {}
     }
 
-    if (authToken) {
-      document.getElementById("adminLoginModal").classList.add("hidden");
-      loadBossReport();
-      loadBossSavedReplies();
-    }
+    loadMonitoring();
+    setInterval(loadMonitoring, 15000);
   </script>
 </body>
 </html>
