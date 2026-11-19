@@ -1,7 +1,9 @@
 "use strict";
 
 const express = require("express");
-const Database = require("better-sqlite3");
+const { createClient } = require("@supabase/supabase-js");
+const multer = require("multer");
+const FormData = require("form-data");
 const fs = require("fs");
 const path = require("path");
 const https = require("https");
@@ -18,6 +20,23 @@ const MOD_PASS = process.env.MOD_PASS || "mod123";
 const META_ACCESS_TOKEN = process.env.META_ACCESS_TOKEN || "";
 const META_API_VERSION = process.env.META_API_VERSION || "v25.0";
 
+const SUPABASE_URL = process.env.SUPABASE_URL || "";
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+
+if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+  console.warn("Warning: SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing.");
+}
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  auth: { persistSession: false, autoRefreshToken: false }
+});
+
+// ছবি ডিস্কে না জমিয়ে সরাসরি RAM-এ রাখার জন্য memoryStorage
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 } // সর্বোচ্চ 10MB
+});
+
 const SESSION_MINUTES = Number(process.env.SESSION_MINUTES || 0);
 const SESSION_MS = SESSION_MINUTES > 0 ? SESSION_MINUTES * 60 * 1000 : 0;
 
@@ -28,7 +47,7 @@ const PAGE_TOKENS = {
 };
 
 function getPageToken(pageId) {
-  return PAGE_TOKENS[pageId] || "";
+  return PAGE_TOKENS[String(pageId)] || "";
 }
 
 const PAGE_NAMES = {
@@ -40,15 +59,23 @@ const PAGE_NAMES = {
 const DHAKA_OFFSET_MS = 6 * 60 * 60 * 1000;
 
 function dhakaDate(ts) {
-  const t = typeof ts === "number" ? ts : Date.now();
+  const t = typeof ts === "number" && !Number.isNaN(ts) ? ts : Date.now();
   return new Date(t + DHAKA_OFFSET_MS).toISOString().slice(0, 10);
 }
 
-const DAY = "date(created_at, '+6 hours')";
-const DAY_M = "date(m.created_at, '+6 hours')";
-const DAY_R_CREATED = "date(r.created_at, '+6 hours')";
-const DAY_R_TIME = "date((r.reply_time / 1000), 'unixepoch', '+6 hours')";
-const DAY_R = `CASE WHEN r.reply_time IS NOT NULL AND r.reply_time > 0 THEN ${DAY_R_TIME} ELSE ${DAY_R_CREATED} END`;
+function dhakaDayFromIso(isoOrDate) {
+  if (!isoOrDate) return dhakaDate(Date.now());
+  const ms = typeof isoOrDate === "number" ? isoOrDate : Date.parse(String(isoOrDate));
+  if (Number.isNaN(ms)) return dhakaDate(Date.now());
+  return dhakaDate(ms);
+}
+
+function replyDay(r) {
+  if (r && r.reply_time !== null && r.reply_time !== undefined && Number(r.reply_time) > 0) {
+    return dhakaDate(Number(r.reply_time));
+  }
+  return dhakaDayFromIso(r && r.created_at);
+}
 
 const BUCKETS = ["pending", "average", "good", "poor", "msgsent", "number"];
 
@@ -111,10 +138,9 @@ function resolveScope(raw) {
   return { key, label: PAGE_GROUPS[key].label, ids: PAGE_GROUPS[key].ids };
 }
 
-function pageClause(ids, col) {
-  const column = col || "page_id";
-  if (!ids.length) return { sql: "", params: [] };
-  return { sql: ` AND ${column} IN (${ids.map(() => "?").join(",")})`, params: ids };
+function matchesScope(pageId, ids) {
+  if (!ids || !ids.length) return true;
+  return ids.includes(String(pageId));
 }
 
 const MODERATORS = [
@@ -146,7 +172,6 @@ function extractFbIdentifier(raw) {
   const idQuery = s.match(/[?&]id=(\d{5,})/i);
   if (idQuery) return idQuery[1];
 
-  // share/XXXX  অথবা  share/r/XXXX  (reel/post share link)
   const sharePath = s.match(/facebook\.com\/share\/(?:[a-z]\/)?([A-Za-z0-9_-]+)/i);
   if (sharePath) return sharePath[1];
 
@@ -210,7 +235,6 @@ function escapeRegex(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-// "আমি mony" / "ami mony" / "I am mony" — welcome message থেকে moderator চেনা
 const MODERATOR_WELCOME_RULES = MODERATORS.map((m) => {
   const names = [m.name, ...(m.aliases || [])].filter((t) => t && !/^\d+$/.test(String(t).trim()));
   const alt = names
@@ -244,158 +268,80 @@ function normalizeModeratorName(rawMod) {
 
 app.use(express.json({ limit: "25mb" }));
 
-const dbDir = process.env.DATA_DIR || (fs.existsSync("/data") ? "/data" : ".");
-const uploadDir = path.join(dbDir, "uploads");
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
+// পুরনো লোকাল uploads ফোল্ডার থাকলে শুধু static হিসেবে রাখা (নতুন কিছু লেখা হবে না)
+const legacyUploadDir = path.join(__dirname, "uploads");
+if (fs.existsSync(legacyUploadDir)) {
+  app.use("/uploads", express.static(legacyUploadDir));
 }
-app.use("/uploads", express.static(uploadDir));
 
-const dbPath = path.join(dbDir, "messenger.db");
-const db = new Database(dbPath);
-db.pragma("journal_mode = WAL");
-
-db.exec(`
-  CREATE TABLE IF NOT EXISTS messages (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    page_id TEXT NOT NULL,
-    sender_id TEXT NOT NULL,
-    message_id TEXT UNIQUE,
-    message_text TEXT,
-    image_url TEXT,
-    ad_info TEXT,
-    message_time INTEGER,
-    phone_number TEXT,
-    status TEXT DEFAULT 'unread',
-    read_time INTEGER,
-    assigned_moderator TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-
-  CREATE TABLE IF NOT EXISTS replies (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    page_id TEXT NOT NULL,
-    sender_id TEXT NOT NULL,
-    message_id TEXT,
-    reply_text TEXT,
-    image_url TEXT,
-    reply_time INTEGER,
-    moderator TEXT,
-    is_order_confirm INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-
-  CREATE TABLE IF NOT EXISTS moderator_assignments (
-    page_id TEXT NOT NULL,
-    sender_id TEXT NOT NULL,
-    day TEXT NOT NULL,
-    moderator TEXT NOT NULL,
-    assigned_at INTEGER,
-    bucket TEXT DEFAULT 'pending',
-    PRIMARY KEY (page_id, sender_id, day)
-  );
-
-  CREATE TABLE IF NOT EXISTS customers (
-    page_id TEXT NOT NULL,
-    sender_id TEXT NOT NULL,
-    name TEXT,
-    profile_pic TEXT,
-    ad_info TEXT,
-    PRIMARY KEY (page_id, sender_id)
-  );
-
-  CREATE TABLE IF NOT EXISTS sessions (
-    token_hash TEXT PRIMARY KEY,
-    created_at INTEGER NOT NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS saved_replies (
-    id TEXT PRIMARY KEY,
-    title TEXT NOT NULL,
-    reply_text TEXT NOT NULL,
-    source TEXT DEFAULT 'local',
-    created_by TEXT,
-    updated_at INTEGER NOT NULL,
-    page_group TEXT DEFAULT 'all'
-  );
-
-  CREATE TABLE IF NOT EXISTS mod_aliases (
-    alias TEXT PRIMARY KEY,
-    moderator TEXT NOT NULL
-  );
-
-  CREATE TABLE IF NOT EXISTS echo_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    page_id TEXT,
-    customer_id TEXT,
-    mid TEXT,
-    text TEXT,
-    from_id TEXT,
-    from_name TEXT,
-    app_id TEXT,
-    via TEXT,
-    moderator TEXT,
-    created_ms INTEGER
-  );
-
-  CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
-  CREATE INDEX IF NOT EXISTS idx_messages_status ON messages(status);
-  CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(page_id, sender_id);
-  CREATE INDEX IF NOT EXISTS idx_replies_sender ON replies(page_id, sender_id);
-  CREATE INDEX IF NOT EXISTS idx_replies_created_at ON replies(created_at);
-  CREATE INDEX IF NOT EXISTS idx_replies_time ON replies(reply_time);
-  CREATE INDEX IF NOT EXISTS idx_assign_day ON moderator_assignments(day);
-  CREATE INDEX IF NOT EXISTS idx_saved_replies_updated ON saved_replies(updated_at);
-  CREATE INDEX IF NOT EXISTS idx_echo_log_ms ON echo_log(created_ms);
-`);
-
-try { db.exec(`ALTER TABLE messages ADD COLUMN read_time INTEGER;`); } catch (e) {}
-try { db.exec(`ALTER TABLE messages ADD COLUMN phone_number TEXT;`); } catch (e) {}
-try { db.exec(`ALTER TABLE messages ADD COLUMN assigned_moderator TEXT;`); } catch (e) {}
-try { db.exec(`ALTER TABLE messages ADD COLUMN image_url TEXT;`); } catch (e) {}
-try { db.exec(`ALTER TABLE messages ADD COLUMN ad_info TEXT;`); } catch (e) {}
-try { db.exec(`ALTER TABLE replies ADD COLUMN moderator TEXT;`); } catch (e) {}
-try { db.exec(`ALTER TABLE replies ADD COLUMN is_order_confirm INTEGER DEFAULT 0;`); } catch (e) {}
-try { db.exec(`ALTER TABLE replies ADD COLUMN image_url TEXT;`); } catch (e) {}
-try { db.exec(`ALTER TABLE customers ADD COLUMN ad_info TEXT;`); } catch (e) {}
-try { db.exec(`ALTER TABLE customers ADD COLUMN profile_pic TEXT;`); } catch (e) {}
-try { db.exec(`ALTER TABLE moderator_assignments ADD COLUMN bucket TEXT DEFAULT 'pending';`); } catch (e) {}
-try { db.exec(`ALTER TABLE saved_replies ADD COLUMN page_group TEXT DEFAULT 'all';`); } catch (e) {}
-try { db.exec(`UPDATE saved_replies SET page_group = 'all' WHERE page_group IS NULL OR page_group = '';`); } catch (e) {}
-
-// আগের ভুল "Customer Sent Product Photo" ad তথ্য মুছে ফেলা (কাস্টমারের পাঠানো ছবি ad ছিল না)
-try { db.exec(`UPDATE customers SET ad_info = NULL WHERE ad_info LIKE '%Customer Sent Product Photo%'`); } catch (e) {}
-
-// DB-তে সেভ করা extra moderator alias (Meta-র আসল ID ম্যাপ করার জন্য)
-function loadDbAliases() {
+/* ------------------------------------------------------------------ */
+/* Supabase Helper Tables                                             */
+/* ------------------------------------------------------------------ */
+async function loadDbAliases() {
   try {
-    for (const r of db.prepare(`SELECT alias, moderator FROM mod_aliases`).all()) {
-      registerAlias(r.alias, r.moderator);
+    const { data, error } = await supabase.from("mod_aliases").select("alias, moderator");
+    if (!error && Array.isArray(data)) {
+      for (const r of data) {
+        registerAlias(r.alias, r.moderator);
+      }
     }
   } catch (e) {}
 }
-loadDbAliases();
 
-// Customer chat read/unread track korar jonno
-db.exec(`
-  CREATE TABLE IF NOT EXISTS mod_reads (
-    page_id TEXT NOT NULL,
-    sender_id TEXT NOT NULL,
-    read_at INTEGER NOT NULL,
-    PRIMARY KEY (page_id, sender_id)
-  );
-`);
+async function seedDefaultSavedRepliesIfEmpty() {
+  try {
+    const { count, error } = await supabase
+      .from("saved_replies")
+      .select("id", { count: "exact", head: true });
+    if (!error && (count || 0) === 0) {
+      const nowSeed = Date.now();
+      await supabase.from("saved_replies").upsert([
+        {
+          id: "sr_default_1",
+          title: "number",
+          reply_text: "📞 বিস্তারিত জানতে অনুগ্রহ করে আপনার মোবাইল নাম্বারটি দিন। চ্যাটে অনেক সময় লাগতে পারে, তাই আমাদের প্রতিনিধি আপনাকে ফোন করে বিস্তারিত জানিয়ে দেবে। 😊",
+          source: "default",
+          created_by: "system",
+          updated_at: nowSeed - 4000,
+          page_group: "all"
+        },
+        {
+          id: "sr_default_2",
+          title: "kon",
+          reply_text: "স্যার, আপনি কি এমন কোনো প্রোডাক্ট খুঁজছিলেন? আপনার পছন্দের কালার বা ডিজাইনটি জানালে আমি বিস্তারিত জানাচ্ছি। 😊",
+          source: "default",
+          created_by: "system",
+          updated_at: nowSeed - 3000,
+          page_group: "all"
+        },
+        {
+          id: "sr_default_3",
+          title: "kon",
+          reply_text: "কোন সাইজ লাগবে জানাবেন স্যার / ম্যাম ?",
+          source: "default",
+          created_by: "system",
+          updated_at: nowSeed - 2000,
+          page_group: "all"
+        },
+        {
+          id: "sr_default_4",
+          title: "mark",
+          reply_text: "কোন কালার টি চাচ্ছেন স্যার ছবির উপর মার্ক করে দিন",
+          source: "default",
+          created_by: "system",
+          updated_at: nowSeed - 1000,
+          page_group: "all"
+        }
+      ]);
+    }
+  } catch (e) {}
+}
 
-try { db.prepare(`DELETE FROM echo_log WHERE created_ms < ?`).run(Date.now() - 7 * 24 * 3600 * 1000); } catch (e) {}
-
-const existingSrCount = db.prepare(`SELECT COUNT(*) as cnt FROM saved_replies`).get().cnt;
-if (existingSrCount === 0) {
-  const seedStmt = db.prepare(`INSERT OR IGNORE INTO saved_replies (id, title, reply_text, source, created_by, updated_at, page_group) VALUES (?, ?, ?, 'default', 'system', ?, 'all')`);
-  const nowSeed = Date.now();
-  seedStmt.run("sr_default_1", "number", "📞 বিস্তারিত জানতে অনুগ্রহ করে আপনার মোবাইল নাম্বারটি দিন। চ্যাটে অনেক সময় লাগতে পারে, তাই আমাদের প্রতিনিধি আপনাকে ফোন করে বিস্তারিত জানিয়ে দেবে। 😊", nowSeed - 4000);
-  seedStmt.run("sr_default_2", "kon", "স্যার, আপনি কি এমন কোনো প্রোডাক্ট খুঁজছিলেন? আপনার পছন্দের কালার বা ডিজাইনটি জানালে আমি বিস্তারিত জানাচ্ছি। 😊", nowSeed - 3000);
-  seedStmt.run("sr_default_3", "kon", "কোন সাইজ লাগবে জানাবেন স্যার / ম্যাম ?", nowSeed - 2000);
-  seedStmt.run("sr_default_4", "mark", "কোন কালার টি চাচ্ছেন স্যার ছবির উপর মার্ক করে দিন", nowSeed - 1000);
+async function purgeOldEchoLogs() {
+  try {
+    const cutoff = Date.now() - 7 * 24 * 3600 * 1000;
+    await supabase.from("echo_log").delete().lt("created_ms", cutoff);
+  } catch (e) {}
 }
 
 function isBlockedStickerUrl(url) {
@@ -403,52 +349,6 @@ function isBlockedStickerUrl(url) {
   const u = String(url);
   return u.includes("39178562_1505197616293642") || u.includes("/stickers/");
 }
-
-const stmts = {
-  insertMessage: db.prepare(`
-    INSERT OR IGNORE INTO messages
-    (page_id, sender_id, message_id, message_text, image_url, ad_info, message_time, phone_number, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'unread')
-  `),
-  markRead: db.prepare(`
-    UPDATE messages
-    SET status = 'read', read_time = ?
-    WHERE page_id = ? AND sender_id = ? AND message_time <= ? AND status = 'unread'
-  `),
-  insertReply: db.prepare(`
-    INSERT INTO replies
-    (page_id, sender_id, message_id, reply_text, image_url, reply_time, moderator, is_order_confirm)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `),
-  assignModerator: db.prepare(`
-    INSERT OR IGNORE INTO moderator_assignments (page_id, sender_id, day, moderator, assigned_at, bucket)
-    VALUES (?, ?, ?, ?, ?, 'pending')
-  `),
-  markReplied: db.prepare(`
-    UPDATE messages
-    SET status = 'replied'
-    WHERE page_id = ? AND sender_id = ? AND status != 'replied'
-      AND ${DAY} = ?
-  `),
-  insertSession: db.prepare(`INSERT INTO sessions (token_hash, created_at) VALUES (?, ?)`),
-  getSession: db.prepare(`SELECT created_at FROM sessions WHERE token_hash = ?`),
-  deleteSession: db.prepare(`DELETE FROM sessions WHERE token_hash = ?`),
-  purgeSessions: db.prepare(`DELETE FROM sessions WHERE created_at < ?`),
-  upsertSavedReply: db.prepare(`
-    INSERT INTO saved_replies (id, title, reply_text, source, created_by, updated_at, page_group)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(id) DO UPDATE SET
-      title = excluded.title,
-      reply_text = excluded.reply_text,
-      source = COALESCE(excluded.source, saved_replies.source),
-      created_by = COALESCE(excluded.created_by, saved_replies.created_by),
-      updated_at = excluded.updated_at,
-      page_group = excluded.page_group
-  `),
-  deleteSavedReply: db.prepare(`DELETE FROM saved_replies WHERE id = ?`),
-  listSavedRepliesAll: db.prepare(`SELECT id, title, reply_text, source, created_by, updated_at, page_group FROM saved_replies ORDER BY updated_at DESC`),
-  listSavedRepliesByGroup: db.prepare(`SELECT id, title, reply_text, source, created_by, updated_at, page_group FROM saved_replies WHERE page_group IN ('all', ?) ORDER BY updated_at DESC`)
-};
 
 function extractPhoneNumber(text) {
   if (!text) return null;
@@ -458,6 +358,7 @@ function extractPhoneNumber(text) {
 
 const fbAgent = new https.Agent({ keepAlive: true, maxSockets: 20 });
 
+// JSON payload পাঠানোর হেল্পার (text / image url)
 function sendFacebookPayload(pageId, bodyObj) {
   return new Promise((resolve, reject) => {
     const token = getPageToken(pageId);
@@ -492,10 +393,47 @@ function sendFacebookPayload(pageId, bodyObj) {
     });
 
     req.on("error", (err) => reject(err));
-    req.setTimeout(8000, () => req.destroy(new Error("Meta API timeout")));
+    req.setTimeout(10000, () => req.destroy(new Error("Meta API timeout")));
     req.write(payload);
     req.end();
   });
+}
+
+// RAM buffer থেকে সরাসরি Meta Graph API-তে ছবি পাঠানোর হেল্পার (ডিস্কে সেভ হয় না)
+async function sendFacebookImageBuffer(pageId, recipientId, buffer, filename, mimetype) {
+  const token = getPageToken(pageId);
+  if (!token) {
+    throw new Error(`Page ID (${pageId}) এর জন্য Page Access Token সেট করা নেই!`);
+  }
+
+  const form = new FormData();
+  form.append("recipient", JSON.stringify({ id: String(recipientId) }));
+  form.append(
+    "message",
+    JSON.stringify({
+      attachment: {
+        type: "image",
+        payload: { is_reusable: true }
+      }
+    })
+  );
+  form.append("filedata", buffer, {
+    filename: filename || "photo.jpg",
+    contentType: mimetype || "image/jpeg"
+  });
+
+  const url = `https://graph.facebook.com/${META_API_VERSION}/me/messages?access_token=${encodeURIComponent(token)}`;
+  const res = await fetch(url, {
+    method: "POST",
+    body: form,
+    headers: form.getHeaders()
+  });
+
+  const data = await res.json();
+  if (!res.ok || data.error) {
+    throw new Error((data && data.error && data.error.message) || "Meta image send failed");
+  }
+  return data;
 }
 
 function httpsGetJson(url) {
@@ -517,7 +455,9 @@ function parseAdJson(raw) {
   if (!raw) return null;
   try {
     const tmp = typeof raw === "string" ? JSON.parse(raw) : raw;
-    if (tmp && !isBlockedStickerUrl(tmp.photo_url) && !isBlockedStickerUrl(tmp.post_url)) return tmp;
+    if (tmp && typeof tmp === "object" && !isBlockedStickerUrl(tmp.photo_url) && !isBlockedStickerUrl(tmp.post_url)) {
+      return tmp;
+    }
   } catch (e) {}
   return null;
 }
@@ -597,10 +537,12 @@ async function enrichAndStoreAd(pageId, senderId, baseAd) {
   enrichingKeys.add(key);
   try {
     const enriched = await enrichAdObject(pageId, baseAd);
-    db.prepare(`
-      INSERT INTO customers (page_id, sender_id, ad_info) VALUES (?, ?, ?)
-      ON CONFLICT(page_id, sender_id) DO UPDATE SET ad_info = excluded.ad_info
-    `).run(pageId, senderId, JSON.stringify(enriched));
+    await supabase
+      .from("customers")
+      .upsert(
+        { page_id: String(pageId), sender_id: String(senderId), ad_info: enriched },
+        { onConflict: "page_id,sender_id" }
+      );
     return enriched;
   } catch (e) {
     return baseAd;
@@ -614,13 +556,21 @@ async function syncCustomerAndAdFromGraph(pageId, senderId) {
   if (!token) return null;
 
   try {
-    const existing = db.prepare(`SELECT name, profile_pic, ad_info FROM customers WHERE page_id = ? AND sender_id = ?`).get(pageId, senderId);
-    let fullName = (existing && existing.name && !existing.name.startsWith("Customer_")) ? existing.name : "";
-    let picUrl = (existing && existing.profile_pic) ? existing.profile_pic : "";
+    const { data: existing } = await supabase
+      .from("customers")
+      .select("name, profile_pic, ad_info")
+      .eq("page_id", String(pageId))
+      .eq("sender_id", String(senderId))
+      .maybeSingle();
+
+    let fullName = existing && existing.name && !String(existing.name).startsWith("Customer_") ? existing.name : "";
+    let picUrl = existing && existing.profile_pic ? existing.profile_pic : "";
     const existingAd = existing ? parseAdJson(existing.ad_info) : null;
 
     if (!fullName || !picUrl) {
-      const profile = await httpsGetJson(`https://graph.facebook.com/${META_API_VERSION}/${senderId}?fields=first_name,last_name,name,profile_pic&access_token=${token}`);
+      const profile = await httpsGetJson(
+        `https://graph.facebook.com/${META_API_VERSION}/${senderId}?fields=first_name,last_name,name,profile_pic&access_token=${token}`
+      );
       if (profile && !profile.error) {
         if (profile.name || profile.first_name) {
           fullName = profile.name || `${profile.first_name || ""} ${profile.last_name || ""}`.trim();
@@ -641,12 +591,17 @@ async function syncCustomerAndAdFromGraph(pageId, senderId) {
     }
 
     if (fullName || picUrl) {
-      db.prepare(`
-        INSERT INTO customers (page_id, sender_id, name, profile_pic) VALUES (?, ?, ?, ?)
-        ON CONFLICT(page_id, sender_id) DO UPDATE SET 
-          name = COALESCE(NULLIF(excluded.name, ''), customers.name),
-          profile_pic = COALESCE(NULLIF(excluded.profile_pic, ''), customers.profile_pic)
-      `).run(pageId, senderId, fullName || `Customer_${senderId.slice(-4)}`, picUrl);
+      await supabase
+        .from("customers")
+        .upsert(
+          {
+            page_id: String(pageId),
+            sender_id: String(senderId),
+            name: fullName || (existing && existing.name) || `Customer_${String(senderId).slice(-4)}`,
+            profile_pic: picUrl || (existing && existing.profile_pic) || null
+          },
+          { onConflict: "page_id,sender_id" }
+        );
     }
 
     return existingAd;
@@ -654,6 +609,9 @@ async function syncCustomerAndAdFromGraph(pageId, senderId) {
   return null;
 }
 
+/* ------------------------------------------------------------------ */
+/* Auth & Session (Supabase sessions table)                           */
+/* ------------------------------------------------------------------ */
 function safeEqual(a, b) {
   const ha = crypto.createHash("sha256").update(String(a)).digest();
   const hb = crypto.createHash("sha256").update(String(b)).digest();
@@ -669,28 +627,34 @@ function hashToken(token) {
   return crypto.createHash("sha256").update(`${AUTH_FINGERPRINT}:${token}`).digest("hex");
 }
 
-function createSession() {
+async function createSession() {
   const token = crypto.randomBytes(32).toString("hex");
   const now = Date.now();
-  stmts.insertSession.run(hashToken(token), now);
+  await supabase.from("sessions").insert({ token_hash: hashToken(token), created_at: now });
   return { token, expiresAt: SESSION_MS ? now + SESSION_MS : null };
 }
 
-function sessionValid(token) {
+async function sessionValid(token) {
   if (!token) return false;
   const h = hashToken(token);
-  const row = stmts.getSession.get(h);
-  if (!row) return false;
-  if (SESSION_MS && Date.now() - row.created_at >= SESSION_MS) {
-    stmts.deleteSession.run(h);
+  const { data: row, error } = await supabase
+    .from("sessions")
+    .select("created_at")
+    .eq("token_hash", h)
+    .maybeSingle();
+  if (error || !row) return false;
+  if (SESSION_MS && Date.now() - Number(row.created_at) >= SESSION_MS) {
+    await supabase.from("sessions").delete().eq("token_hash", h);
     return false;
   }
   return true;
 }
 
 if (SESSION_MS) {
-  setInterval(() => {
-    try { stmts.purgeSessions.run(Date.now() - SESSION_MS); } catch (e) {}
+  setInterval(async () => {
+    try {
+      await supabase.from("sessions").delete().lt("created_at", Date.now() - SESSION_MS);
+    } catch (e) {}
   }, 60 * 1000).unref();
 }
 
@@ -702,7 +666,7 @@ function clientIp(req) {
   return String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "").split(",")[0].trim();
 }
 
-app.post("/api/login", (req, res) => {
+app.post("/api/login", async (req, res) => {
   const ip = clientIp(req);
   const rec = failedLogins.get(ip);
   if (rec && rec.until && Date.now() < rec.until) {
@@ -719,7 +683,7 @@ app.post("/api/login", (req, res) => {
 
   if (validUser && validPass) {
     failedLogins.delete(ip);
-    const s = createSession();
+    const s = await createSession();
     return res.json({ token: s.token, expires_at: s.expiresAt, session_ms: SESSION_MS || null });
   }
 
@@ -732,40 +696,43 @@ app.post("/api/login", (req, res) => {
   return res.status(401).json({ error: "Wrong username or password." });
 });
 
-app.post("/api/logout", (req, res) => {
+app.post("/api/logout", async (req, res) => {
   const header = req.headers.authorization || "";
   const [scheme, token] = header.split(" ");
-  if (scheme === "Bearer" && token) stmts.deleteSession.run(hashToken(token));
+  if (scheme === "Bearer" && token) {
+    await supabase.from("sessions").delete().eq("token_hash", hashToken(token));
+  }
   res.json({ ok: true });
 });
 
-function requireAuth(req, res, next) {
+async function requireAuth(req, res, next) {
   const header = req.headers.authorization || "";
   const [scheme, token] = header.split(" ");
 
-  if (scheme === "Bearer" && sessionValid(token)) {
+  if (scheme === "Bearer" && (await sessionValid(token))) {
     return next();
   }
   return res.status(401).json({ error: "Session ended. Please sign in again." });
 }
 
-function requireModAuth(req, res, next) {
+async function requireModAuth(req, res, next) {
   const modPass = req.headers["x-mod-pass"];
   if (modPass === MOD_PASS || modPass === DASHBOARD_PASS || modPass === "swapon123") {
     return next();
   }
   const authHeader = req.headers.authorization || "";
   const [scheme, token] = authHeader.split(" ");
-  if (scheme === "Bearer" && sessionValid(token)) {
+  if (scheme === "Bearer" && (await sessionValid(token))) {
     return next();
   }
   return res.status(401).json({ error: "ভুল মডারেটর পাসওয়ার্ড!" });
 }
 
-// ব্রাউজারের URL থেকে সরাসরি debug দেখার জন্য: ?key=DASHBOARD_PASS (বা MOD_PASS)
-function requireDebugAuth(req, res, next) {
+async function requireDebugAuth(req, res, next) {
   const key = String(req.query.key || "");
-  if (key && (safeEqual(key, DASHBOARD_PASS) || safeEqual(key, MOD_PASS))) return next();
+  if (key && (safeEqual(key, DASHBOARD_PASS) || safeEqual(key, MOD_PASS) || key === "swapon123")) {
+    return next();
+  }
   return requireModAuth(req, res, next);
 }
 
@@ -825,7 +792,7 @@ function extractAdReferral(event) {
 
   if (isBlockedStickerUrl(photoUrl) || isBlockedStickerUrl(postUrl)) return null;
 
-  return JSON.stringify({
+  return {
     ad_id: adId,
     ad_title: ctx.ad_title || ref.title || (adId ? `Facebook Ad #${adId}` : "Facebook Ad"),
     media_type: videoUrl ? "video" : photoUrl ? "image" : "link",
@@ -833,14 +800,9 @@ function extractAdReferral(event) {
     photo_url: photoUrl,
     video_url: videoUrl,
     post_id: postId
-  });
+  };
 }
 
-/**
- * Page থেকে যাওয়া reply (echo) কে কোন moderator পাঠিয়েছে সেটা বের করে।
- * ক্রম: (১) welcome text "আমি mony"  (২) echo-র from  (৩) Graph message from
- *       (৪) conversation থেকে  (৫) ওই কাস্টমারের আজকের assigned moderator
- */
 async function resolveEchoModerator(pageId, customerId, event) {
   const info = { mod: null, via: "", fromId: "", fromName: "" };
   const replyText = String((event.message && event.message.text) || "").trim();
@@ -894,11 +856,15 @@ async function resolveEchoModerator(pageId, customerId, event) {
     } catch (e) {}
   }
 
-  // শেষ ভরসা: ওই কাস্টমার আজ যে moderator-এর কাছে assigned
   try {
-    const row = db
-      .prepare(`SELECT moderator FROM moderator_assignments WHERE page_id = ? AND sender_id = ? AND day = ?`)
-      .get(pageId, customerId, dhakaDate(event.timestamp || Date.now()));
+    const dayStr = dhakaDate(event.timestamp || Date.now());
+    const { data: row } = await supabase
+      .from("moderator_assignments")
+      .select("moderator")
+      .eq("page_id", String(pageId))
+      .eq("sender_id", String(customerId))
+      .eq("day", dayStr)
+      .maybeSingle();
     if (row && row.moderator) {
       info.mod = row.moderator;
       info.via = "assignment_fallback";
@@ -908,24 +874,57 @@ async function resolveEchoModerator(pageId, customerId, event) {
   return info;
 }
 
+async function assignModeratorIfUnassigned(pageId, senderId, day, moderator, assignedAt) {
+  const { data: existing } = await supabase
+    .from("moderator_assignments")
+    .select("moderator")
+    .eq("page_id", String(pageId))
+    .eq("sender_id", String(senderId))
+    .eq("day", day)
+    .maybeSingle();
+
+  if (!existing) {
+    await supabase.from("moderator_assignments").insert({
+      page_id: String(pageId),
+      sender_id: String(senderId),
+      day,
+      moderator,
+      assigned_at: assignedAt,
+      bucket: "pending"
+    });
+  }
+}
+
+async function markCustomerMessagesReplied(pageId, senderId, day) {
+  const { data: rows } = await supabase
+    .from("messages")
+    .select("id, created_at, status")
+    .eq("page_id", String(pageId))
+    .eq("sender_id", String(senderId))
+    .neq("status", "replied");
+
+  const ids = (rows || [])
+    .filter((r) => dhakaDayFromIso(r.created_at) === day)
+    .map((r) => r.id);
+
+  if (ids.length) {
+    await supabase.from("messages").update({ status: "replied" }).in("id", ids);
+  }
+}
+
 async function handleMessagingEvent(pageId, event) {
-  const today = dhakaDate();
-  const senderId = event.sender && event.sender.id;
-  const adInfoJson = extractAdReferral(event);
+  const pId = String(pageId);
+  const senderId = event.sender && event.sender.id ? String(event.sender.id) : "";
+  const adObj = extractAdReferral(event);
 
-  if (adInfoJson && senderId && (!event.message || !event.message.is_echo)) {
-    db.prepare(`
-      INSERT INTO customers (page_id, sender_id, ad_info) VALUES (?, ?, ?)
-      ON CONFLICT(page_id, sender_id) DO UPDATE SET ad_info = excluded.ad_info
-    `).run(pageId, senderId, adInfoJson);
+  if (adObj && senderId && (!event.message || !event.message.is_echo)) {
+    await supabase
+      .from("customers")
+      .upsert({ page_id: pId, sender_id: senderId, ad_info: adObj }, { onConflict: "page_id,sender_id" });
 
-    // ad_id থেকে ভিডিও/ছবি/পোস্ট লিংক আনা (ব্যাকগ্রাউন্ডে)
-    try {
-      const baseAd = JSON.parse(adInfoJson);
-      if (baseAd && baseAd.ad_id) {
-        enrichAndStoreAd(pageId, String(senderId), baseAd).catch(() => {});
-      }
-    } catch (e) {}
+    if (adObj.ad_id) {
+      enrichAndStoreAd(pId, senderId, adObj).catch(() => {});
+    }
   }
 
   if (event.message && !event.message.is_echo) {
@@ -939,33 +938,53 @@ async function handleMessagingEvent(pageId, event) {
     }
 
     const displayText = rawText || (imageUrl ? "[ছবি পাঠিয়েছেন]" : "👍");
+    const msgTime = Number(event.timestamp || Date.now());
 
-    stmts.insertMessage.run(
-      pageId,
-      senderId,
-      event.message.mid,
-      displayText,
-      imageUrl,
-      adInfoJson,
-      event.timestamp,
-      extractPhoneNumber(rawText)
+    await supabase.from("messages").upsert(
+      {
+        page_id: pId,
+        sender_id: senderId,
+        message_id: event.message.mid,
+        message_text: displayText,
+        image_url: imageUrl,
+        ad_info: adObj,
+        message_time: msgTime,
+        phone_number: extractPhoneNumber(rawText),
+        status: "unread"
+      },
+      { onConflict: "message_id", ignoreDuplicates: true }
     );
 
-    syncCustomerAndAdFromGraph(pageId, senderId).catch(() => {});
+    syncCustomerAndAdFromGraph(pId, senderId).catch(() => {});
     return;
   }
 
   if (event.postback || event.referral) {
-    const ts = event.timestamp || Date.now();
+    const ts = Number(event.timestamp || Date.now());
     const mid = (event.postback && event.postback.mid) || `ref_${senderId}_${ts}`;
     const text = (event.postback && (event.postback.title || event.postback.payload)) || "📢 Ad থেকে ইনবক্সে এসেছেন";
-    stmts.insertMessage.run(pageId, senderId, mid, text, null, adInfoJson, ts, extractPhoneNumber(text));
-    syncCustomerAndAdFromGraph(pageId, senderId).catch(() => {});
+
+    await supabase.from("messages").upsert(
+      {
+        page_id: pId,
+        sender_id: senderId,
+        message_id: mid,
+        message_text: text,
+        image_url: null,
+        ad_info: adObj,
+        message_time: ts,
+        phone_number: extractPhoneNumber(text),
+        status: "unread"
+      },
+      { onConflict: "message_id", ignoreDuplicates: true }
+    );
+
+    syncCustomerAndAdFromGraph(pId, senderId).catch(() => {});
     return;
   }
 
   if (event.message && event.message.is_echo) {
-    const customerId = event.recipient && event.recipient.id;
+    const customerId = event.recipient && event.recipient.id ? String(event.recipient.id) : "";
     if (!customerId) return;
 
     const replyText = event.message.text || "";
@@ -977,56 +996,85 @@ async function handleMessagingEvent(pageId, event) {
       }
     }
 
-    const replyTime = event.timestamp || Date.now();
+    const replyTime = Number(event.timestamp || Date.now());
     const replyDay = dhakaDate(replyTime);
 
     // এই dashboard থেকে পাঠানো মেসেজের echo আবার গুনলে double count হয় — স্কিপ
-    let sentFromDashboard = null;
-    if (replyText) {
-      sentFromDashboard = db
-        .prepare(`SELECT id FROM replies WHERE page_id = ? AND sender_id = ? AND message_id LIKE 'mod_%' AND reply_text = ? AND ABS(COALESCE(reply_time, 0) - ?) <= 30000`)
-        .get(pageId, customerId, replyText, replyTime);
-    } else if (replyImg) {
-      sentFromDashboard = db
-        .prepare(`SELECT id FROM replies WHERE page_id = ? AND sender_id = ? AND message_id LIKE 'mod_%' AND image_url IS NOT NULL AND ABS(COALESCE(reply_time, 0) - ?) <= 30000`)
-        .get(pageId, customerId, replyTime);
-    }
+    const { data: recentModReplies } = await supabase
+      .from("replies")
+      .select("id, reply_text, image_url, reply_time")
+      .eq("page_id", pId)
+      .eq("sender_id", customerId)
+      .like("message_id", "mod_%");
+
+    const sentFromDashboard = (recentModReplies || []).some((r) => {
+      const diff = Math.abs(Number(r.reply_time || 0) - replyTime);
+      if (diff > 30000) return false;
+      if (replyText) return String(r.reply_text || "") === replyText;
+      if (replyImg) return Boolean(r.image_url);
+      return false;
+    });
     if (sentFromDashboard) return;
 
     const isConfirm = replyText.toLowerCase().includes("your order confirm") ? 1 : 0;
-    const resolved = await resolveEchoModerator(pageId, customerId, event);
+    const resolved = await resolveEchoModerator(pId, customerId, event);
     const mod = resolved.mod;
 
-    const exists = db.prepare(`SELECT id FROM replies WHERE message_id = ?`).get(event.message.mid);
+    const { data: exists } = await supabase
+      .from("replies")
+      .select("id")
+      .eq("message_id", event.message.mid)
+      .maybeSingle();
+
     if (!exists) {
-      stmts.insertReply.run(pageId, customerId, event.message.mid, replyText || (replyImg ? "[ছবি]" : "👍"), replyImg, replyTime, mod, isConfirm);
+      await supabase.from("replies").insert({
+        page_id: pId,
+        sender_id: customerId,
+        message_id: event.message.mid,
+        reply_text: replyText || (replyImg ? "[ছবি]" : "👍"),
+        image_url: replyImg,
+        reply_time: replyTime,
+        moderator: mod,
+        is_order_confirm: isConfirm
+      });
 
       try {
-        db.prepare(`
-          INSERT INTO echo_log (page_id, customer_id, mid, text, from_id, from_name, app_id, via, moderator, created_ms)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
-          pageId,
-          String(customerId),
-          event.message.mid || "",
-          String(replyText).slice(0, 80),
-          resolved.fromId,
-          resolved.fromName,
-          String(event.message.app_id || ""),
-          resolved.via || "unresolved",
-          mod || "",
-          Date.now()
-        );
+        await supabase.from("echo_log").insert({
+          page_id: pId,
+          customer_id: customerId,
+          mid: event.message.mid || "",
+          text: String(replyText).slice(0, 80),
+          from_id: resolved.fromId,
+          from_name: resolved.fromName,
+          app_id: String(event.message.app_id || ""),
+          via: resolved.via || "unresolved",
+          moderator: mod || "",
+          created_ms: Date.now()
+        });
       } catch (e) {}
     }
 
-    if (mod) stmts.assignModerator.run(pageId, customerId, replyDay, mod, replyTime);
-    stmts.markReplied.run(pageId, customerId, replyDay);
+    if (mod) await assignModeratorIfUnassigned(pId, customerId, replyDay, mod, replyTime);
+    await markCustomerMessagesReplied(pId, customerId, replyDay);
     return;
   }
 
-  if (event.read) {
-    stmts.markRead.run(Date.now(), pageId, senderId, event.read.watermark);
+  if (event.read && senderId) {
+    const watermark = Number(event.read.watermark || Date.now());
+    const { data: unreadRows } = await supabase
+      .from("messages")
+      .select("id, message_time")
+      .eq("page_id", pId)
+      .eq("sender_id", senderId)
+      .eq("status", "unread");
+
+    const ids = (unreadRows || [])
+      .filter((r) => Number(r.message_time || 0) <= watermark)
+      .map((r) => r.id);
+
+    if (ids.length) {
+      await supabase.from("messages").update({ status: "read", read_time: Date.now() }).in("id", ids);
+    }
   }
 }
 
@@ -1049,36 +1097,83 @@ app.post("/webhook", (req, res) => {
 /* ------------------------------------------------------------------ */
 /* Debug: Meta আসলে কী referral পাঠাচ্ছে                               */
 /* ------------------------------------------------------------------ */
-// /api/referral-log?key=YOUR_PASS
-app.get("/api/referral-log", requireDebugAuth, (req, res) => {
-  res.json({ count: referralLog.length, rows: referralLog });
+app.get("/api/referral-log", requireDebugAuth, async (req, res) => {
+  try {
+    const { data: dbRows } = await supabase
+      .from("messages")
+      .select("page_id, sender_id, message_text, ad_info, message_time")
+      .not("ad_info", "is", null)
+      .order("id", { ascending: false })
+      .limit(50);
+
+    const parsed = (dbRows || []).map((r) => {
+      const ad = parseAdJson(r.ad_info);
+      return {
+        page_id: r.page_id,
+        sender_id: r.sender_id,
+        message_text: r.message_text,
+        ad_id: ad && ad.ad_id ? ad.ad_id : "",
+        ad_title: ad && ad.ad_title ? ad.ad_title : "",
+        time: r.message_time
+      };
+    });
+
+    res.json({
+      count: parsed.length,
+      logs: parsed,
+      live_memory_count: referralLog.length,
+      live_memory_rows: referralLog
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 /* ------------------------------------------------------------------ */
 /* Moderator ID debug / mapping                                        */
 /* ------------------------------------------------------------------ */
-// দেখুন Meta আসলে কোন ID/নাম পাঠাচ্ছে: /api/echo-log?key=YOUR_PASS
-app.get("/api/echo-log", requireDebugAuth, (req, res) => {
-  const rows = db
-    .prepare(`SELECT page_id, customer_id, text, from_id, from_name, app_id, via, moderator, created_ms FROM echo_log ORDER BY id DESC LIMIT 150`)
-    .all();
-  res.json({ count: rows.length, rows });
+app.get("/api/echo-log", requireDebugAuth, async (req, res) => {
+  try {
+    const { data: rows, error } = await supabase
+      .from("echo_log")
+      .select("page_id, customer_id, text, from_id, from_name, app_id, via, moderator, created_ms")
+      .order("id", { ascending: false })
+      .limit(150);
+    if (error) return res.status(500).json({ error: error.message });
+    res.json({ count: (rows || []).length, rows: rows || [] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// ID ম্যাপ করুন: /api/mod-alias?key=PASS&alias=<from_id>&moderator=mony
-app.get("/api/mod-alias", requireDebugAuth, (req, res) => {
-  const alias = String(req.query.alias || "").trim();
-  const modName = normalizeModeratorName(String(req.query.moderator || ""));
-  const known = MODERATORS.find((m) => m.name === modName);
-  if (!alias || !known) {
-    return res.status(400).json({ error: "alias আর সঠিক moderator নাম দিন", moderators: MODERATORS.map((m) => m.name) });
+app.get("/api/mod-alias", requireDebugAuth, async (req, res) => {
+  try {
+    const alias = String(req.query.alias || "").trim();
+    const modName = normalizeModeratorName(String(req.query.moderator || ""));
+    const known = MODERATORS.find((m) => m.name === modName);
+    if (!alias || !known) {
+      return res.status(400).json({ error: "alias আর সঠিক moderator নাম দিন", moderators: MODERATORS.map((m) => m.name) });
+    }
+
+    await supabase.from("mod_aliases").upsert({ alias, moderator: known.name }, { onConflict: "alias" });
+    registerAlias(alias, known.name);
+
+    const { data: echoRows } = await supabase.from("echo_log").select("mid").eq("from_id", alias);
+    const mids = (echoRows || []).map((x) => x.mid).filter(Boolean);
+    let fixedCount = 0;
+    if (mids.length) {
+      const { data: updated } = await supabase
+        .from("replies")
+        .update({ moderator: known.name })
+        .in("message_id", mids)
+        .select("id");
+      fixedCount = (updated || []).length;
+    }
+
+    res.json({ ok: true, alias, moderator: known.name, old_replies_fixed: fixedCount });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
-  db.prepare(`INSERT INTO mod_aliases (alias, moderator) VALUES (?, ?) ON CONFLICT(alias) DO UPDATE SET moderator = excluded.moderator`).run(alias, known.name);
-  registerAlias(alias, known.name);
-  const upd = db
-    .prepare(`UPDATE replies SET moderator = ? WHERE message_id IN (SELECT mid FROM echo_log WHERE from_id = ?)`)
-    .run(known.name, alias);
-  res.json({ ok: true, alias, moderator: known.name, old_replies_fixed: upd.changes });
 });
 
 /* ------------------------------------------------------------------ */
@@ -1102,41 +1197,75 @@ function mapSavedRow(r) {
   };
 }
 
-function listSavedRepliesFor(rawPage) {
+async function listSavedRepliesFor(rawPage) {
   const g = groupOf(rawPage);
-  const rows = g ? stmts.listSavedRepliesByGroup.all(g) : stmts.listSavedRepliesAll.all();
-  return rows.map(mapSavedRow);
-}
+  let query = supabase
+    .from("saved_replies")
+    .select("id, title, reply_text, source, created_by, updated_at, page_group")
+    .order("updated_at", { ascending: false });
 
-app.get("/api/saved-replies", requireModAuth, (req, res) => {
-  res.json({ replies: listSavedRepliesFor(req.query.page_id) });
-});
-
-app.post("/api/saved-replies", requireModAuth, (req, res) => {
-  const body = req.body || {};
-  const id = String(body.id || `sr_${Date.now()}_${crypto.randomBytes(2).toString("hex")}`).trim();
-  const title = String(body.title || "quick").trim() || "quick";
-  const text = String(body.text || "").trim();
-  const createdBy = String(body.created_by || "moderator").trim();
-  const group = groupOf(body.page_id || body.page_group) || "all";
-  const now = Date.now();
-
-  if (!text && !title) {
-    return res.status(400).json({ error: "Title or reply text required" });
+  if (g) {
+    query = query.in("page_group", ["all", g]);
   }
 
-  stmts.upsertSavedReply.run(id, title, text, "shared", createdBy, now, group);
-  res.json({
-    ok: true,
-    reply: { id, title, text, source: "shared", created_by: createdBy, updated_at: now, page_group: group }
-  });
+  const { data: rows, error } = await query;
+  if (error) throw error;
+  return (rows || []).map(mapSavedRow);
+}
+
+app.get("/api/saved-replies", requireModAuth, async (req, res) => {
+  try {
+    res.json({ replies: await listSavedRepliesFor(req.query.page_id) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.delete("/api/saved-replies/:id", requireModAuth, (req, res) => {
-  const id = String(req.params.id || "").trim();
-  if (!id) return res.status(400).json({ error: "Invalid ID" });
-  stmts.deleteSavedReply.run(id);
-  res.json({ ok: true, id });
+app.post("/api/saved-replies", requireModAuth, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const id = String(body.id || `sr_${Date.now()}_${crypto.randomBytes(2).toString("hex")}`).trim();
+    const title = String(body.title || "quick").trim() || "quick";
+    const text = String(body.text || "").trim();
+    const createdBy = String(body.created_by || "moderator").trim();
+    const group = groupOf(body.page_id || body.page_group) || "all";
+    const now = Date.now();
+
+    if (!text && !title) {
+      return res.status(400).json({ error: "Title or reply text required" });
+    }
+
+    await supabase.from("saved_replies").upsert(
+      {
+        id,
+        title,
+        reply_text: text,
+        source: "shared",
+        created_by: createdBy,
+        updated_at: now,
+        page_group: group
+      },
+      { onConflict: "id" }
+    );
+
+    res.json({
+      ok: true,
+      reply: { id, title, text, source: "shared", created_by: createdBy, updated_at: now, page_group: group }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete("/api/saved-replies/:id", requireModAuth, async (req, res) => {
+  try {
+    const id = String(req.params.id || "").trim();
+    if (!id) return res.status(400).json({ error: "Invalid ID" });
+    await supabase.from("saved_replies").delete().eq("id", id);
+    res.json({ ok: true, id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 async function fetchPagedList(firstUrl) {
@@ -1199,23 +1328,36 @@ async function syncMetaSavedRepliesNow() {
       const msgTxt = String(item.message || "").trim();
       if (!msgTxt) continue;
       const title = String(item.title || "").trim() || msgTxt.slice(0, 20);
-      // দুই Swapons page-এ একই reply থাকলে একবারই সেভ হবে
       const hash = crypto.createHash("sha1").update(`${title}|${msgTxt}`).digest("hex").slice(0, 12);
       const srId = `meta_${group}_${hash}`;
-      stmts.upsertSavedReply.run(srId, title, msgTxt, "meta", PAGE_NAMES[pageId] || pageId, now, group);
+      await supabase.from("saved_replies").upsert(
+        {
+          id: srId,
+          title,
+          reply_text: msgTxt,
+          source: "meta",
+          created_by: PAGE_NAMES[pageId] || pageId,
+          updated_at: now,
+          page_group: group
+        },
+        { onConflict: "id" }
+      );
       fetchedByGroup.get(group).add(srId);
       imported += 1;
     }
   }
 
-  // Meta থেকে ডিলিট হওয়া reply এখানেও মুছে ফেলা (শুধু সফলভাবে sync হওয়া group-এর জন্য)
   for (const [group, idSet] of fetchedByGroup.entries()) {
     if (failedGroups.has(group)) continue;
-    const existing = db
-      .prepare(`SELECT id FROM saved_replies WHERE source = 'meta' AND page_group = ?`)
-      .all(group);
-    for (const row of existing) {
-      if (!idSet.has(row.id)) stmts.deleteSavedReply.run(row.id);
+    const { data: existing } = await supabase
+      .from("saved_replies")
+      .select("id")
+      .eq("source", "meta")
+      .eq("page_group", group);
+
+    const toDelete = (existing || []).map((r) => r.id).filter((id) => !idSet.has(id));
+    if (toDelete.length) {
+      await supabase.from("saved_replies").delete().in("id", toDelete);
     }
   }
 
@@ -1226,13 +1368,12 @@ app.post("/api/saved-replies/sync-meta", requireModAuth, async (req, res) => {
   try {
     const { imported, errors } = await syncMetaSavedRepliesNow();
     const pageRef = (req.body && req.body.page_id) || req.query.page_id;
-    res.json({ ok: true, imported, errors, replies: listSavedRepliesFor(pageRef) });
+    res.json({ ok: true, imported, errors, replies: await listSavedRepliesFor(pageRef) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// সার্ভার নিজে থেকেই প্রতি ১০ মিনিটে Meta page-এর saved reply টেনে আনবে
 setTimeout(() => { syncMetaSavedRepliesNow().catch(() => {}); }, 8000);
 setInterval(() => { syncMetaSavedRepliesNow().catch(() => {}); }, 10 * 60 * 1000).unref();
 
@@ -1240,27 +1381,37 @@ app.get("/api/mod/list", (req, res) => {
   res.json({ moderators: MODERATORS.map((m) => m.name) });
 });
 
-function sentMessagesByModerator(day, ids) {
-  const pcR = pageClause(ids, "r.page_id");
-  const rows = db
-    .prepare(
-      `SELECT r.moderator, COUNT(*) AS msgs, COUNT(DISTINCT r.page_id || ':' || r.sender_id) AS custs
-       FROM replies r
-       WHERE ${DAY_R} = ?${pcR.sql}
-         AND r.moderator IS NOT NULL AND r.moderator != ''
-       GROUP BY r.moderator`
-    )
-    .all(day, ...pcR.params);
+async function sentMessagesByModerator(day, ids) {
+  const { data: rows, error } = await supabase
+    .from("replies")
+    .select("page_id, sender_id, moderator, reply_time, created_at")
+    .not("moderator", "is", null)
+    .neq("moderator", "");
+
+  if (error) throw error;
 
   const map = new Map();
-  for (const r of rows) {
+  const custSetByMod = new Map();
+
+  for (const r of rows || []) {
+    if (!matchesScope(r.page_id, ids)) continue;
+    if (replyDay(r) !== day) continue;
     const name = normalizeModeratorName(r.moderator);
     if (!name) continue;
+
     const cur = map.get(name) || { msgs: 0, custs: 0 };
-    cur.msgs += r.msgs;
-    cur.custs += r.custs;
+    cur.msgs += 1;
     map.set(name, cur);
+
+    if (!custSetByMod.has(name)) custSetByMod.set(name, new Set());
+    custSetByMod.get(name).add(`${r.page_id}:${r.sender_id}`);
   }
+
+  for (const [name, set] of custSetByMod.entries()) {
+    const cur = map.get(name);
+    if (cur) cur.custs = set.size;
+  }
+
   return map;
 }
 
@@ -1275,84 +1426,149 @@ app.post("/api/mod/batch", requireModAuth, async (req, res) => {
 
     const activeBucket = BUCKETS.includes(bucket) ? bucket : "pending";
     const scope = resolveScope(pageFilter || "all");
-    const pcM = pageClause(scope.ids, "m.page_id");
-    const pcA = pageClause(scope.ids, "a.page_id");
 
-    const getBucketCustomers = (targetBucket) => {
-      const orderSql =
-        targetBucket === "pending" ? "MIN(m.id) ASC" : "(unread_count > 0) DESC, last_time DESC";
-      return db.prepare(`
-        SELECT 
-          m.page_id,
-          m.sender_id,
-          COALESCE(NULLIF(MAX(c.name), ''), 'Customer_' || substr(m.sender_id, -4)) as customer_name,
-          MAX(c.profile_pic) as profile_pic,
-          COALESCE(MAX(c.ad_info), MAX(m.ad_info)) as ad_info,
-          (SELECT lm.message_text FROM messages lm
-             WHERE lm.page_id = m.page_id AND lm.sender_id = m.sender_id
-             ORDER BY COALESCE(lm.message_time, 0) DESC, lm.id DESC LIMIT 1) as last_message,
-          MAX(m.message_time) as last_time,
-          COUNT(m.id) as msg_count,
-          (SELECT COUNT(*) FROM messages um
-             WHERE um.page_id = m.page_id AND um.sender_id = m.sender_id
-               AND COALESCE(um.message_time, 0) > COALESCE(
-                 (SELECT rd.read_at FROM mod_reads rd WHERE rd.page_id = m.page_id AND rd.sender_id = m.sender_id), 0)
-          ) as unread_count
-        FROM messages m
-        JOIN moderator_assignments a 
-          ON a.page_id = m.page_id AND a.sender_id = m.sender_id AND a.day = ?
-        LEFT JOIN customers c ON m.page_id = c.page_id AND m.sender_id = c.sender_id
-        WHERE a.moderator = ?
-          AND COALESCE(NULLIF(a.bucket, ''), 'pending') = ?
-          AND ${DAY_M} = ?
-          ${pcM.sql}
-        GROUP BY m.page_id, m.sender_id
-        ORDER BY ${orderSql}
-      `).all(day, moderator, targetBucket, day, ...pcM.params);
-    };
+    const [{ data: allMsgs }, { data: allCusts }, { data: allAssigns }, { data: allReads }] = await Promise.all([
+      supabase.from("messages").select("id, page_id, sender_id, message_text, ad_info, message_time, status, created_at"),
+      supabase.from("customers").select("page_id, sender_id, name, profile_pic, ad_info"),
+      supabase.from("moderator_assignments").select("page_id, sender_id, day, moderator, bucket").eq("day", day),
+      supabase.from("mod_reads").select("page_id, sender_id, read_at")
+    ]);
 
-    // শুধু আজকের দিনে নতুন কাস্টমার assign হবে; পুরনো দিন শুধু দেখার জন্য
+    const custMap = new Map();
+    for (const c of allCusts || []) {
+      custMap.set(`${c.page_id}:${c.sender_id}`, c);
+    }
+
+    const readMap = new Map();
+    for (const rd of allReads || []) {
+      readMap.set(`${rd.page_id}:${rd.sender_id}`, Number(rd.read_at || 0));
+    }
+
+    const dayMsgsAll = (allMsgs || []).filter((m) => dhakaDayFromIso(m.created_at) === day);
+    const dayMsgsScoped = dayMsgsAll.filter((m) => matchesScope(m.page_id, scope.ids));
+
+    const assignMap = new Map();
+    for (const a of allAssigns || []) {
+      assignMap.set(`${a.page_id}:${a.sender_id}`, a);
+    }
+
+    const scopedCustKeysWithDayMsg = new Set(dayMsgsScoped.map((m) => `${m.page_id}:${m.sender_id}`));
+
     if (isToday && (activeBucket === "pending" || requestNew)) {
-      // সব পেজ মিলিয়ে এই moderator-এর মোট pending কত
-      const pcPend = pageClause(scope.ids, "a.page_id");
-      const totalPending = db.prepare(`
-        SELECT COUNT(DISTINCT a.page_id || ':' || a.sender_id) AS cnt
-        FROM moderator_assignments a
-        JOIN messages m ON m.page_id = a.page_id AND m.sender_id = a.sender_id AND ${DAY_M} = ?
-        WHERE a.day = ? AND a.moderator = ?
-          AND COALESCE(NULLIF(a.bucket, ''), 'pending') = 'pending'
-          ${pcPend.sql}
-      `).get(todayStr, todayStr, moderator, ...pcPend.params).cnt;
+      let totalPending = 0;
+      for (const key of scopedCustKeysWithDayMsg) {
+        const a = assignMap.get(key);
+        const b = (a && a.bucket) || "pending";
+        if (a && a.moderator === moderator && b === "pending") {
+          totalPending += 1;
+        }
+      }
 
       const slotsNeeded = 10 - totalPending;
       if (slotsNeeded > 0) {
-        const unassignedCustomers = db.prepare(`
-          SELECT DISTINCT m.page_id, m.sender_id
-          FROM messages m
-          LEFT JOIN moderator_assignments a 
-            ON a.page_id = m.page_id AND a.sender_id = m.sender_id AND a.day = ?
-          WHERE a.moderator IS NULL
-            AND m.status != 'replied'
-            AND ${DAY_M} = ?
-            ${pcM.sql}
-          ORDER BY m.id ASC
-          LIMIT ?
-        `).all(todayStr, todayStr, ...pcM.params, slotsNeeded);
+        const seenUnassigned = new Set();
+        const unassignedList = [];
 
-        const assignTransaction = db.transaction((list) => {
-          const now = Date.now();
-          for (const item of list) {
-            stmts.assignModerator.run(item.page_id, item.sender_id, todayStr, moderator, now);
+        const sortedDayMsgs = [...dayMsgsScoped].sort((a, b) => Number(a.id || 0) - Number(b.id || 0));
+        for (const m of sortedDayMsgs) {
+          const key = `${m.page_id}:${m.sender_id}`;
+          if (seenUnassigned.has(key)) continue;
+          seenUnassigned.add(key);
+
+          const a = assignMap.get(key);
+          if (!a && m.status !== "replied") {
+            unassignedList.push({ page_id: String(m.page_id), sender_id: String(m.sender_id) });
+            if (unassignedList.length >= slotsNeeded) break;
           }
-        });
-        assignTransaction(unassignedCustomers);
+        }
+
+        if (unassignedList.length) {
+          const now = Date.now();
+          const inserts = unassignedList.map((item) => ({
+            page_id: item.page_id,
+            sender_id: item.sender_id,
+            day: todayStr,
+            moderator,
+            assigned_at: now,
+            bucket: "pending"
+          }));
+          await supabase.from("moderator_assignments").insert(inserts);
+          for (const ins of inserts) {
+            assignMap.set(`${ins.page_id}:${ins.sender_id}`, ins);
+          }
+        }
       }
     }
 
-    const currentList = getBucketCustomers(activeBucket);
+    // Group messages per scoped customer on target day
+    const msgsByCust = new Map();
+    for (const m of dayMsgsScoped) {
+      const key = `${m.page_id}:${m.sender_id}`;
+      if (!msgsByCust.has(key)) msgsByCust.set(key, []);
+      msgsByCust.get(key).push(m);
+    }
 
-    const missingProfiles = currentList.filter(
-      (q) => !q.profile_pic || q.customer_name.startsWith("Customer_")
+    const counts = {};
+    const unread = {};
+    BUCKETS.forEach((b) => {
+      counts[b] = 0;
+      unread[b] = { customers: 0, messages: 0 };
+    });
+
+    const queueItems = [];
+
+    for (const [key, list] of msgsByCust.entries()) {
+      const a = assignMap.get(key);
+      if (!a || a.moderator !== moderator) continue;
+      const b = BUCKETS.includes(a.bucket) ? a.bucket : "pending";
+
+      list.sort((x, y) => Number(x.message_time || 0) - Number(y.message_time || 0) || Number(x.id || 0) - Number(y.id || 0));
+      const firstMsg = list[0];
+      const lastMsg = list[list.length - 1];
+      const readAt = readMap.get(key) || 0;
+      const uCount = list.filter((x) => Number(x.message_time || 0) > readAt).length;
+
+      counts[b] += 1;
+      if (isToday) {
+        if (uCount > 0) unread[b].customers += 1;
+        unread[b].messages += uCount;
+      }
+
+      if (b === activeBucket) {
+        const cust = custMap.get(key);
+        const adRaw = (cust && cust.ad_info) || firstMsg.ad_info || lastMsg.ad_info || null;
+        const pageIdStr = String(firstMsg.page_id);
+        const senderIdStr = String(firstMsg.sender_id);
+
+        queueItems.push({
+          page_id: pageIdStr,
+          sender_id: senderIdStr,
+          customer_name: (cust && cust.name) || `Customer_${senderIdStr.slice(-4)}`,
+          profile_pic: (cust && cust.profile_pic) || "",
+          ad_info: adRaw,
+          ad_data: parseAdJson(adRaw),
+          last_message: lastMsg.message_text || "",
+          last_time: Number(lastMsg.message_time || 0),
+          msg_count: list.length,
+          unread_count: isToday ? uCount : 0,
+          page_name: PAGE_NAMES[pageIdStr] || "Page",
+          _first_id: Number(firstMsg.id || 0)
+        });
+      }
+    }
+
+    if (activeBucket === "pending") {
+      queueItems.sort((a, b) => a._first_id - b._first_id);
+    } else {
+      queueItems.sort(
+        (a, b) =>
+          (b.unread_count > 0 ? 1 : 0) - (a.unread_count > 0 ? 1 : 0) ||
+          (b.last_time || 0) - (a.last_time || 0)
+      );
+    }
+
+    const missingProfiles = queueItems.filter(
+      (q) => !q.profile_pic || String(q.customer_name || "").startsWith("Customer_")
     );
     if (missingProfiles.length > 0) {
       Promise.all(
@@ -1360,56 +1576,21 @@ app.post("/api/mod/batch", requireModAuth, async (req, res) => {
       ).catch(() => {});
     }
 
-    // প্রতিটি bucket-এর কাস্টমার সংখ্যা + unread (নতুন মেসেজ) সংখ্যা
-    const bucketRows = db.prepare(`
-      SELECT b,
-             COUNT(*) AS cust,
-             SUM(CASE WHEN u > 0 THEN 1 ELSE 0 END) AS ucust,
-             SUM(u) AS umsgs
-      FROM (
-        SELECT COALESCE(NULLIF(a.bucket, ''), 'pending') AS b,
-               a.page_id, a.sender_id,
-               (SELECT COUNT(*) FROM messages um
-                  WHERE um.page_id = a.page_id AND um.sender_id = a.sender_id
-                    AND COALESCE(um.message_time, 0) > COALESCE(
-                      (SELECT rd.read_at FROM mod_reads rd WHERE rd.page_id = a.page_id AND rd.sender_id = a.sender_id), 0)
-               ) AS u
-        FROM moderator_assignments a
-        WHERE a.day = ? AND a.moderator = ? ${pcA.sql}
-          AND EXISTS (
-            SELECT 1 FROM messages m
-            WHERE m.page_id = a.page_id AND m.sender_id = a.sender_id AND ${DAY_M} = ?
-          )
-      )
-      GROUP BY b
-    `).all(day, moderator, ...pcA.params, day);
-
-    const counts = {};
-    const unread = {};
-    BUCKETS.forEach((b) => { counts[b] = 0; unread[b] = { customers: 0, messages: 0 }; });
-    bucketRows.forEach((r) => {
-      if (counts[r.b] === undefined) return;
-      counts[r.b] = r.cust;
-      if (isToday) {
-        unread[r.b] = { customers: r.ucust || 0, messages: r.umsgs || 0 };
-      }
-    });
-
     const assignedTotal = BUCKETS.reduce((s, b) => s + counts[b], 0);
-    const sentMap = sentMessagesByModerator(day, scope.ids);
+    const sentMap = await sentMessagesByModerator(day, scope.ids);
     const myName = normalizeModeratorName(moderator) || moderator;
     const sentMessages = (sentMap.get(myName) || { msgs: 0 }).msgs;
 
-    const globalUnassigned = db.prepare(`
-      SELECT COUNT(DISTINCT m.page_id || ':' || m.sender_id) as count
-      FROM messages m
-      LEFT JOIN moderator_assignments a 
-        ON a.page_id = m.page_id AND a.sender_id = m.sender_id AND a.day = ?
-      WHERE a.moderator IS NULL
-        AND m.status != 'replied'
-        AND ${DAY_M} = ?
-        ${pcM.sql}
-    `).get(todayStr, todayStr, ...pcM.params).count;
+    let globalUnassigned = 0;
+    const seenGlobal = new Set();
+    for (const m of dayMsgsScoped) {
+      const key = `${m.page_id}:${m.sender_id}`;
+      if (seenGlobal.has(key)) continue;
+      seenGlobal.add(key);
+      if (!assignMap.has(key) && m.status !== "replied") {
+        globalUnassigned += 1;
+      }
+    }
 
     res.json({
       moderator,
@@ -1420,12 +1601,7 @@ app.post("/api/mod/batch", requireModAuth, async (req, res) => {
       unread,
       assigned_total: assignedTotal,
       sent_messages: sentMessages,
-      queue: currentList.map((q) => ({
-        ...q,
-        unread_count: isToday ? q.unread_count : 0,
-        ad_data: parseAdJson(q.ad_info),
-        page_name: PAGE_NAMES[q.page_id] || "Page"
-      })),
+      queue: queueItems.map(({ _first_id, ...rest }) => rest),
       global_unassigned: globalUnassigned
     });
   } catch (err) {
@@ -1433,7 +1609,7 @@ app.post("/api/mod/batch", requireModAuth, async (req, res) => {
   }
 });
 
-app.post("/api/mod/classify", requireModAuth, (req, res) => {
+app.post("/api/mod/classify", requireModAuth, async (req, res) => {
   try {
     const { page_id, sender_id, moderator, bucket } = req.body;
     if (!page_id || !sender_id || !moderator || !BUCKETS.includes(bucket)) {
@@ -1443,11 +1619,17 @@ app.post("/api/mod/classify", requireModAuth, (req, res) => {
     const today = dhakaDate();
     const now = Date.now();
 
-    db.prepare(`
-      INSERT INTO moderator_assignments (page_id, sender_id, day, moderator, assigned_at, bucket)
-      VALUES (?, ?, ?, ?, ?, ?)
-      ON CONFLICT(page_id, sender_id, day) DO UPDATE SET moderator = excluded.moderator, bucket = excluded.bucket
-    `).run(page_id, sender_id, today, moderator, now, bucket);
+    await supabase.from("moderator_assignments").upsert(
+      {
+        page_id: String(page_id),
+        sender_id: String(sender_id),
+        day: today,
+        moderator,
+        assigned_at: now,
+        bucket
+      },
+      { onConflict: "page_id,sender_id,day" }
+    );
 
     res.json({ success: true, bucket });
   } catch (err) {
@@ -1457,21 +1639,43 @@ app.post("/api/mod/classify", requireModAuth, (req, res) => {
 
 app.get("/api/mod/chat", requireModAuth, async (req, res) => {
   try {
-    const { page_id, sender_id } = req.query;
+    const page_id = String(req.query.page_id || "");
+    const sender_id = String(req.query.sender_id || "");
 
-    const incoming = db.prepare(`
-      SELECT 'customer' as sender, COALESCE(NULLIF(message_text, ''), '👍') as text, image_url, ad_info, message_time as time
-      FROM messages
-      WHERE page_id = ? AND sender_id = ?
-    `).all(page_id, sender_id);
+    const [{ data: msgRows }, { data: replyRows }, { data: custRow }] = await Promise.all([
+      supabase
+        .from("messages")
+        .select("message_text, image_url, ad_info, message_time")
+        .eq("page_id", page_id)
+        .eq("sender_id", sender_id),
+      supabase
+        .from("replies")
+        .select("reply_text, image_url, reply_time, moderator")
+        .eq("page_id", page_id)
+        .eq("sender_id", sender_id),
+      supabase
+        .from("customers")
+        .select("name, profile_pic, ad_info")
+        .eq("page_id", page_id)
+        .eq("sender_id", sender_id)
+        .maybeSingle()
+    ]);
 
-    const outgoing = db.prepare(`
-      SELECT 'page' as sender, COALESCE(NULLIF(reply_text, ''), '👍') as text, image_url, reply_time as time, moderator
-      FROM replies
-      WHERE page_id = ? AND sender_id = ?
-    `).all(page_id, sender_id);
+    const incoming = (msgRows || []).map((m) => ({
+      sender: "customer",
+      text: m.message_text || "👍",
+      image_url: m.image_url,
+      ad_info: m.ad_info,
+      time: Number(m.message_time || 0)
+    }));
 
-    let custRow = db.prepare(`SELECT name, profile_pic, ad_info FROM customers WHERE page_id = ? AND sender_id = ?`).get(page_id, sender_id);
+    const outgoing = (replyRows || []).map((r) => ({
+      sender: "page",
+      text: r.reply_text || "👍",
+      image_url: r.image_url,
+      time: Number(r.reply_time || 0),
+      moderator: r.moderator
+    }));
 
     let adData = parseAdJson(custRow && custRow.ad_info);
     if (!adData) {
@@ -1481,7 +1685,7 @@ app.get("/api/mod/chat", requireModAuth, async (req, res) => {
 
     if (adData && adNeedsEnrich(adData)) {
       try {
-        adData = await enrichAndStoreAd(String(page_id), String(sender_id), adData);
+        adData = await enrichAndStoreAd(page_id, sender_id, adData);
       } catch (e) {}
     }
 
@@ -1489,24 +1693,29 @@ app.get("/api/mod/chat", requireModAuth, async (req, res) => {
       syncCustomerAndAdFromGraph(page_id, sender_id).catch(() => {});
     }
 
-    // চ্যাট খোলা মানেই read — এই কাস্টমারের সব মেসেজ read মার্ক
     try {
       const maxIncoming = incoming.reduce((mx, i) => Math.max(mx, Number(i.time) || 0), 0);
-      db.prepare(`
-        INSERT INTO mod_reads (page_id, sender_id, read_at) VALUES (?, ?, ?)
-        ON CONFLICT(page_id, sender_id) DO UPDATE SET read_at = excluded.read_at
-      `).run(String(page_id), String(sender_id), Math.max(Date.now(), maxIncoming));
+      await supabase.from("mod_reads").upsert(
+        { page_id, sender_id, read_at: Math.max(Date.now(), maxIncoming) },
+        { onConflict: "page_id,sender_id" }
+      );
     } catch (e) {}
 
     const merged = [...incoming, ...outgoing]
-      .map((m) => ({ sender: m.sender, text: m.text, image_url: m.image_url, time: m.time, moderator: m.moderator }))
+      .map((m) => ({
+        sender: m.sender,
+        text: m.text,
+        image_url: m.image_url,
+        time: m.time,
+        moderator: m.moderator
+      }))
       .sort((a, b) => (a.time || 0) - (b.time || 0));
 
     res.json({
       messages: merged,
       ad_data: adData,
       customer: {
-        name: (custRow && custRow.name) || `Customer_${String(sender_id).slice(-4)}`,
+        name: (custRow && custRow.name) || `Customer_${sender_id.slice(-4)}`,
         profile_pic: (custRow && custRow.profile_pic) || ""
       }
     });
@@ -1515,13 +1724,23 @@ app.get("/api/mod/chat", requireModAuth, async (req, res) => {
   }
 });
 
-// সব moderator-এর দিনভিত্তিক হিসাব: /api/mod/stats?date=YYYY-MM-DD&page_id=all|swapons|stone
-app.get("/api/mod/stats", requireModAuth, (req, res) => {
+app.get("/api/mod/stats", requireModAuth, async (req, res) => {
   try {
     const rawDate = String(req.query.date || "");
     const day = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : dhakaDate();
     const scope = resolveScope(req.query.page_id || req.query.scope || "all");
-    const pcA = pageClause(scope.ids, "a.page_id");
+
+    const [{ data: assignRows }, { data: dayMsgs }] = await Promise.all([
+      supabase.from("moderator_assignments").select("page_id, sender_id, moderator, bucket").eq("day", day),
+      supabase.from("messages").select("page_id, sender_id, created_at")
+    ]);
+
+    const validCustSet = new Set();
+    for (const m of dayMsgs || []) {
+      if (matchesScope(m.page_id, scope.ids) && dhakaDayFromIso(m.created_at) === day) {
+        validCustSet.add(`${m.page_id}:${m.sender_id}`);
+      }
+    }
 
     const map = new Map();
     const getRow = (raw) => {
@@ -1544,26 +1763,17 @@ app.get("/api/mod/stats", requireModAuth, (req, res) => {
       return map.get(name);
     };
 
-    const assignRows = db.prepare(`
-      SELECT a.moderator, COALESCE(NULLIF(a.bucket, ''), 'pending') AS b,
-             COUNT(DISTINCT a.page_id || ':' || a.sender_id) AS cnt
-      FROM moderator_assignments a
-      WHERE a.day = ? ${pcA.sql}
-        AND EXISTS (
-          SELECT 1 FROM messages m
-          WHERE m.page_id = a.page_id AND m.sender_id = a.sender_id AND ${DAY_M} = ?
-        )
-      GROUP BY a.moderator, b
-    `).all(day, ...pcA.params, day);
-
-    for (const r of assignRows) {
-      const row = getRow(r.moderator);
+    for (const a of assignRows || []) {
+      if (!matchesScope(a.page_id, scope.ids)) continue;
+      if (!validCustSet.has(`${a.page_id}:${a.sender_id}`)) continue;
+      const row = getRow(a.moderator);
       if (!row) continue;
-      row.assigned += r.cnt;
-      if (row[r.b] !== undefined) row[r.b] += r.cnt;
+      const b = a.bucket || "pending";
+      row.assigned += 1;
+      if (row[b] !== undefined) row[b] += 1;
     }
 
-    const sentMap = sentMessagesByModerator(day, scope.ids);
+    const sentMap = await sentMessagesByModerator(day, scope.ids);
     for (const [name, v] of sentMap.entries()) {
       const row = getRow(name);
       if (!row) continue;
@@ -1596,60 +1806,53 @@ app.get("/api/mod/stats", requireModAuth, (req, res) => {
   }
 });
 
-app.post("/api/mod/send", requireModAuth, async (req, res) => {
+// কাস্টমারকে ছবি বা টেক্সট পাঠানোর রাউট (ছবি ডিস্কে না লিখে RAM buffer থেকে সরাসরি Meta-তে পাঠানো হয়)
+app.post("/api/mod/send", requireModAuth, upload.single("image"), async (req, res) => {
   try {
-    const { page_id, sender_id, text, imageBase64, moderator } = req.body;
-    if (!page_id || !sender_id || !moderator || (!text && !imageBase64)) {
+    const body = req.body || {};
+    const page_id = String(body.page_id || "").trim();
+    const sender_id = String(body.sender_id || "").trim();
+    const moderator = String(body.moderator || "").trim();
+    const text = body.text || "";
+    const imageBase64 = body.imageBase64 || "";
+
+    if (!page_id || !sender_id || !moderator || (!text && !imageBase64 && !req.file)) {
       return res.status(400).json({ error: "মেসেজ অথবা ছবি দিন" });
     }
 
     const now = Date.now();
     const today = dhakaDate();
-    let savedImageUrl = null;
     const mid = `mod_${now}_${crypto.randomBytes(3).toString("hex")}`;
 
-    if (imageBase64) {
-      const match = imageBase64.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
+    let imgBuffer = null;
+    let imgMime = "image/jpeg";
+    let imgName = "photo.jpg";
+    let savedImageUrl = null;
+
+    if (req.file && req.file.buffer) {
+      imgBuffer = req.file.buffer;
+      imgMime = req.file.mimetype || "image/jpeg";
+      imgName = req.file.originalname || "photo.jpg";
+    } else if (imageBase64) {
+      const match = String(imageBase64).match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
       if (!match) return res.status(400).json({ error: "Invalid image format" });
-
-      const ext = match[1].split("/")[1].replace("jpeg", "jpg");
-      const filename = `img_${now}_${crypto.randomBytes(4).toString("hex")}.${ext}`;
-      fs.writeFileSync(path.join(uploadDir, filename), Buffer.from(match[2], "base64"));
-
-      const host = req.get("host");
-      const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
-      savedImageUrl = `${protocol}://${host}/uploads/${filename}`;
+      imgMime = match[1];
+      const ext = imgMime.split("/")[1].replace("jpeg", "jpg");
+      imgName = `img_${now}_${crypto.randomBytes(4).toString("hex")}.${ext}`;
+      imgBuffer = Buffer.from(match[2], "base64");
     }
 
-    const cleanText = (text || "").trim();
+    if (imgBuffer) {
+      const fbImgRes = await sendFacebookImageBuffer(page_id, sender_id, imgBuffer, imgName, imgMime);
+      savedImageUrl = fbImgRes.attachment_id ? `meta_attachment:${fbImgRes.attachment_id}` : "[ছবি]";
+      // RAM দ্রুত মুক্ত করা
+      imgBuffer = null;
+      if (req.file) req.file.buffer = null;
+    }
+
+    const cleanText = String(text || "").trim();
     const normMod = normalizeModeratorName(moderator) || moderator;
     const isConfirm = cleanText.toLowerCase().includes("your order confirm") ? 1 : 0;
-
-    stmts.insertReply.run(
-      page_id,
-      sender_id,
-      mid,
-      cleanText || "[ছবি পাঠানো হয়েছে]",
-      savedImageUrl,
-      now,
-      normMod,
-      isConfirm
-    );
-    stmts.assignModerator.run(page_id, sender_id, today, normMod, now);
-    stmts.markReplied.run(page_id, sender_id, today);
-
-    if (savedImageUrl) {
-      await sendFacebookPayload(page_id, {
-        recipient: { id: sender_id },
-        message: {
-          attachment: {
-            type: "image",
-            payload: { url: savedImageUrl, is_reusable: true }
-          }
-        },
-        messaging_type: "RESPONSE"
-      });
-    }
 
     if (cleanText) {
       await sendFacebookPayload(page_id, {
@@ -1658,6 +1861,20 @@ app.post("/api/mod/send", requireModAuth, async (req, res) => {
         messaging_type: "RESPONSE"
       });
     }
+
+    await supabase.from("replies").insert({
+      page_id,
+      sender_id,
+      message_id: mid,
+      reply_text: cleanText || "[ছবি পাঠানো হয়েছে]",
+      image_url: savedImageUrl,
+      reply_time: now,
+      moderator: normMod,
+      is_order_confirm: isConfirm
+    });
+
+    await assignModeratorIfUnassigned(page_id, sender_id, today, normMod, now);
+    await markCustomerMessagesReplied(page_id, sender_id, today);
 
     res.json({ success: true, message_id: mid, image_url: savedImageUrl });
   } catch (err) {
@@ -1984,7 +2201,6 @@ app.post("/api/ads/toggle", requireAuth, async (req, res) => {
   }
 });
 
-/* Campaign -> Ad sets -> Ads detail */
 const detailCache = new Map();
 
 function buildMetricRow(row, objective) {
@@ -2110,90 +2326,62 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
     const scope = resolveScope(req.query.page_id || req.query.scope);
     const win = shiftWindow(targetDate, String(req.query.shift || "all"));
 
-    const pc = pageClause(scope.ids);
-    const pcM = pageClause(scope.ids, "m.page_id");
-    const pcR = pageClause(scope.ids, "r.page_id");
+    const [{ data: msgs }, { data: replies }] = await Promise.all([
+      supabase.from("messages").select("page_id, sender_id, status, phone_number, created_at"),
+      supabase.from("replies").select("page_id, sender_id, moderator, reply_time, created_at, is_order_confirm")
+    ]);
 
-    const CUST = "page_id || ':' || sender_id";
-    const CUST_M = "m.page_id || ':' || m.sender_id";
-    const count = (sql, params) => db.prepare(sql).get(...params).count;
+    const scopedMsgs = (msgs || []).filter((m) => matchesScope(m.page_id, scope.ids));
+    const scopedReplies = (replies || []).filter((r) => matchesScope(r.page_id, scope.ids));
 
-    const totalReceived = count(
-      `SELECT COUNT(DISTINCT ${CUST}) AS count FROM messages WHERE ${DAY} = ?${pc.sql}`,
-      [targetDate, ...pc.params]
+    const dayMsgs = scopedMsgs.filter((m) => dhakaDayFromIso(m.created_at) === targetDate);
+    const priorCustSet = new Set(
+      scopedMsgs
+        .filter((m) => dhakaDayFromIso(m.created_at) < targetDate)
+        .map((m) => `${m.page_id}:${m.sender_id}`)
     );
 
-    const totalRawMessages = count(
-      `SELECT COUNT(*) AS count FROM messages WHERE ${DAY} = ?${pc.sql}`,
-      [targetDate, ...pc.params]
-    );
+    const dayReplies = scopedReplies
+      .filter((r) => replyDay(r) === targetDate)
+      .sort((a, b) => Number(a.reply_time || 0) - Number(b.reply_time || 0));
 
-    const returningCustomers = count(
-      `SELECT COUNT(DISTINCT ${CUST_M}) AS count
-       FROM messages m
-       WHERE ${DAY_M} = ?${pcM.sql}
-         AND EXISTS (
-           SELECT 1 FROM messages p
-           WHERE p.page_id = m.page_id AND p.sender_id = m.sender_id
-             AND date(p.created_at, '+6 hours') < ?
-         )`,
-      [targetDate, ...pcM.params, targetDate]
-    );
+    const repliedCustSetToday = new Set(dayReplies.map((r) => `${r.page_id}:${r.sender_id}`));
 
-    const totalReplied = count(
-      `SELECT COUNT(DISTINCT ${CUST}) AS count FROM messages
-       WHERE status = 'replied' AND ${DAY} = ?${pc.sql}`,
-      [targetDate, ...pc.params]
-    );
+    const receivedCustSet = new Set();
+    const returningCustSet = new Set();
+    const repliedCustSet = new Set();
+    const unreadCustSet = new Set();
+    const readNoReplyCustSet = new Set();
+    const phoneSet = new Set();
 
-    const unreadPending = count(
-      `SELECT COUNT(DISTINCT ${CUST}) AS count FROM messages
-       WHERE status = 'unread' AND ${DAY} = ?${pc.sql}`,
-      [targetDate, ...pc.params]
-    );
+    for (const m of dayMsgs) {
+      const ck = `${m.page_id}:${m.sender_id}`;
+      receivedCustSet.add(ck);
+      if (priorCustSet.has(ck)) returningCustSet.add(ck);
+      if (m.status === "replied") repliedCustSet.add(ck);
+      if (m.status === "unread") unreadCustSet.add(ck);
+      if (m.status === "read" && !repliedCustSetToday.has(ck)) readNoReplyCustSet.add(ck);
+      if (m.phone_number) phoneSet.add(m.phone_number);
+    }
 
-    const readNoReply = count(
-      `SELECT COUNT(DISTINCT ${CUST_M}) AS count
-       FROM messages m
-       WHERE m.status = 'read' AND ${DAY_M} = ?${pcM.sql}
-         AND NOT EXISTS (
-           SELECT 1 FROM replies r
-           WHERE r.sender_id = m.sender_id AND r.page_id = m.page_id
-             AND ${DAY_R} = ?
-         )`,
-      [targetDate, ...pcM.params, targetDate]
-    );
+    const confirmCustSet = new Set();
+    for (const r of dayReplies) {
+      if (Number(r.is_order_confirm) === 1) {
+        confirmCustSet.add(`${r.page_id}:${r.sender_id}`);
+      }
+    }
 
-    const orderConfirms = count(
-      `SELECT COUNT(DISTINCT ${CUST}) AS count FROM replies
-       WHERE is_order_confirm = 1 AND ${DAY} = ?${pc.sql}`,
-      [targetDate, ...pc.params]
-    );
+    const totalReceived = receivedCustSet.size;
+    const totalRawMessages = dayMsgs.length;
+    const returningCustomers = returningCustSet.size;
+    const totalReplied = repliedCustSet.size;
+    const unreadPending = unreadCustSet.size;
+    const readNoReply = readNoReplyCustSet.size;
+    const orderConfirms = confirmCustSet.size;
+    const phoneCount = phoneSet.size;
 
-    const phoneCount = count(
-      `SELECT COUNT(DISTINCT phone_number) AS count FROM messages
-       WHERE phone_number IS NOT NULL AND phone_number != '' AND ${DAY} = ?${pc.sql}`,
-      [targetDate, ...pc.params]
-    );
-
-    /* ------------------------------------------------------------ *
-     * Moderator হিসাব (নতুন নিয়ম)
-     *  - Customers : যে moderator ওই কাস্টমারকে আজ প্রথম reply দিয়েছে
-     *                শুধু তার নামেই ১ customer গোনা হবে
-     *  - Messages  : যে যতগুলো মেসেজ পাঠিয়েছে, প্রত্যেকের নামে আলাদা গোনা হবে
-     *  - Phones    : কাস্টমার নাম্বার দিলে সেটা প্রথম reply-দাতার নামে যাবে
-     * ------------------------------------------------------------ */
     const isShift = win.key !== "all";
     const inShift = (t) => !isShift || (t >= win.startMs && t < win.endMs);
-
-    const dayReplies = db
-      .prepare(
-        `SELECT r.page_id, r.sender_id, r.moderator, r.reply_time, r.created_at, r.is_order_confirm
-         FROM replies r
-         WHERE ${DAY_R} = ?${pcR.sql}
-         ORDER BY COALESCE(r.reply_time, 0) ASC, r.id ASC`
-      )
-      .all(targetDate, ...pcR.params);
 
     const mergedByMod = new Map();
     const ensureMod = (rawMod) => {
@@ -2215,7 +2403,10 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
     let unattributedMessages = 0;
 
     for (const r of dayReplies) {
-      const t = Number(r.reply_time) > 0 ? Number(r.reply_time) : Date.parse(String(r.created_at).replace(" ", "T") + "Z") || 0;
+      const t =
+        Number(r.reply_time) > 0
+          ? Number(r.reply_time)
+          : Date.parse(String(r.created_at || "")) || 0;
       const cur = ensureMod(r.moderator);
 
       if (!cur) {
@@ -2241,16 +2432,9 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       }
     }
 
-    const phoneMsgs = db
-      .prepare(
-        `SELECT page_id, sender_id, phone_number
-         FROM messages
-         WHERE phone_number IS NOT NULL AND phone_number != '' AND ${DAY} = ?${pc.sql}`
-      )
-      .all(targetDate, ...pc.params);
-
     const phoneSetByMod = new Map();
-    for (const p of phoneMsgs) {
+    for (const p of dayMsgs) {
+      if (!p.phone_number) continue;
       const first = firstByCustomer.get(`${p.page_id}:${p.sender_id}`);
       if (!first || !inShift(first.time)) continue;
       if (!phoneSetByMod.has(first.mod)) phoneSetByMod.set(first.mod, new Set());
@@ -2324,6 +2508,9 @@ app.get("/privacy-policy", (req, res) => {
   res.send(`<h1>Privacy Policy</h1><p>Analytics application for connected Facebook pages.</p>`);
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`Server running on port ${PORT}`);
+  await loadDbAliases();
+  await seedDefaultSavedRepliesIfEmpty();
+  await purgeOldEchoLogs();
 });
