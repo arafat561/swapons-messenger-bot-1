@@ -358,7 +358,6 @@ function extractPhoneNumber(text) {
 
 const fbAgent = new https.Agent({ keepAlive: true, maxSockets: 20 });
 
-// JSON payload পাঠানোর হেল্পার (text / image url)
 function sendFacebookPayload(pageId, bodyObj) {
   return new Promise((resolve, reject) => {
     const token = getPageToken(pageId);
@@ -999,7 +998,6 @@ async function handleMessagingEvent(pageId, event) {
     const replyTime = Number(event.timestamp || Date.now());
     const replyDay = dhakaDate(replyTime);
 
-    // এই dashboard থেকে পাঠানো মেসেজের echo আবার গুনলে double count হয় — স্কিপ
     const { data: recentModReplies } = await supabase
       .from("replies")
       .select("id, reply_text, image_url, reply_time")
@@ -1500,7 +1498,6 @@ app.post("/api/mod/batch", requireModAuth, async (req, res) => {
       }
     }
 
-    // Group messages per scoped customer on target day
     const msgsByCust = new Map();
     for (const m of dayMsgsScoped) {
       const key = `${m.page_id}:${m.sender_id}`;
@@ -1845,7 +1842,6 @@ app.post("/api/mod/send", requireModAuth, upload.single("image"), async (req, re
     if (imgBuffer) {
       const fbImgRes = await sendFacebookImageBuffer(page_id, sender_id, imgBuffer, imgName, imgMime);
       savedImageUrl = fbImgRes.attachment_id ? `meta_attachment:${fbImgRes.attachment_id}` : "[ছবি]";
-      // RAM দ্রুত মুক্ত করা
       imgBuffer = null;
       if (req.file) req.file.buffer = null;
     }
