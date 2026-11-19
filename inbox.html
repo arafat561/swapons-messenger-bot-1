@@ -63,12 +63,12 @@
         <button type="button" onclick="closeAdPreviewModal()" class="text-slate-300 hover:text-white bg-slate-700/70 hover:bg-slate-700 px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer">✕ বন্ধ</button>
       </div>
 
-      <div id="modalAdMediaBox" class="p-4 bg-slate-950 flex flex-col items-center justify-center min-h-[220px] max-h-[65vh] overflow-auto">
-        <video id="modalAdVideo" controls autoplay playsinline class="hidden max-h-[55vh] w-full rounded-xl bg-black"></video>
+      <div id="modalAdMediaBox" class="p-4 bg-slate-950 flex flex-col items-center justify-center min-h-[220px] max-h-[65vh] overflow-auto gap-3">
+        <video id="modalAdVideo" controls playsinline class="hidden max-h-[55vh] w-full rounded-xl bg-black"></video>
         <img id="modalAdImg" src="" alt="Ad Media" class="hidden max-h-[55vh] rounded-xl object-contain">
-        <div id="modalAdFallbackNote" class="hidden text-center text-xs text-slate-400 space-y-2 py-6">
+        <div id="modalAdFallbackNote" class="hidden text-center text-xs text-slate-400 space-y-2 py-3">
           <div class="text-3xl">📢</div>
-          <p>এই মেসেজের সাথে সরাসরি ভিডিও/ছবির ফাইল অ্যাটাচমেন্ট নেই। নিচের বাটন থেকে ফেসবুক অ্যাড/পেজ লিংক ওপেন করে দেখুন।</p>
+          <p id="modalAdNoteText"></p>
         </div>
       </div>
 
@@ -181,7 +181,7 @@
         <div id="adBanner" class="bg-amber-500/10 border-b border-amber-500/30 px-4 py-2.5 flex items-center justify-between gap-3">
           <div class="flex items-center gap-3 min-w-0">
             <button type="button" id="adThumbBtn" onclick="openAdPreviewModal()" class="shrink-0 cursor-pointer">
-              <img id="adThumb" src="" alt="Ad" class="w-12 h-12 rounded-lg object-cover border border-amber-500/50 hidden">
+              <img id="adThumb" src="" alt="Ad" onerror="this.classList.add('hidden')" class="w-12 h-12 rounded-lg object-cover border border-amber-500/50 hidden">
             </button>
             <div class="min-w-0">
               <div class="text-[11px] font-bold text-amber-400">📢 Ad / Product Source:</div>
@@ -198,7 +198,7 @@
         <!-- Messages Stream -->
         <div id="messagesContainer" class="flex-1 overflow-y-auto p-4 space-y-3"></div>
 
-        <!-- Shared Saved Replies Panel (Page-wise, Meta Sync + Search + Add new + Auto Save + Delete) -->
+        <!-- Shared Saved Replies Panel -->
         <div id="savedRepliesPanel" class="hidden px-4 py-3 bg-slate-900 border-t border-slate-800 space-y-2.5">
           <div class="flex flex-wrap items-center justify-between gap-2">
             <div class="flex items-center gap-2">
@@ -213,12 +213,10 @@
             </div>
           </div>
 
-          <!-- Search Box -->
           <div class="relative">
             <input type="text" id="savedReplySearch" oninput="renderSavedRepliesList()" placeholder="🔍 Search saved replies..." class="w-full bg-slate-800 text-white text-xs px-3 py-2 rounded-lg border border-slate-700 outline-none focus:border-sky-500">
           </div>
 
-          <!-- Inline Auto-Save Add New Reply Box -->
           <div id="addNewSavedReplyBox" class="hidden bg-slate-800/80 border border-slate-700 rounded-xl p-2.5 space-y-2">
             <div class="flex items-center justify-between text-[11px] text-slate-400">
               <span>নতুন Saved Reply (টাইপ করলেই Auto Save হবে — এই পেজের সব মডারেটর পাবে)</span>
@@ -228,7 +226,6 @@
             <textarea id="newSavedReplyBody" rows="2" oninput="autoSaveDraftSavedReply()" placeholder="এখানে রিপ্লাই মেসেজ লিখুন..." class="w-full bg-slate-900 text-white text-xs px-3 py-1.5 rounded-lg border border-slate-700 outline-none focus:border-sky-500"></textarea>
           </div>
 
-          <!-- Saved Replies List -->
           <div id="savedRepliesList" class="space-y-1.5 max-h-48 overflow-y-auto pr-1"></div>
         </div>
 
@@ -259,7 +256,7 @@
           <button type="button" onclick="clearSelectedImage()" class="text-xs text-rose-400 hover:underline px-2 py-1 cursor-pointer shrink-0">✕ বাতিল</button>
         </div>
 
-        <!-- Quick Saved Reply Suggestion (short title টাইপ করলেই দেখাবে, Meta-র মতো) -->
+        <!-- Quick Saved Reply Suggestion -->
         <div id="quickSuggestBox" class="hidden px-4 py-2 bg-slate-900 border-t border-slate-800 space-y-1"></div>
 
         <!-- Auto-Save Status + Reply Input + 4 Action Buttons -->
@@ -272,22 +269,18 @@
           <div class="flex items-center gap-2">
             <input type="file" id="imageFileInput" accept="image/*" multiple class="hidden" onchange="handleImageSelect(event)">
 
-            <!-- 1. Attach File -->
             <button type="button" onclick="document.getElementById('imageFileInput').click()" title="Attach File (একাধিক ছবি)" class="bg-slate-800 hover:bg-slate-700 text-slate-200 p-3 rounded-xl border border-slate-700 transition cursor-pointer shrink-0">
               📎
             </button>
 
-            <!-- 2. Insert Saved Reply -->
             <button type="button" onclick="toggleSavedRepliesPanel()" title="Insert Saved Reply" class="bg-slate-800 hover:bg-slate-700 text-sky-300 p-3 rounded-xl border border-slate-700 transition cursor-pointer shrink-0">
               💬
             </button>
 
-            <!-- 3. Post Sticker -->
             <button type="button" onclick="toggleStickerPanel()" title="Post Sticker" class="bg-slate-800 hover:bg-slate-700 text-amber-300 p-3 rounded-xl border border-slate-700 transition cursor-pointer shrink-0">
               😊
             </button>
 
-            <!-- 4. Like -->
             <button type="button" onclick="sendLikeNow()" title="Send Like (👍)" class="bg-slate-800 hover:bg-slate-700 text-blue-400 p-3 rounded-xl border border-slate-700 transition cursor-pointer shrink-0 font-bold">
               👍
             </button>
@@ -321,7 +314,6 @@
       return String(s || "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
     }
 
-    // কোন পেজের Saved Reply দেখাবে: কাস্টমার সিলেক্ট থাকলে তার পেজ, না হলে হেডার ফিল্টার
     function currentSavedRepliesPageRef() {
       if (selectedCustomer && selectedCustomer.page_id) return selectedCustomer.page_id;
       return currentPageFilter || "all";
@@ -801,12 +793,30 @@
       }).join("");
     }
 
+    /* ---------------- Ad banner + preview (real ad referral only) ---------------- */
     let currentActiveAdData = null;
 
-    function isVideoMediaUrl(url) {
-      if (!url) return false;
-      const u = String(url).toLowerCase();
-      return u.includes(".mp4") || u.includes(".mov") || u.includes(".webm") || u.includes("/video") || u.includes("video_url");
+    function isImageUrl(u) {
+      return /\.(jpe?g|png|webp|gif)(\?|$)/i.test(String(u || ""));
+    }
+
+    function adExternalUrl(ad) {
+      if (!ad) return "";
+      if (ad.video_page_url) return ad.video_page_url;
+      if (ad.post_url) return ad.post_url;
+      if (ad.ad_id) return `https://www.facebook.com/ads/library/?id=${encodeURIComponent(ad.ad_id)}`;
+      return "";
+    }
+
+    function adPosterUrl(ad) {
+      if (!ad) return "";
+      if (ad.photo_url) return ad.photo_url;
+      if (ad.video_url && isImageUrl(ad.video_url)) return ad.video_url;
+      return "";
+    }
+
+    function adIsVideo(ad) {
+      return Boolean(ad && (ad.media_type === "video" || ad.video_id || ad.video_url));
     }
 
     function showAdBanner(adData, customer) {
@@ -816,34 +826,22 @@
       const thumb = document.getElementById("adThumb");
       const btnLabel = document.getElementById("adPostBtnLabel");
 
-      const badUrl = adData && (adData.photo_url || adData.post_url || "").includes("39178562_1505197616293642");
-      const pageSlug = (customer && customer.page_id) || "102803132669088";
-      const fallbackAdUrl = (adData && adData.ad_id)
-        ? `https://www.facebook.com/ads/library/?id=${encodeURIComponent(adData.ad_id)}`
-        : `https://www.facebook.com/${encodeURIComponent(pageSlug)}/ads`;
-
-      if (!adData || badUrl) {
-        titleEl.innerText = `${customer ? customer.page_name : 'Page'} — Ad / Product Check`;
-        idEl.innerText = "ক্লিক করে অ্যাড/প্রোডাক্ট প্রিভিউ বা ফেসবুক অ্যাড দেখুন";
+      if (!adData) {
+        titleEl.innerText = "Direct Messenger / Ad referral পাওয়া যায়নি";
+        idEl.innerText = "এই কাস্টমার সরাসরি ইনবক্সে এসেছেন বা Meta ad তথ্য পাঠায়নি";
         thumb.classList.add("hidden");
         btnLabel.innerText = "অ্যাড দেখুন";
-        currentActiveAdData = {
-          ad_title: `${customer ? customer.page_name : 'Page'} Ad / Product`,
-          ad_id: "",
-          post_url: fallbackAdUrl,
-          photo_url: ""
-        };
         return;
       }
 
-      const mediaUrl = adData.photo_url || adData.post_url || fallbackAdUrl;
-      const isVid = isVideoMediaUrl(mediaUrl);
+      const isVid = adIsVideo(adData);
+      const poster = adPosterUrl(adData);
 
       titleEl.innerText = adData.ad_title || "Facebook Ad";
-      idEl.innerText = (adData.ad_id ? `Ad ID: ${adData.ad_id} · ` : "") + (isVid ? "Video Ad" : "Image / Ad Source");
+      idEl.innerText = (adData.ad_id ? `Ad ID: ${adData.ad_id} · ` : "") + (isVid ? "Video Ad" : (poster ? "Picture Ad" : "Facebook Ad"));
 
-      if (adData.photo_url && !isVid) {
-        thumb.src = adData.photo_url;
+      if (poster) {
+        thumb.src = poster;
         thumb.classList.remove("hidden");
       } else {
         thumb.classList.add("hidden");
@@ -852,41 +850,82 @@
       btnLabel.innerText = isVid ? "ভিডিও অ্যাড দেখুন" : "অ্যাড দেখুন";
     }
 
+    function showAdNote(text) {
+      const noteEl = document.getElementById("modalAdFallbackNote");
+      document.getElementById("modalAdNoteText").innerText = text;
+      noteEl.classList.remove("hidden");
+    }
+
     function openAdPreviewModal() {
-      const ad = currentActiveAdData || {};
-      const pageSlug = (selectedCustomer && selectedCustomer.page_id) || "102803132669088";
-      const extUrl = ad.post_url || ad.photo_url || (ad.ad_id
-        ? `https://www.facebook.com/ads/library/?id=${encodeURIComponent(ad.ad_id)}`
-        : `https://www.facebook.com/${encodeURIComponent(pageSlug)}/ads`);
-
-      const mediaUrl = ad.photo_url || ad.post_url || "";
-      const isVid = isVideoMediaUrl(mediaUrl);
-
-      document.getElementById("modalAdTitle").innerText = ad.ad_title || "Facebook Ad";
-      document.getElementById("modalAdSub").innerText = ad.ad_id ? `Ad ID: ${ad.ad_id}` : (selectedCustomer ? selectedCustomer.page_name : "Ad");
-      document.getElementById("modalAdExternalLink").href = extUrl;
-
+      const ad = currentActiveAdData;
       const vidEl = document.getElementById("modalAdVideo");
       const imgEl = document.getElementById("modalAdImg");
       const noteEl = document.getElementById("modalAdFallbackNote");
       const badgeEl = document.getElementById("modalAdTypeBadge");
+      const linkEl = document.getElementById("modalAdExternalLink");
 
+      vidEl.onerror = null;
       vidEl.pause();
+      vidEl.removeAttribute("src");
+      vidEl.removeAttribute("poster");
       vidEl.classList.add("hidden");
       imgEl.classList.add("hidden");
       noteEl.classList.add("hidden");
 
-      if (isVid && mediaUrl) {
-        vidEl.src = mediaUrl;
+      if (!ad) {
+        document.getElementById("modalAdTitle").innerText = "Ad পাওয়া যায়নি";
+        document.getElementById("modalAdSub").innerText = selectedCustomer ? selectedCustomer.page_name : "";
+        linkEl.classList.add("hidden");
+        badgeEl.innerText = "ℹ️ No Ad Data";
+        showAdNote("এই কাস্টমারের মেসেজের সাথে Meta কোনো Ad referral পাঠায়নি। সম্ভবত কাস্টমার সরাসরি পেজে মেসেজ করেছেন, অথবা এটা Click-to-Messenger অ্যাড থেকে আসেনি।");
+        document.getElementById("adPreviewModal").classList.remove("hidden");
+        return;
+      }
+
+      const extUrl = adExternalUrl(ad);
+      const poster = adPosterUrl(ad);
+      const playable = ad.video_url && !isImageUrl(ad.video_url);
+
+      document.getElementById("modalAdTitle").innerText = ad.ad_title || "Facebook Ad";
+      document.getElementById("modalAdSub").innerText = ad.ad_id ? `Ad ID: ${ad.ad_id}` : (selectedCustomer ? selectedCustomer.page_name : "Ad");
+
+      if (extUrl) {
+        linkEl.href = extUrl;
+        linkEl.classList.remove("hidden");
+      } else {
+        linkEl.classList.add("hidden");
+      }
+
+      if (adIsVideo(ad) && playable) {
+        if (poster) vidEl.setAttribute("poster", poster);
+        vidEl.src = ad.video_url;
         vidEl.classList.remove("hidden");
         badgeEl.innerText = "🎬 Video Content Ad";
-      } else if (ad.photo_url) {
-        imgEl.src = ad.photo_url;
+        vidEl.onerror = () => {
+          vidEl.onerror = null;
+          vidEl.classList.add("hidden");
+          if (poster) {
+            imgEl.src = poster;
+            imgEl.classList.remove("hidden");
+          }
+          showAdNote("ভিডিও সরাসরি চালানো যায়নি। নিচের বাটনে ক্লিক করে Facebook-এ ভিডিও অ্যাডটি দেখুন।");
+          badgeEl.innerText = "🎬 Video Ad (Facebook-এ দেখুন)";
+        };
+        vidEl.play().catch(() => {});
+      } else if (poster) {
+        imgEl.src = poster;
         imgEl.classList.remove("hidden");
-        badgeEl.innerText = "🖼️ Picture Content Ad";
+        if (adIsVideo(ad)) {
+          badgeEl.innerText = "🎬 Video Ad (Thumbnail)";
+          showAdNote("এটা ভিডিও অ্যাড। পুরো ভিডিও দেখতে নিচের বাটনে ক্লিক করুন।");
+        } else {
+          badgeEl.innerText = "🖼️ Picture Content Ad";
+        }
       } else {
-        noteEl.classList.remove("hidden");
         badgeEl.innerText = "🔗 External Ad Link";
+        let msg = "এই অ্যাডের সরাসরি ছবি/ভিডিও পাওয়া যায়নি।" + (extUrl ? " নিচের বাটন থেকে Facebook-এ অ্যাডটি খুলুন।" : "");
+        if (ad.enrich_error) msg += "\n(Meta: " + ad.enrich_error + ")";
+        showAdNote(msg);
       }
 
       document.getElementById("adPreviewModal").classList.remove("hidden");
@@ -894,7 +933,12 @@
 
     function closeAdPreviewModal() {
       const vidEl = document.getElementById("modalAdVideo");
-      if (vidEl) { vidEl.pause(); vidEl.src = ""; }
+      if (vidEl) {
+        vidEl.onerror = null;
+        vidEl.pause();
+        vidEl.removeAttribute("src");
+        vidEl.load();
+      }
       document.getElementById("adPreviewModal").classList.add("hidden");
     }
 
@@ -936,7 +980,6 @@
         : `<span>👤</span>`;
       showAdBanner(customer.ad_data, customer);
 
-      // এই কাস্টমারের পেজের Saved Reply লোড (Stone Rose হলে Stone Rose-এর, Swapons হলে Swapons-এর)
       loadSharedSavedReplies();
       await loadChatMessages();
     }
