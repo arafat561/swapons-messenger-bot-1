@@ -10,6 +10,7 @@
     body { font-family: 'Hind Siliguri', sans-serif; background-color: #070b14; color: #f1f5f9; }
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 10px; }
+    input[type="date"] { color-scheme: dark; }
   </style>
 </head>
 <body class="h-screen flex flex-col overflow-hidden">
@@ -49,6 +50,40 @@
           ইনবক্সে প্রবেশ করুন
         </button>
       </form>
+    </div>
+  </div>
+
+  <!-- Stats Modal (সব মডারেটরের হিসাব + ক্যালেন্ডার) -->
+  <div id="statsModal" class="hidden fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden shadow-2xl flex flex-col">
+      <div class="px-4 py-3 bg-slate-800/90 border-b border-slate-700 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div class="text-sm font-bold text-amber-400">📊 মডারেটর হিসাব</div>
+          <div id="statsScopeLabel" class="text-[11px] text-slate-400"></div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="shiftStatsDate(-1)" class="bg-slate-700 hover:bg-slate-600 text-white text-xs px-2.5 py-1.5 rounded-lg cursor-pointer">◀</button>
+          <input type="date" id="statsDate" onchange="loadStats()" class="bg-slate-800 text-white text-xs px-3 py-1.5 rounded-lg border border-slate-700 outline-none focus:border-blue-500">
+          <button type="button" onclick="shiftStatsDate(1)" class="bg-slate-700 hover:bg-slate-600 text-white text-xs px-2.5 py-1.5 rounded-lg cursor-pointer">▶</button>
+          <button type="button" onclick="closeStatsModal()" class="text-slate-300 hover:text-white bg-slate-700/70 hover:bg-slate-700 px-2.5 py-1.5 rounded-lg text-xs font-bold cursor-pointer">✕ বন্ধ</button>
+        </div>
+      </div>
+      <div class="overflow-auto p-3">
+        <table class="w-full text-xs text-left">
+          <thead class="text-slate-400 border-b border-slate-700">
+            <tr>
+              <th class="py-2 px-2">মডারেটর</th>
+              <th class="py-2 px-2 text-center">ব্যাকএন্ড থেকে পেয়েছে</th>
+              <th class="py-2 px-2 text-center">মেসেজ পাঠিয়েছে</th>
+              <th class="py-2 px-2 text-center text-amber-300">Pending</th>
+              <th class="py-2 px-2 text-center text-sky-300">Average</th>
+              <th class="py-2 px-2 text-center text-emerald-300">Good</th>
+              <th class="py-2 px-2 text-center text-rose-300">Poor</th>
+            </tr>
+          </thead>
+          <tbody id="statsBody"></tbody>
+        </table>
+      </div>
     </div>
   </div>
 
@@ -94,12 +129,24 @@
         <option value="stone">🟣 Stone Rose BD</option>
       </select>
 
-      <div class="text-xs text-slate-400">
-        ব্যাকএন্ড কিউতে অপেক্ষমান: <strong id="globalQueueCount" class="text-amber-400 text-sm">0</strong> জন
+      <div class="flex items-center gap-1.5">
+        <input type="date" id="viewDate" onchange="changeViewDate()" title="তারিখ সিলেক্ট করে আগের দিনের হিসাব দেখুন" class="bg-slate-800 text-white text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-slate-700 outline-none focus:border-blue-500 cursor-pointer">
+        <button onclick="goToday()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs px-2.5 py-1.5 rounded-lg border border-slate-700 cursor-pointer">আজ</button>
+      </div>
+
+      <div class="text-xs text-slate-400 flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span><span id="st_label">আজ</span> পেয়েছি: <strong id="st_assigned" class="text-white text-sm">0</strong></span>
+        <span>পাঠিয়েছি: <strong id="st_sent" class="text-emerald-400 text-sm">0</strong></span>
+        <span>Pending: <strong id="st_pending" class="text-amber-400 text-sm">0</strong></span>
+        <span class="text-slate-500">|</span>
+        <span>ব্যাকএন্ড কিউ: <strong id="globalQueueCount" class="text-amber-400 text-sm">0</strong> জন</span>
       </div>
     </div>
 
     <div class="flex items-center gap-2">
+      <button onclick="openStatsModal()" class="bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 text-xs font-semibold px-3.5 py-2 rounded-lg transition cursor-pointer">
+        📊 হিসাব
+      </button>
       <button onclick="fetchBatch(true)" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-3.5 py-2 rounded-lg transition cursor-pointer">
         + নতুন কাস্টমার লোড
       </button>
@@ -112,21 +159,28 @@
   <!-- Main Chat Layout -->
   <div class="flex-1 flex overflow-hidden">
 
-    <!-- Left Sidebar: 4 Dashboard Tabs + Customer List -->
+    <!-- Left Sidebar -->
     <aside class="w-80 md:w-96 bg-slate-900/60 border-r border-slate-800 flex flex-col">
       <div class="grid grid-cols-4 gap-1 p-2 bg-slate-950/60 border-b border-slate-800 text-center">
-        <button onclick="switchBucket('pending')" id="tab_pending" class="py-1.5 px-1 rounded-lg text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 cursor-pointer">
+        <button onclick="switchBucket('pending')" id="tab_pending" class="relative py-1.5 px-1 rounded-lg text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 cursor-pointer">
           Pending (<span id="cnt_pending">0</span>)
         </button>
-        <button onclick="switchBucket('average')" id="tab_average" class="py-1.5 px-1 rounded-lg text-[11px] font-semibold bg-slate-800/60 text-slate-400 hover:text-white cursor-pointer">
+        <button onclick="switchBucket('average')" id="tab_average" class="relative py-1.5 px-1 rounded-lg text-[11px] font-semibold bg-slate-800/60 text-slate-400 hover:text-white cursor-pointer">
           Average (<span id="cnt_average">0</span>)
+          <span id="ub_average" style="display:none" class="absolute -top-1.5 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold items-center justify-center"></span>
         </button>
-        <button onclick="switchBucket('good')" id="tab_good" class="py-1.5 px-1 rounded-lg text-[11px] font-semibold bg-slate-800/60 text-slate-400 hover:text-white cursor-pointer">
+        <button onclick="switchBucket('good')" id="tab_good" class="relative py-1.5 px-1 rounded-lg text-[11px] font-semibold bg-slate-800/60 text-slate-400 hover:text-white cursor-pointer">
           Good (<span id="cnt_good">0</span>)
+          <span id="ub_good" style="display:none" class="absolute -top-1.5 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold items-center justify-center"></span>
         </button>
-        <button onclick="switchBucket('poor')" id="tab_poor" class="py-1.5 px-1 rounded-lg text-[11px] font-semibold bg-slate-800/60 text-slate-400 hover:text-white cursor-pointer">
+        <button onclick="switchBucket('poor')" id="tab_poor" class="relative py-1.5 px-1 rounded-lg text-[11px] font-semibold bg-slate-800/60 text-slate-400 hover:text-white cursor-pointer">
           Poor (<span id="cnt_poor">0</span>)
+          <span id="ub_poor" style="display:none" class="absolute -top-1.5 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold items-center justify-center"></span>
         </button>
+      </div>
+
+      <div id="pastBanner" class="hidden px-3 py-1.5 bg-indigo-500/10 border-b border-indigo-500/30 text-[11px] text-indigo-300">
+        📅 <span id="pastBannerDate"></span> তারিখের ইতিহাস (শুধু দেখার জন্য)
       </div>
 
       <div class="px-3 py-2 border-b border-slate-800 flex justify-between items-center text-[11px] text-slate-400">
@@ -139,7 +193,7 @@
       </div>
     </aside>
 
-    <!-- Right Panel: Active Conversation -->
+    <!-- Right Panel -->
     <main class="flex-1 flex flex-col bg-slate-950/40">
       <div id="emptyChatState" class="flex-1 flex flex-col items-center justify-center text-slate-500 p-6 text-center">
         <div class="text-5xl mb-3">👈</div>
@@ -177,7 +231,7 @@
           </div>
         </div>
 
-        <!-- Ad Referral Banner with Video / Picture Preview Trigger -->
+        <!-- Ad Referral Banner -->
         <div id="adBanner" class="bg-amber-500/10 border-b border-amber-500/30 px-4 py-2.5 flex items-center justify-between gap-3">
           <div class="flex items-center gap-3 min-w-0">
             <button type="button" id="adThumbBtn" onclick="openAdPreviewModal()" class="shrink-0 cursor-pointer">
@@ -198,7 +252,7 @@
         <!-- Messages Stream -->
         <div id="messagesContainer" class="flex-1 overflow-y-auto p-4 space-y-3"></div>
 
-        <!-- Shared Saved Replies Panel -->
+        <!-- Saved Replies Panel -->
         <div id="savedRepliesPanel" class="hidden px-4 py-3 bg-slate-900 border-t border-slate-800 space-y-2.5">
           <div class="flex flex-wrap items-center justify-between gap-2">
             <div class="flex items-center gap-2">
@@ -249,7 +303,7 @@
           </div>
         </div>
 
-        <!-- Selected Multiple Images Preview Bar -->
+        <!-- Selected Images Preview Bar -->
         <div id="imagePreviewBar" class="hidden px-4 py-2 bg-slate-900 border-t border-slate-800 flex items-center gap-3">
           <div id="previewThumbList" class="flex items-center gap-2 overflow-x-auto max-w-md py-0.5"></div>
           <span id="previewCountLabel" class="text-xs text-slate-300 flex-1">ছবি সিলেক্ট করা হয়েছে</span>
@@ -259,7 +313,7 @@
         <!-- Quick Saved Reply Suggestion -->
         <div id="quickSuggestBox" class="hidden px-4 py-2 bg-slate-900 border-t border-slate-800 space-y-1"></div>
 
-        <!-- Auto-Save Status + Reply Input + 4 Action Buttons -->
+        <!-- Reply Input -->
         <form onsubmit="event.preventDefault(); sendReply();" class="p-3 bg-slate-900 border-t border-slate-800 space-y-1.5">
           <div class="flex items-center justify-between px-1 text-[11px] text-slate-400">
             <span id="autoSaveBadge" class="text-emerald-400/90">💾 Auto Save সক্রিয়</span>
@@ -309,6 +363,13 @@
     let sharedSavedRepliesCache = [];
     let autoSaveDebounceTimer = null;
     let currentSuggestions = [];
+    let lastQueue = [];
+
+    function dhakaToday() {
+      return new Date(Date.now() + 6 * 3600 * 1000).toISOString().slice(0, 10);
+    }
+    let viewDate = dhakaToday();
+    function isViewingToday() { return viewDate === dhakaToday(); }
 
     function escHtml(s) {
       return String(s || "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -516,7 +577,7 @@
       }
     }
 
-    /* ---------------- Quick suggestion (Meta-style shorthand) ---------------- */
+    /* ---------------- Quick suggestion ---------------- */
     function hideQuickSuggest() {
       currentSuggestions = [];
       const box = document.getElementById("quickSuggestBox");
@@ -637,18 +698,19 @@
       return result;
     }
 
-    function renderCustomerIdentity(customer, sizeClass = "w-10 h-10") {
+    function renderCustomerIdentity(customer, sizeClass = "w-10 h-10", unread = false) {
       const displayName = escHtml((customer && customer.name) || (customer && customer.customer_name) || "Customer");
       const picUrl = customer && customer.profile_pic;
       const fallbackBadge = `<div class="${sizeClass} rounded-full bg-blue-600/30 text-blue-300 flex items-center justify-center font-bold text-sm shrink-0">👤</div>`;
       const picHtml = picUrl
-        ? `<img src="${picUrl}" alt="${displayName}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" class="${sizeClass} rounded-full object-cover shrink-0">${fallbackBadge.replace('flex items-center justify-center', 'hidden items-center justify-center')}`
+        ? `<img src="${picUrl}" alt="${displayName}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" class="${sizeClass} rounded-full object-cover shrink-0 ${unread ? '' : 'opacity-60'}">${fallbackBadge.replace('flex items-center justify-center', 'hidden items-center justify-center')}`
         : fallbackBadge;
+      const nameCls = unread ? "font-bold text-white" : "font-medium text-slate-400";
 
       return `
         <div class="flex items-center gap-2.5 min-w-0">
           ${picHtml}
-          <span class="font-bold text-sm text-white truncate">${displayName}</span>
+          <span class="${nameCls} text-sm truncate">${displayName}</span>
         </div>
       `;
     }
@@ -667,10 +729,12 @@
       const page = document.getElementById("loginPageSelect").value;
       if (!name || !pass) return;
 
+      viewDate = dhakaToday();
+
       const res = await fetch("/api/mod/batch", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-mod-pass": pass },
-        body: JSON.stringify({ moderator: name, requestNew: true, pageFilter: page, bucket: "pending" })
+        body: JSON.stringify({ moderator: name, requestNew: true, pageFilter: page, bucket: "pending", date: viewDate })
       });
 
       if (res.status === 401) {
@@ -689,9 +753,33 @@
       document.getElementById("headerPageFilter").value = page;
       document.getElementById("modLoginModal").classList.add("hidden");
       document.getElementById("activeModBadge").innerText = `👤 ${currentMod}`;
+      initDateInput();
       const data = await res.json();
       renderBatch(data);
       loadSharedSavedReplies();
+    }
+
+    function initDateInput() {
+      const el = document.getElementById("viewDate");
+      el.max = dhakaToday();
+      el.value = viewDate;
+    }
+
+    function changeViewDate() {
+      const v = document.getElementById("viewDate").value;
+      viewDate = v || dhakaToday();
+      saveCurrentDraft();
+      selectedCustomer = null;
+      hideQuickSuggest();
+      document.getElementById("activeChatBox").classList.add("hidden");
+      document.getElementById("emptyChatState").classList.remove("hidden");
+      fetchBatch(false);
+    }
+
+    function goToday() {
+      viewDate = dhakaToday();
+      initDateInput();
+      changeViewDate();
     }
 
     function switchBucket(bucket) {
@@ -703,12 +791,12 @@
       document.getElementById("emptyChatState").classList.remove("hidden");
 
       const styles = {
-        pending: "py-1.5 px-1 rounded-lg text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 cursor-pointer",
-        average: "py-1.5 px-1 rounded-lg text-[11px] font-bold bg-sky-500/20 text-sky-300 border border-sky-500/40 cursor-pointer",
-        good: "py-1.5 px-1 rounded-lg text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 cursor-pointer",
-        poor: "py-1.5 px-1 rounded-lg text-[11px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40 cursor-pointer"
+        pending: "relative py-1.5 px-1 rounded-lg text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 cursor-pointer",
+        average: "relative py-1.5 px-1 rounded-lg text-[11px] font-bold bg-sky-500/20 text-sky-300 border border-sky-500/40 cursor-pointer",
+        good: "relative py-1.5 px-1 rounded-lg text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 cursor-pointer",
+        poor: "relative py-1.5 px-1 rounded-lg text-[11px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40 cursor-pointer"
       };
-      const inactive = "py-1.5 px-1 rounded-lg text-[11px] font-semibold bg-slate-800/60 text-slate-400 hover:text-white cursor-pointer";
+      const inactive = "relative py-1.5 px-1 rounded-lg text-[11px] font-semibold bg-slate-800/60 text-slate-400 hover:text-white cursor-pointer";
 
       ["pending", "average", "good", "poor"].forEach(b => {
         document.getElementById(`tab_${b}`).className = (b === bucket) ? styles[b] : inactive;
@@ -746,54 +834,119 @@
 
     async function fetchBatch(requestNew = false) {
       if (!currentMod || !modPass) return;
-      const res = await fetch("/api/mod/batch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-mod-pass": modPass },
-        body: JSON.stringify({ moderator: currentMod, requestNew, pageFilter: currentPageFilter, bucket: currentBucket })
-      });
-      if (res.ok) {
-        const data = await res.json();
-        renderBatch(data);
-      }
+      try {
+        const res = await fetch("/api/mod/batch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-mod-pass": modPass },
+          body: JSON.stringify({
+            moderator: currentMod,
+            requestNew,
+            pageFilter: currentPageFilter,
+            bucket: currentBucket,
+            date: viewDate
+          })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          renderBatch(data);
+        }
+      } catch (e) {}
     }
 
     function renderBatch(data) {
+      const isToday = data.is_today !== false;
+      lastQueue = data.queue || [];
+
       document.getElementById("globalQueueCount").innerText = data.global_unassigned || 0;
       if (data.counts) {
         document.getElementById("cnt_pending").innerText = data.counts.pending || 0;
         document.getElementById("cnt_average").innerText = data.counts.average || 0;
         document.getElementById("cnt_good").innerText = data.counts.good || 0;
         document.getElementById("cnt_poor").innerText = data.counts.poor || 0;
+        document.getElementById("st_pending").innerText = data.counts.pending || 0;
       }
 
+      // হিসাব chip
+      document.getElementById("st_label").innerText = isToday ? "আজ" : (data.day || viewDate);
+      document.getElementById("st_assigned").innerText = data.assigned_total || 0;
+      document.getElementById("st_sent").innerText = data.sent_messages || 0;
+
+      // পুরনো দিনের banner
+      const banner = document.getElementById("pastBanner");
+      if (isToday) banner.classList.add("hidden");
+      else {
+        document.getElementById("pastBannerDate").innerText = data.day || viewDate;
+        banner.classList.remove("hidden");
+      }
+
+      // Label tab-এ unread badge (Average / Good / Poor)
+      let totalUnreadMsgs = 0;
+      const unread = data.unread || {};
+      ["pending", "average", "good", "poor"].forEach(b => {
+        const u = unread[b] || { customers: 0, messages: 0 };
+        if (isToday) totalUnreadMsgs += u.messages || 0;
+        if (b === "pending") return;
+        const el = document.getElementById("ub_" + b);
+        if (!el) return;
+        if (isToday && u.messages > 0) {
+          el.innerText = u.messages > 99 ? "99+" : String(u.messages);
+          el.title = `${u.customers} জন কাস্টমারের ${u.messages}টি নতুন মেসেজ`;
+          el.style.display = "flex";
+        } else {
+          el.style.display = "none";
+        }
+      });
+      document.title = (totalUnreadMsgs > 0 ? `(${totalUnreadMsgs}) ` : "") + "Moderator Batch Inbox";
+
       const listEl = document.getElementById("customerList");
-      if (data.queue.length === 0) {
+      if (lastQueue.length === 0) {
         listEl.innerHTML = `
           <div class="p-8 text-center space-y-3">
             <div class="text-3xl">📭</div>
             <p class="text-xs text-slate-400">এই ফোল্ডারে কোনো কাস্টমার নেই</p>
-            ${currentBucket === 'pending' ? `<button onclick="fetchBatch(true)" class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-4 py-2 rounded-lg cursor-pointer">নতুন ১০টি কাস্টমার লোড করুন</button>` : ''}
+            ${(currentBucket === 'pending' && isToday) ? `<button onclick="fetchBatch(true)" class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-4 py-2 rounded-lg cursor-pointer">নতুন কাস্টমার লোড করুন</button>` : ''}
           </div>`;
         return;
       }
 
-      listEl.innerHTML = data.queue.map(c => {
+      listEl.innerHTML = lastQueue.map((c, i) => {
         const isSelected = selectedCustomer && selectedCustomer.sender_id === c.sender_id && selectedCustomer.page_id === c.page_id;
+        const unreadCount = isToday ? Number(c.unread_count || 0) : 0;
+        const isUnread = unreadCount > 0 && !isSelected;
         const pageColor = c.page_name.includes("Stone") ? "bg-purple-500/20 text-purple-300 border border-purple-500/30" : "bg-blue-500/20 text-blue-300 border border-blue-500/30";
+
+        let rowCls;
+        if (isSelected) rowCls = "bg-blue-600/20 border-l-4 border-blue-500";
+        else if (isUnread) rowCls = "bg-slate-800/70 border-l-4 border-blue-500 hover:bg-slate-800";
+        else rowCls = "border-l-4 border-transparent hover:bg-slate-800/40";
+
+        const msgCls = isUnread ? "text-slate-100 font-semibold" : "text-slate-500";
+        const badge = isUnread
+          ? `<span class="min-w-[20px] h-5 px-1.5 rounded-full bg-blue-500 text-white text-[11px] font-bold flex items-center justify-center shrink-0">${unreadCount > 99 ? "99+" : unreadCount}</span>`
+          : "";
+
         return `
-          <div onclick='openChat(${JSON.stringify(c).replace(/'/g, "&#39;")})' class="p-3 cursor-pointer transition ${isSelected ? 'bg-blue-600/20 border-l-4 border-blue-500' : 'hover:bg-slate-800/50'}">
+          <div onclick="openChatByIdx(${i})" class="p-3 cursor-pointer transition ${rowCls}">
             <div class="flex justify-between items-center gap-2">
-              ${renderCustomerIdentity(c, "w-9 h-9")}
-              <span class="text-[9px] px-1.5 py-0.5 rounded shrink-0 ${pageColor}">${c.page_name}</span>
+              ${renderCustomerIdentity(c, "w-9 h-9", isUnread)}
+              <span class="text-[9px] px-1.5 py-0.5 rounded shrink-0 ${pageColor}">${escHtml(c.page_name)}</span>
             </div>
             ${c.ad_data ? `<div class="text-[10px] text-amber-400 truncate mt-1 pl-11">📢 ${escHtml(c.ad_data.ad_title || 'Ad')}</div>` : ''}
-            <p class="text-xs text-slate-400 truncate mt-0.5 pl-11">${escHtml(c.last_message || "New message")}</p>
+            <div class="flex items-center justify-between gap-2 mt-0.5 pl-11">
+              <p class="text-xs ${msgCls} truncate">${escHtml(c.last_message || "New message")}</p>
+              ${badge}
+            </div>
           </div>
         `;
       }).join("");
     }
 
-    /* ---------------- Ad banner + preview (real ad referral only) ---------------- */
+    function openChatByIdx(i) {
+      const c = lastQueue[i];
+      if (c) openChat(c);
+    }
+
+    /* ---------------- Ad banner + preview ---------------- */
     let currentActiveAdData = null;
 
     function isImageUrl(u) {
@@ -942,6 +1095,73 @@
       document.getElementById("adPreviewModal").classList.add("hidden");
     }
 
+    /* ---------------- Stats modal (সব মডারেটরের হিসাব) ---------------- */
+    function openStatsModal() {
+      document.getElementById("statsDate").max = dhakaToday();
+      document.getElementById("statsDate").value = viewDate;
+      document.getElementById("statsModal").classList.remove("hidden");
+      loadStats();
+    }
+
+    function closeStatsModal() {
+      document.getElementById("statsModal").classList.add("hidden");
+    }
+
+    function shiftStatsDate(delta) {
+      const el = document.getElementById("statsDate");
+      const cur = el.value || dhakaToday();
+      let next = new Date(Date.parse(cur + "T00:00:00Z") + delta * 86400000).toISOString().slice(0, 10);
+      if (next > dhakaToday()) next = dhakaToday();
+      el.value = next;
+      loadStats();
+    }
+
+    async function loadStats() {
+      const date = document.getElementById("statsDate").value || dhakaToday();
+      const body = document.getElementById("statsBody");
+      body.innerHTML = `<tr><td colspan="7" class="py-6 text-center text-slate-500">লোড হচ্ছে...</td></tr>`;
+      try {
+        const res = await fetch(`/api/mod/stats?date=${encodeURIComponent(date)}&page_id=${encodeURIComponent(currentPageFilter)}`, {
+          headers: { "x-mod-pass": modPass }
+        });
+        const data = await res.json();
+        document.getElementById("statsScopeLabel").innerText = `${date} · ${data.scope || "All Pages"}`;
+
+        if (!data.rows || !data.rows.length) {
+          body.innerHTML = `<tr><td colspan="7" class="py-6 text-center text-slate-500">এই তারিখে কোনো তথ্য নেই</td></tr>`;
+          return;
+        }
+
+        const rowsHtml = data.rows.map(r => {
+          const isMe = r.name === currentMod;
+          return `
+            <tr class="border-b border-slate-800 ${isMe ? 'bg-blue-600/10' : ''}">
+              <td class="py-2 px-2 font-bold ${isMe ? 'text-blue-300' : 'text-white'}">${escHtml(r.name)}${isMe ? ' (আপনি)' : ''}</td>
+              <td class="py-2 px-2 text-center text-white font-semibold">${r.assigned}</td>
+              <td class="py-2 px-2 text-center text-emerald-400 font-semibold">${r.messages_sent}</td>
+              <td class="py-2 px-2 text-center text-amber-300 font-semibold">${r.pending}</td>
+              <td class="py-2 px-2 text-center text-sky-300">${r.average}</td>
+              <td class="py-2 px-2 text-center text-emerald-300">${r.good}</td>
+              <td class="py-2 px-2 text-center text-rose-300">${r.poor}</td>
+            </tr>`;
+        }).join("");
+
+        const t = data.total || {};
+        body.innerHTML = rowsHtml + `
+          <tr class="bg-slate-800/70 font-bold">
+            <td class="py-2 px-2 text-slate-200">মোট</td>
+            <td class="py-2 px-2 text-center text-white">${t.assigned || 0}</td>
+            <td class="py-2 px-2 text-center text-emerald-400">${t.messages_sent || 0}</td>
+            <td class="py-2 px-2 text-center text-amber-300">${t.pending || 0}</td>
+            <td class="py-2 px-2 text-center text-sky-300">${t.average || 0}</td>
+            <td class="py-2 px-2 text-center text-emerald-300">${t.good || 0}</td>
+            <td class="py-2 px-2 text-center text-rose-300">${t.poor || 0}</td>
+          </tr>`;
+      } catch (e) {
+        body.innerHTML = `<tr><td colspan="7" class="py-6 text-center text-rose-400">হিসাব লোড করা যায়নি</td></tr>`;
+      }
+    }
+
     function paintMessages(msgs) {
       currentMessagesCache = deduplicateMessages(msgs);
       const box = document.getElementById("messagesContainer");
@@ -980,12 +1200,55 @@
         : `<span>👤</span>`;
       showAdBanner(customer.ad_data, customer);
 
+      // লিস্টে সাথে সাথে read দেখানো
+      customer.unread_count = 0;
+      renderBatchFromCache();
+
       loadSharedSavedReplies();
-      await loadChatMessages();
+      await loadChatMessages();   // সার্ভারে read মার্ক হয়ে যায়
+      fetchBatch(false);          // tab-এর unread সংখ্যা আপডেট
+    }
+
+    function renderBatchFromCache() {
+      // শুধু লিস্ট আবার আঁকা (সংখ্যা অপরিবর্তিত থাকে, পরের fetch-এ ঠিক হয়ে যাবে)
+      const listEl = document.getElementById("customerList");
+      if (!lastQueue.length) return;
+      const isToday = isViewingToday();
+      listEl.innerHTML = lastQueue.map((c, i) => {
+        const isSelected = selectedCustomer && selectedCustomer.sender_id === c.sender_id && selectedCustomer.page_id === c.page_id;
+        const unreadCount = isToday ? Number(c.unread_count || 0) : 0;
+        const isUnread = unreadCount > 0 && !isSelected;
+        const pageColor = c.page_name.includes("Stone") ? "bg-purple-500/20 text-purple-300 border border-purple-500/30" : "bg-blue-500/20 text-blue-300 border border-blue-500/30";
+        let rowCls;
+        if (isSelected) rowCls = "bg-blue-600/20 border-l-4 border-blue-500";
+        else if (isUnread) rowCls = "bg-slate-800/70 border-l-4 border-blue-500 hover:bg-slate-800";
+        else rowCls = "border-l-4 border-transparent hover:bg-slate-800/40";
+        const msgCls = isUnread ? "text-slate-100 font-semibold" : "text-slate-500";
+        const badge = isUnread
+          ? `<span class="min-w-[20px] h-5 px-1.5 rounded-full bg-blue-500 text-white text-[11px] font-bold flex items-center justify-center shrink-0">${unreadCount > 99 ? "99+" : unreadCount}</span>`
+          : "";
+        return `
+          <div onclick="openChatByIdx(${i})" class="p-3 cursor-pointer transition ${rowCls}">
+            <div class="flex justify-between items-center gap-2">
+              ${renderCustomerIdentity(c, "w-9 h-9", isUnread)}
+              <span class="text-[9px] px-1.5 py-0.5 rounded shrink-0 ${pageColor}">${escHtml(c.page_name)}</span>
+            </div>
+            ${c.ad_data ? `<div class="text-[10px] text-amber-400 truncate mt-1 pl-11">📢 ${escHtml(c.ad_data.ad_title || 'Ad')}</div>` : ''}
+            <div class="flex items-center justify-between gap-2 mt-0.5 pl-11">
+              <p class="text-xs ${msgCls} truncate">${escHtml(c.last_message || "New message")}</p>
+              ${badge}
+            </div>
+          </div>
+        `;
+      }).join("");
     }
 
     async function classifyCustomer(targetBucket) {
       if (!selectedCustomer) return;
+      if (!isViewingToday()) {
+        alert("পুরনো দিনের কাস্টমার লেবেল করা যাবে না। 'আজ' বাটনে ক্লিক করুন।");
+        return;
+      }
       const key = getDraftKey(selectedCustomer);
       try { if (key) localStorage.removeItem(key); } catch (e) {}
 
@@ -1207,10 +1470,12 @@
         alert("নেটওয়ার্ক সমস্যা: মেসেজ পাঠানো যায়নি।");
       } finally {
         isSendingMessage = false;
+        fetchBatch(false); // পাঠানো মেসেজের সংখ্যা সাথে সাথে আপডেট
       }
     }
 
     loadModList();
+    initDateInput();
     if (currentMod && modPass) {
       document.getElementById("headerPageFilter").value = currentPageFilter;
       document.getElementById("modLoginModal").classList.add("hidden");
@@ -1219,10 +1484,11 @@
       loadSharedSavedReplies();
     }
 
-    setInterval(() => {
+    setInterval(async () => {
       if (currentMod && modPass && !isSendingMessage) {
+        // আগে খোলা চ্যাট refresh (read মার্ক হয়), তারপর লিস্ট/সংখ্যা
+        if (selectedCustomer) { try { await loadChatMessages(); } catch (e) {} }
         fetchBatch(false);
-        if (selectedCustomer) loadChatMessages();
         if (!activeAutoSaveItemId) loadSharedSavedReplies();
       }
     }, 15000);
