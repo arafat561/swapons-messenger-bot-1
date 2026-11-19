@@ -361,6 +361,9 @@ try { db.exec(`ALTER TABLE moderator_assignments ADD COLUMN bucket TEXT DEFAULT 
 try { db.exec(`ALTER TABLE saved_replies ADD COLUMN page_group TEXT DEFAULT 'all';`); } catch (e) {}
 try { db.exec(`UPDATE saved_replies SET page_group = 'all' WHERE page_group IS NULL OR page_group = '';`); } catch (e) {}
 
+// আগের ভুল "Customer Sent Product Photo" ad তথ্য মুছে ফেলা (কাস্টমারের পাঠানো ছবি ad ছিল না)
+try { db.exec(`UPDATE customers SET ad_info = NULL WHERE ad_info LIKE '%Customer Sent Product Photo%'`); } catch (e) {}
+
 // DB-তে সেভ করা extra moderator alias (Meta-র আসল ID ম্যাপ করার জন্য)
 function loadDbAliases() {
   try {
@@ -387,20 +390,6 @@ function isBlockedStickerUrl(url) {
   if (!url) return false;
   const u = String(url);
   return u.includes("39178562_1505197616293642") || u.includes("/stickers/");
-}
-
-function isValidProductAttachment(att) {
-  if (!att) return null;
-  if (att.mime_type && String(att.mime_type).includes("sticker")) return null;
-  const imgData = att.image_data || {};
-  const imgUrl = imgData.url || att.file_url || "";
-  if (!imgUrl || isBlockedStickerUrl(imgUrl)) return null;
-
-  const w = Number(imgData.width || 0);
-  const h = Number(imgData.height || 0);
-  if ((w > 0 && w <= 120) || (h > 0 && h <= 120)) return null;
-
-  return imgUrl;
 }
 
 const stmts = {
@@ -512,6 +501,102 @@ function httpsGetJson(url) {
   });
 }
 
+function parseAdJson(raw) {
+  if (!raw) return null;
+  try {
+    const tmp = typeof raw === "string" ? JSON.parse(raw) : raw;
+    if (tmp && !isBlockedStickerUrl(tmp.photo_url) && !isBlockedStickerUrl(tmp.post_url)) return tmp;
+  } catch (e) {}
+  return null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Ad enrich: ad_id থেকে Meta Graph দিয়ে ভিডিও / ছবি / পোস্ট লিংক আনা  */
+/* ------------------------------------------------------------------ */
+async function enrichAdObject(pageId, ad) {
+  if (!ad || !ad.ad_id) return ad;
+  const token = META_ACCESS_TOKEN || getPageToken(pageId);
+  const out = { ...ad, enriched: true, enriched_at: Date.now() };
+  delete out.enrich_error;
+
+  if (!token) {
+    out.enrich_error = "META_ACCESS_TOKEN সেট করা নেই";
+    return out;
+  }
+
+  const fields = "name,creative{thumbnail_url,image_url,video_id,effective_object_story_id,object_story_id,instagram_permalink_url}";
+  const r = await httpsGetJson(
+    `https://graph.facebook.com/${META_API_VERSION}/${encodeURIComponent(ad.ad_id)}?fields=${encodeURIComponent(fields)}&access_token=${encodeURIComponent(token)}`
+  );
+
+  if (!r) {
+    out.enrich_error = "Meta API-তে সংযোগ হয়নি";
+    return out;
+  }
+  if (r.error) {
+    out.enrich_error = r.error.message || "Meta API error";
+    return out;
+  }
+
+  const cr = r.creative || {};
+  if (r.name && (!ad.ad_title || String(ad.ad_title).startsWith("Facebook Ad"))) {
+    out.ad_title = r.name;
+  }
+
+  const storyId = cr.effective_object_story_id || cr.object_story_id;
+  if (storyId) out.post_url = `https://www.facebook.com/${storyId}`;
+  else if (!out.post_url && cr.instagram_permalink_url) out.post_url = cr.instagram_permalink_url;
+
+  const img = cr.image_url || cr.thumbnail_url || "";
+  if (img && !isBlockedStickerUrl(img) && !out.photo_url) out.photo_url = img;
+
+  if (cr.video_id) {
+    out.media_type = "video";
+    out.video_id = String(cr.video_id);
+    const v = await httpsGetJson(
+      `https://graph.facebook.com/${META_API_VERSION}/${encodeURIComponent(cr.video_id)}?fields=source,permalink_url,picture&access_token=${encodeURIComponent(token)}`
+    );
+    if (v && !v.error) {
+      if (v.source) out.video_url = v.source;
+      if (v.permalink_url) out.video_page_url = `https://www.facebook.com${v.permalink_url}`;
+      if (v.picture && !out.photo_url) out.photo_url = v.picture;
+    } else if (v && v.error) {
+      out.enrich_error = v.error.message || "Video fetch error";
+    }
+  } else if (out.media_type !== "video") {
+    out.media_type = out.photo_url ? "image" : "link";
+  }
+
+  return out;
+}
+
+function adNeedsEnrich(ad) {
+  if (!ad || !ad.ad_id) return false;
+  if (!ad.enriched) return true;
+  if (ad.enrich_error && Date.now() - Number(ad.enriched_at || 0) > 10 * 60 * 1000) return true;
+  return false;
+}
+
+const enrichingKeys = new Set();
+
+async function enrichAndStoreAd(pageId, senderId, baseAd) {
+  const key = `${pageId}:${senderId}`;
+  if (enrichingKeys.has(key)) return baseAd;
+  enrichingKeys.add(key);
+  try {
+    const enriched = await enrichAdObject(pageId, baseAd);
+    db.prepare(`
+      INSERT INTO customers (page_id, sender_id, ad_info) VALUES (?, ?, ?)
+      ON CONFLICT(page_id, sender_id) DO UPDATE SET ad_info = excluded.ad_info
+    `).run(pageId, senderId, JSON.stringify(enriched));
+    return enriched;
+  } catch (e) {
+    return baseAd;
+  } finally {
+    enrichingKeys.delete(key);
+  }
+}
+
 async function syncCustomerAndAdFromGraph(pageId, senderId) {
   const token = getPageToken(pageId);
   if (!token) return null;
@@ -520,16 +605,7 @@ async function syncCustomerAndAdFromGraph(pageId, senderId) {
     const existing = db.prepare(`SELECT name, profile_pic, ad_info FROM customers WHERE page_id = ? AND sender_id = ?`).get(pageId, senderId);
     let fullName = (existing && existing.name && !existing.name.startsWith("Customer_")) ? existing.name : "";
     let picUrl = (existing && existing.profile_pic) ? existing.profile_pic : "";
-
-    let parsedExistingAd = null;
-    if (existing && existing.ad_info) {
-      try {
-        const tmp = JSON.parse(existing.ad_info);
-        if (tmp && !isBlockedStickerUrl(tmp.photo_url) && !isBlockedStickerUrl(tmp.post_url)) {
-          parsedExistingAd = tmp;
-        }
-      } catch (e) {}
-    }
+    const existingAd = existing ? parseAdJson(existing.ad_info) : null;
 
     if (!fullName || !picUrl) {
       const profile = await httpsGetJson(`https://graph.facebook.com/${META_API_VERSION}/${senderId}?fields=first_name,last_name,name,profile_pic&access_token=${token}`);
@@ -543,41 +619,12 @@ async function syncCustomerAndAdFromGraph(pageId, senderId) {
       }
     }
 
-    const convUrl = `https://graph.facebook.com/${META_API_VERSION}/me/conversations?user_id=${senderId}&fields=participants,messages.limit(8){message,attachments,sticker,from}&access_token=${token}`;
-    const conv = await httpsGetJson(convUrl);
-    if (conv && conv.data && conv.data[0]) {
-      const thread = conv.data[0];
-
-      if (!fullName && thread.participants && thread.participants.data) {
-        const custPart = thread.participants.data.find((p) => String(p.id) === String(senderId));
-        if (custPart && custPart.name) {
-          fullName = custPart.name;
-        }
-      }
-
-      if (!parsedExistingAd && thread.messages && thread.messages.data) {
-        for (const m of thread.messages.data) {
-          if (m.sticker) continue;
-          if (m.attachments && m.attachments.data && m.attachments.data.length > 0 && m.from && String(m.from.id) === String(senderId)) {
-            const validImg = isValidProductAttachment(m.attachments.data[0]);
-            if (validImg) {
-              const adObj = {
-                ad_id: "",
-                ad_title: m.message || "Customer Sent Product Photo",
-                post_url: validImg,
-                photo_url: validImg
-              };
-              db.prepare(`
-                INSERT INTO customers (page_id, sender_id, name, profile_pic, ad_info) VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(page_id, sender_id) DO UPDATE SET 
-                  name = COALESCE(NULLIF(excluded.name, ''), customers.name),
-                  profile_pic = COALESCE(NULLIF(excluded.profile_pic, ''), customers.profile_pic),
-                  ad_info = excluded.ad_info
-              `).run(pageId, senderId, fullName || `Customer_${senderId.slice(-4)}`, picUrl, JSON.stringify(adObj));
-              return adObj;
-            }
-          }
-        }
+    if (!fullName) {
+      const convUrl = `https://graph.facebook.com/${META_API_VERSION}/me/conversations?user_id=${senderId}&fields=participants&access_token=${token}`;
+      const conv = await httpsGetJson(convUrl);
+      if (conv && conv.data && conv.data[0] && conv.data[0].participants && conv.data[0].participants.data) {
+        const custPart = conv.data[0].participants.data.find((p) => String(p.id) === String(senderId));
+        if (custPart && custPart.name) fullName = custPart.name;
       }
     }
 
@@ -590,7 +637,7 @@ async function syncCustomerAndAdFromGraph(pageId, senderId) {
       `).run(pageId, senderId, fullName || `Customer_${senderId.slice(-4)}`, picUrl);
     }
 
-    return parsedExistingAd;
+    return existingAd;
   } catch (e) {}
   return null;
 }
@@ -736,27 +783,44 @@ app.get("/webhook", (req, res) => {
   }
 });
 
+/* ------------------------------------------------------------------ */
+/* Ad referral (Click-to-Messenger ad থেকে আসা কাস্টমার)               */
+/* ------------------------------------------------------------------ */
+const referralLog = [];
+
 function extractAdReferral(event) {
   const ref =
     event.referral ||
     (event.message && event.message.referral) ||
-    (event.postback && event.postback.referral) ||
-    (event.message && event.message.ad);
+    (event.postback && event.postback.referral);
   if (!ref) return null;
+
   const ctx = ref.ads_context_data || {};
-  const adId = ref.ad_id || ref.id || "";
-  const postUrl =
-    ctx.post_url ||
-    ref.ad_url ||
-    (adId ? `https://www.facebook.com/ads/library/?id=${adId}` : "");
-  const photoUrl = ctx.photo_url || ctx.video_url || ref.image_url || "";
+  const adId = String(ref.ad_id || ref.id || "");
+  const hasAdSignal = adId || Object.keys(ctx).length > 0 || String(ref.source || "").toUpperCase() === "ADS";
+
+  try {
+    referralLog.unshift({ t: Date.now(), sender: event.sender && event.sender.id, ref });
+    if (referralLog.length > 40) referralLog.length = 40;
+  } catch (e) {}
+
+  if (!hasAdSignal) return null;
+
+  const postId = ctx.post_id ? String(ctx.post_id) : "";
+  const photoUrl = ctx.photo_url || "";
+  const videoUrl = ctx.video_url || "";
+  const postUrl = ctx.post_url || ref.ad_url || (postId ? `https://www.facebook.com/${postId}` : "");
+
   if (isBlockedStickerUrl(photoUrl) || isBlockedStickerUrl(postUrl)) return null;
 
   return JSON.stringify({
     ad_id: adId,
-    ad_title: ctx.ad_title || ref.title || ref.ref || (adId ? `Facebook Ad #${adId}` : "Facebook Ad"),
+    ad_title: ctx.ad_title || ref.title || (adId ? `Facebook Ad #${adId}` : "Facebook Ad"),
+    media_type: videoUrl ? "video" : photoUrl ? "image" : "link",
     post_url: postUrl,
-    photo_url: photoUrl
+    photo_url: photoUrl,
+    video_url: videoUrl,
+    post_id: postId
   });
 }
 
@@ -764,7 +828,6 @@ function extractAdReferral(event) {
  * Page থেকে যাওয়া reply (echo) কে কোন moderator পাঠিয়েছে সেটা বের করে।
  * ক্রম: (১) welcome text "আমি mony"  (২) echo-র from  (৩) Graph message from
  *       (৪) conversation থেকে  (৫) ওই কাস্টমারের আজকের assigned moderator
- * ফেরত দেয়: { mod, via, fromId, fromName }
  */
 async function resolveEchoModerator(pageId, customerId, event) {
   const info = { mod: null, via: "", fromId: "", fromName: "" };
@@ -843,6 +906,14 @@ async function handleMessagingEvent(pageId, event) {
       INSERT INTO customers (page_id, sender_id, ad_info) VALUES (?, ?, ?)
       ON CONFLICT(page_id, sender_id) DO UPDATE SET ad_info = excluded.ad_info
     `).run(pageId, senderId, adInfoJson);
+
+    // ad_id থেকে ভিডিও/ছবি/পোস্ট লিংক আনা (ব্যাকগ্রাউন্ডে)
+    try {
+      const baseAd = JSON.parse(adInfoJson);
+      if (baseAd && baseAd.ad_id) {
+        enrichAndStoreAd(pageId, String(senderId), baseAd).catch(() => {});
+      }
+    } catch (e) {}
   }
 
   if (event.message && !event.message.is_echo) {
@@ -966,6 +1037,14 @@ app.post("/webhook", (req, res) => {
   }
 
   return res.status(200).send("EVENT_RECEIVED");
+});
+
+/* ------------------------------------------------------------------ */
+/* Debug: Meta আসলে কী referral পাঠাচ্ছে                               */
+/* ------------------------------------------------------------------ */
+// /api/referral-log?key=YOUR_PASS
+app.get("/api/referral-log", requireDebugAuth, (req, res) => {
+  res.json({ count: referralLog.length, rows: referralLog });
 });
 
 /* ------------------------------------------------------------------ */
@@ -1255,22 +1334,11 @@ app.post("/api/mod/batch", requireModAuth, async (req, res) => {
       moderator,
       bucket: activeBucket,
       counts,
-      queue: currentList.map((q) => {
-        let parsedAd = null;
-        if (q.ad_info) {
-          try {
-            const tmp = JSON.parse(q.ad_info);
-            if (tmp && !isBlockedStickerUrl(tmp.photo_url) && !isBlockedStickerUrl(tmp.post_url)) {
-              parsedAd = tmp;
-            }
-          } catch (e) {}
-        }
-        return {
-          ...q,
-          ad_data: parsedAd,
-          page_name: PAGE_NAMES[q.page_id] || "Page"
-        };
-      }),
+      queue: currentList.map((q) => ({
+        ...q,
+        ad_data: parseAdJson(q.ad_info),
+        page_name: PAGE_NAMES[q.page_id] || "Page"
+      })),
       global_unassigned: globalUnassigned
     });
   } catch (err) {
@@ -1317,22 +1385,29 @@ app.get("/api/mod/chat", requireModAuth, async (req, res) => {
     `).all(page_id, sender_id);
 
     let custRow = db.prepare(`SELECT name, profile_pic, ad_info FROM customers WHERE page_id = ? AND sender_id = ?`).get(page_id, sender_id);
-    let adData = null;
-    const rawAd = (custRow && custRow.ad_info) || (incoming.find((i) => i.ad_info) || {}).ad_info;
-    if (rawAd) {
+
+    // customers টেবিলের ad_info আগে, না থাকলে মেসেজের সাথে আসা ad_info
+    let adData = parseAdJson(custRow && custRow.ad_info);
+    if (!adData) {
+      const withAd = incoming.filter((i) => i.ad_info).map((i) => parseAdJson(i.ad_info)).filter(Boolean);
+      if (withAd.length) adData = withAd[withAd.length - 1];
+    }
+
+    // ad_id আছে কিন্তু ভিডিও/ছবি এখনো আনা হয়নি → এখনই Meta থেকে এনে সেভ করা
+    if (adData && adNeedsEnrich(adData)) {
       try {
-        const tmp = JSON.parse(rawAd);
-        if (tmp && !isBlockedStickerUrl(tmp.photo_url) && !isBlockedStickerUrl(tmp.post_url)) {
-          adData = tmp;
-        }
+        adData = await enrichAndStoreAd(String(page_id), String(sender_id), adData);
       } catch (e) {}
     }
 
-    if (!adData || !custRow || !custRow.profile_pic) {
+    if (!custRow || !custRow.profile_pic) {
       syncCustomerAndAdFromGraph(page_id, sender_id).catch(() => {});
     }
 
-    const merged = [...incoming, ...outgoing].sort((a, b) => (a.time || 0) - (b.time || 0));
+    const merged = [...incoming, ...outgoing]
+      .map((m) => ({ sender: m.sender, text: m.text, image_url: m.image_url, time: m.time, moderator: m.moderator }))
+      .sort((a, b) => (a.time || 0) - (b.time || 0));
+
     res.json({
       messages: merged,
       ad_data: adData,
