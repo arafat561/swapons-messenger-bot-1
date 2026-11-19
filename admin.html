@@ -3,206 +3,1546 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Moderator Monitoring — Boss Panel</title>
+  <title>Moderator Batch Inbox</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     body { font-family: 'Hind Siliguri', sans-serif; background-color: #070b14; color: #f1f5f9; }
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 10px; }
+    input[type="date"] { color-scheme: dark; }
   </style>
 </head>
-<body class="min-h-screen flex flex-col">
+<body class="h-screen flex flex-col overflow-hidden">
 
-  <!-- Top Bar -->
-  <header class="bg-slate-900 border-b border-slate-800 px-5 py-3 flex flex-wrap items-center justify-between gap-3">
-    <div class="flex flex-wrap items-center gap-3">
-      <span class="bg-amber-500/20 text-amber-300 border border-amber-500/30 px-3 py-1 rounded-full text-sm font-bold">
-        👑 Moderator Monitoring
-      </span>
-      <a href="/" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-700 transition">
-        ← Main Dashboard
-      </a>
-      <a href="/inbox" class="bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/40 text-xs font-semibold px-3 py-1.5 rounded-lg transition">
-        💬 Moderator Inbox
-      </a>
-      <span id="liveStatusLabel" class="text-[11px] text-emerald-400">● Live Monitoring</span>
+  <!-- Moderator Login Modal -->
+  <div id="modLoginModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-lg p-4">
+    <div class="bg-slate-900 max-w-md w-full p-8 rounded-3xl border border-slate-800 shadow-2xl space-y-5">
+      <div class="text-center space-y-1">
+        <div class="text-4xl mb-2">💬</div>
+        <h2 class="text-2xl font-bold text-white">মডারেটর ইনবক্স লগইন</h2>
+        <p class="text-xs text-slate-400">নাম ও পেজ সিলেক্ট করে লগইন করলেই অটোমেটিক ১০টি মেসেজ চলে আসবে</p>
+      </div>
+
+      <form onsubmit="event.preventDefault(); modLogin();" class="space-y-4">
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">আপনার নাম সিলেক্ট করুন</label>
+          <select id="modSelect" required class="w-full bg-slate-800 text-white text-sm px-4 py-3 rounded-xl border border-slate-700 outline-none focus:border-blue-500">
+            <option value="">লোড হচ্ছে...</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">পেজ সিলেক্ট করুন</label>
+          <select id="loginPageSelect" class="w-full bg-slate-800 text-white text-sm px-4 py-3 rounded-xl border border-slate-700 outline-none focus:border-blue-500">
+            <option value="all">সব পেজ (All Pages)</option>
+            <option value="swapons">Swapons World</option>
+            <option value="stone">Stone Rose BD</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1">মডারেটর পাসওয়ার্ড</label>
+          <input type="password" id="modPassInput" required placeholder="••••••" class="w-full bg-slate-800 text-white text-sm px-4 py-3 rounded-xl border border-slate-700 outline-none focus:border-blue-500">
+        </div>
+        <div id="modLoginErr" class="text-xs text-rose-400 text-center hidden">ভুল পাসওয়ার্ড! আবার চেষ্টা করুন।</div>
+        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 rounded-xl transition cursor-pointer">
+          ইনবক্সে প্রবেশ করুন
+        </button>
+      </form>
     </div>
+  </div>
 
-    <div class="flex flex-wrap items-center gap-2">
-      <input type="date" id="reportDateInput" onchange="loadMonitoring()" class="bg-slate-800 text-white text-xs px-3 py-2 rounded-lg border border-slate-700 outline-none focus:border-blue-500">
-      <select id="reportPageFilter" onchange="loadMonitoring()" class="bg-slate-800 text-white text-xs font-semibold px-3 py-2 rounded-lg border border-slate-700 outline-none focus:border-blue-500 cursor-pointer">
+  <!-- Stats Modal (সব মডারেটরের হিসাব + ক্যালেন্ডার) -->
+  <div id="statsModal" class="hidden fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden shadow-2xl flex flex-col">
+      <div class="px-4 py-3 bg-slate-800/90 border-b border-slate-700 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div class="text-sm font-bold text-amber-400">📊 মডারেটর হিসাব</div>
+          <div id="statsScopeLabel" class="text-[11px] text-slate-400"></div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="shiftStatsDate(-1)" class="bg-slate-700 hover:bg-slate-600 text-white text-xs px-2.5 py-1.5 rounded-lg cursor-pointer">◀</button>
+          <input type="date" id="statsDate" onchange="loadStats()" class="bg-slate-800 text-white text-xs px-3 py-1.5 rounded-lg border border-slate-700 outline-none focus:border-blue-500">
+          <button type="button" onclick="shiftStatsDate(1)" class="bg-slate-700 hover:bg-slate-600 text-white text-xs px-2.5 py-1.5 rounded-lg cursor-pointer">▶</button>
+          <button type="button" onclick="closeStatsModal()" class="text-slate-300 hover:text-white bg-slate-700/70 hover:bg-slate-700 px-2.5 py-1.5 rounded-lg text-xs font-bold cursor-pointer">✕ বন্ধ</button>
+        </div>
+      </div>
+      <div class="overflow-auto p-3">
+        <table class="w-full text-xs text-left">
+          <thead class="text-slate-400 border-b border-slate-700">
+            <tr>
+              <th class="py-2 px-2">মডারেটর</th>
+              <th class="py-2 px-2 text-center">ব্যাকএন্ড থেকে পেয়েছে</th>
+              <th class="py-2 px-2 text-center">মেসেজ পাঠিয়েছে</th>
+              <th class="py-2 px-2 text-center text-amber-300">Pending</th>
+              <th class="py-2 px-2 text-center text-sky-300">Average</th>
+              <th class="py-2 px-2 text-center text-emerald-300">Good</th>
+              <th class="py-2 px-2 text-center text-rose-300">Poor</th>
+              <th class="py-2 px-2 text-center text-indigo-300">Msg Send</th>
+              <th class="py-2 px-2 text-center text-teal-300">Number</th>
+            </tr>
+          </thead>
+          <tbody id="statsBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Ad Preview Modal (Video / Picture + External Link) -->
+  <div id="adPreviewModal" class="hidden fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-xl w-full overflow-hidden shadow-2xl">
+      <div class="px-4 py-3 bg-slate-800/90 border-b border-slate-700 flex items-center justify-between gap-2">
+        <div class="min-w-0">
+          <div id="modalAdTitle" class="text-sm font-bold text-amber-400 truncate">Ad Preview</div>
+          <div id="modalAdSub" class="text-[11px] text-slate-400 truncate"></div>
+        </div>
+        <button type="button" onclick="closeAdPreviewModal()" class="text-slate-300 hover:text-white bg-slate-700/70 hover:bg-slate-700 px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer">✕ বন্ধ</button>
+      </div>
+
+      <div id="modalAdMediaBox" class="p-4 bg-slate-950 flex flex-col items-center justify-center min-h-[220px] max-h-[65vh] overflow-auto gap-3">
+        <video id="modalAdVideo" controls playsinline class="hidden max-h-[55vh] w-full rounded-xl bg-black"></video>
+        <img id="modalAdImg" src="" alt="Ad Media" class="hidden max-h-[55vh] rounded-xl object-contain">
+        <div id="modalAdFallbackNote" class="hidden text-center text-xs text-slate-400 space-y-2 py-3">
+          <div class="text-3xl">📢</div>
+          <p id="modalAdNoteText"></p>
+        </div>
+      </div>
+
+      <div class="px-4 py-3 bg-slate-900 border-t border-slate-800 flex items-center justify-between gap-2">
+        <span id="modalAdTypeBadge" class="text-[11px] px-2.5 py-1 rounded-full bg-slate-800 text-slate-300">Media</span>
+        <a id="modalAdExternalLink" href="#" target="_blank" rel="noopener noreferrer" class="bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold px-4 py-2 rounded-lg transition">
+          ↗ Facebook-এ অ্যাড খুলুন
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Top Header -->
+  <header class="bg-slate-900 border-b border-slate-800 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
+    <div class="flex flex-wrap items-center gap-3">
+      <span class="bg-blue-600/20 text-blue-400 border border-blue-500/30 px-3 py-1 rounded-full text-sm font-bold" id="activeModBadge">
+        Moderator
+      </span>
+
+      <select id="headerPageFilter" onchange="changePageFilter()" class="bg-slate-800 text-white text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-700 outline-none focus:border-blue-500 cursor-pointer">
         <option value="all">🌐 All Pages</option>
         <option value="swapons">🔵 Swapons World</option>
         <option value="stone">🟣 Stone Rose BD</option>
       </select>
-      <select id="reportShiftFilter" onchange="loadMonitoring()" class="bg-slate-800 text-white text-xs font-semibold px-3 py-2 rounded-lg border border-slate-700 outline-none focus:border-blue-500 cursor-pointer">
-        <option value="all">Full day</option>
-        <option value="morning">Morning (9am–5pm)</option>
-        <option value="evening">Evening (5:15pm–12am)</option>
-      </select>
-      <button onclick="loadMonitoring()" class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-3.5 py-2 rounded-lg transition cursor-pointer">
-        রিফ্রেশ
+
+      <div class="flex items-center gap-1.5">
+        <input type="date" id="viewDate" onchange="changeViewDate()" title="তারিখ সিলেক্ট করে আগের দিনের হিসাব দেখুন" class="bg-slate-800 text-white text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-slate-700 outline-none focus:border-blue-500 cursor-pointer">
+        <button onclick="goToday()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs px-2.5 py-1.5 rounded-lg border border-slate-700 cursor-pointer">আজ</button>
+      </div>
+
+      <div class="text-xs text-slate-400 flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span><span id="st_label">আজ</span> পেয়েছি: <strong id="st_assigned" class="text-white text-sm">0</strong></span>
+        <span>পাঠিয়েছি: <strong id="st_sent" class="text-emerald-400 text-sm">0</strong></span>
+        <span>Pending: <strong id="st_pending" class="text-amber-400 text-sm">0</strong></span>
+        <span class="text-slate-500">|</span>
+        <span>ব্যাকএন্ড কিউ: <strong id="globalQueueCount" class="text-amber-400 text-sm">0</strong> জন</span>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <button onclick="openStatsModal()" class="bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 text-xs font-semibold px-3.5 py-2 rounded-lg transition cursor-pointer">
+        📊 হিসাব
+      </button>
+      <button onclick="fetchBatch(true)" class="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-3.5 py-2 rounded-lg transition cursor-pointer">
+        + নতুন কাস্টমার লোড
+      </button>
+      <button onclick="logoutMod()" class="bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs px-3 py-2 rounded-lg transition cursor-pointer">
+        লগআউট
       </button>
     </div>
   </header>
 
-  <main class="flex-1 p-5 max-w-7xl w-full mx-auto space-y-6">
+  <!-- Main Chat Layout -->
+  <div class="flex-1 flex overflow-hidden">
 
-    <!-- Moderator Monitoring Summary Cards -->
-    <section class="grid grid-cols-2 md:grid-cols-5 gap-3">
-      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4">
-        <div class="text-xs text-slate-400">Total Customers</div>
-        <div id="sumCustomers" class="text-2xl font-bold text-white mt-1">0</div>
+    <!-- Left Sidebar -->
+    <aside class="w-80 md:w-96 bg-slate-900/60 border-r border-slate-800 flex flex-col">
+      <div class="grid grid-cols-3 gap-1 p-2 bg-slate-950/60 border-b border-slate-800 text-center">
+        <button onclick="switchBucket('pending')" id="tab_pending" class="relative py-1.5 px-1 rounded-lg text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 cursor-pointer">
+          Pending (<span id="cnt_pending">0</span>)
+        </button>
+        <button onclick="switchBucket('average')" id="tab_average" class="relative py-1.5 px-1 rounded-lg text-[11px] font-semibold bg-slate-800/60 text-slate-400 hover:text-white cursor-pointer">
+          Average (<span id="cnt_average">0</span>)
+          <span id="ub_average" style="display:none" class="absolute -top-1.5 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold items-center justify-center"></span>
+        </button>
+        <button onclick="switchBucket('good')" id="tab_good" class="relative py-1.5 px-1 rounded-lg text-[11px] font-semibold bg-slate-800/60 text-slate-400 hover:text-white cursor-pointer">
+          Good (<span id="cnt_good">0</span>)
+          <span id="ub_good" style="display:none" class="absolute -top-1.5 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold items-center justify-center"></span>
+        </button>
+        <button onclick="switchBucket('poor')" id="tab_poor" class="relative py-1.5 px-1 rounded-lg text-[11px] font-semibold bg-slate-800/60 text-slate-400 hover:text-white cursor-pointer">
+          Poor (<span id="cnt_poor">0</span>)
+          <span id="ub_poor" style="display:none" class="absolute -top-1.5 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold items-center justify-center"></span>
+        </button>
+        <button onclick="switchBucket('msgsent')" id="tab_msgsent" class="relative py-1.5 px-1 rounded-lg text-[11px] font-semibold bg-slate-800/60 text-slate-400 hover:text-white cursor-pointer">
+          Msg Send (<span id="cnt_msgsent">0</span>)
+          <span id="ub_msgsent" style="display:none" class="absolute -top-1.5 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold items-center justify-center"></span>
+        </button>
+        <button onclick="switchBucket('number')" id="tab_number" class="relative py-1.5 px-1 rounded-lg text-[11px] font-semibold bg-slate-800/60 text-slate-400 hover:text-white cursor-pointer">
+          Number (<span id="cnt_number">0</span>)
+          <span id="ub_number" style="display:none" class="absolute -top-1.5 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold items-center justify-center"></span>
+        </button>
       </div>
-      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4">
-        <div class="text-xs text-slate-400">Total Mod SMS</div>
-        <div id="sumModSms" class="text-2xl font-bold text-emerald-400 mt-1">0</div>
-      </div>
-      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4">
-        <div class="text-xs text-slate-400">Average (SMS / Cust)</div>
-        <div id="sumAvgSms" class="text-2xl font-bold text-sky-400 mt-1">0</div>
-      </div>
-      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4">
-        <div class="text-xs text-slate-400">Order Confirms</div>
-        <div id="sumConfirmed" class="text-2xl font-bold text-purple-400 mt-1">0</div>
-      </div>
-      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4">
-        <div class="text-xs text-slate-400">Phone Numbers</div>
-        <div id="sumPhones" class="text-2xl font-bold text-amber-400 mt-1">0</div>
-      </div>
-    </section>
 
-    <!-- All Moderators Monitoring Table -->
-    <section class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
-      <div class="px-5 py-4 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h2 class="text-base font-bold text-white">📊 All Moderators Monitoring</h2>
-          <p class="text-xs text-slate-400">প্রতিটি মডারেটরের Customers, Total SMS, Average, Confirm, Phones এবং গতি</p>
+      <div id="pastBanner" class="hidden px-3 py-1.5 bg-indigo-500/10 border-b border-indigo-500/30 text-[11px] text-indigo-300">
+        📅 <span id="pastBannerDate"></span> তারিখের ইতিহাস (শুধু দেখার জন্য)
+      </div>
+
+      <div class="px-3 py-2 border-b border-slate-800 flex justify-between items-center text-[11px] text-slate-400">
+        <span id="bucketTitleLabel">Pending ব্যাচ (১০ জন করে)</span>
+        <button onclick="fetchBatch(false)" class="text-blue-400 hover:underline cursor-pointer">রিফ্রেশ</button>
+      </div>
+
+      <div id="customerList" class="flex-1 overflow-y-auto divide-y divide-slate-800/60">
+        <div class="p-6 text-center text-xs text-slate-500">কাস্টমার লোড হচ্ছে...</div>
+      </div>
+    </aside>
+
+    <!-- Right Panel -->
+    <main class="flex-1 flex flex-col bg-slate-950/40">
+      <div id="emptyChatState" class="flex-1 flex flex-col items-center justify-center text-slate-500 p-6 text-center">
+        <div class="text-5xl mb-3">👈</div>
+        <p class="text-sm font-medium">বাম পাশ থেকে একজন কাস্টমার সিলেক্ট করুন</p>
+        <p class="text-xs text-slate-600 mt-1">কথা শেষে উপরের Average / Good / Poor বাটনে ক্লিক করলে অটোমেটিক নতুন কাস্টমার চলে আসবে</p>
+      </div>
+
+      <div id="activeChatBox" class="hidden flex-1 flex flex-col h-full">
+        <!-- Chat Header -->
+        <div class="p-3.5 bg-slate-900/90 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <div id="headerAvatarBox" class="w-11 h-11 rounded-full bg-slate-800 border border-slate-700 overflow-hidden flex items-center justify-center font-bold text-white shrink-0"></div>
+            <div>
+              <h3 id="chatCustomerName" class="font-bold text-white text-base leading-tight">Customer Name</h3>
+              <span id="chatPageBadge" class="text-[11px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded inline-block mt-0.5">Page</span>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-1.5">
+            <button onclick="classifyCustomer('pending')" class="bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold px-3 py-1.5 rounded-lg transition cursor-pointer">
+              ⏳ Pending
+            </button>
+            <button onclick="classifyCustomer('average')" class="bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 text-xs font-bold px-3 py-1.5 rounded-lg transition cursor-pointer">
+              📊 Average
+            </button>
+            <button onclick="classifyCustomer('good')" class="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold px-3 py-1.5 rounded-lg transition cursor-pointer">
+              🌟 Good
+            </button>
+            <button onclick="classifyCustomer('poor')" class="bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-xs font-bold px-3 py-1.5 rounded-lg transition cursor-pointer">
+              ⚠️ Poor
+            </button>
+            <button onclick="classifyCustomer('msgsent')" class="bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 text-xs font-bold px-3 py-1.5 rounded-lg transition cursor-pointer">
+              📨 Message Send
+            </button>
+            <button onclick="classifyCustomer('number')" class="bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 border border-teal-500/40 text-xs font-bold px-3 py-1.5 rounded-lg transition cursor-pointer">
+              📞 Number Collect
+            </button>
+            <button onclick="insertQuickConfirm()" class="bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/40 text-xs font-semibold px-3 py-1.5 rounded-lg transition cursor-pointer ml-1">
+              ✅ Order Confirm
+            </button>
+          </div>
         </div>
-        <span id="lastUpdatedBadge" class="text-xs text-slate-400"></span>
-      </div>
 
-      <div class="overflow-x-auto">
-        <table class="w-full text-left text-xs sm:text-sm">
-          <thead class="bg-slate-950/70 text-slate-400 text-xs border-b border-slate-800">
-            <tr>
-              <th class="py-3 px-4">#</th>
-              <th class="py-3 px-4">Moderator</th>
-              <th class="py-3 px-4 w-44">Workload</th>
-              <th class="py-3 px-4">Customers</th>
-              <th class="py-3 px-4">Total SMS</th>
-              <th class="py-3 px-4">Average</th>
-              <th class="py-3 px-4">Confirm</th>
-              <th class="py-3 px-4">Phones</th>
-              <th class="py-3 px-4">Min / SMS</th>
-            </tr>
-          </thead>
-          <tbody id="modPerfBody" class="divide-y divide-slate-800/70">
-            <tr><td colspan="9" class="py-6 text-center text-xs text-slate-500">মনিটরিং ডাটা লোড হচ্ছে...</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
+        <!-- Ad Referral Banner -->
+        <div id="adBanner" class="bg-amber-500/10 border-b border-amber-500/30 px-4 py-2.5 flex items-center justify-between gap-3">
+          <div class="flex items-center gap-3 min-w-0">
+            <button type="button" id="adThumbBtn" onclick="openAdPreviewModal()" class="shrink-0 cursor-pointer">
+              <img id="adThumb" src="" alt="Ad" onerror="this.classList.add('hidden')" class="w-12 h-12 rounded-lg object-cover border border-amber-500/50 hidden">
+            </button>
+            <div class="min-w-0">
+              <div class="text-[11px] font-bold text-amber-400">📢 Ad / Product Source:</div>
+              <div id="adTitleText" class="text-xs font-semibold text-slate-200 truncate">Direct Messenger / Ad Query</div>
+              <div id="adIdText" class="text-[10px] text-slate-400 font-mono truncate"></div>
+            </div>
+          </div>
+          <button type="button" id="adViewBtn" onclick="openAdPreviewModal()" class="bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-bold px-3.5 py-2 rounded-lg transition shrink-0 flex items-center gap-1.5 cursor-pointer">
+            <span>🎬</span>
+            <span id="adPostBtnLabel">অ্যাড দেখুন</span>
+          </button>
+        </div>
 
-  </main>
+        <!-- Messages Stream -->
+        <div id="messagesContainer" class="flex-1 overflow-y-auto p-4 space-y-3"></div>
+
+        <!-- Saved Replies Panel -->
+        <div id="savedRepliesPanel" class="hidden px-4 py-3 bg-slate-900 border-t border-slate-800 space-y-2.5">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
+              <span class="text-sm font-bold text-white">Saved replies</span>
+              <span id="savedReplyPageLabel" class="text-[10px] text-sky-300 bg-sky-500/10 border border-sky-500/30 px-2 py-0.5 rounded-full">Page</span>
+              <span id="savedReplyAutoStatus" class="text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full">🌐 Shared Auto Save</span>
+            </div>
+            <div class="flex items-center gap-3">
+              <button type="button" onclick="syncMetaSavedReplies()" id="syncMetaBtn" class="text-xs font-bold text-amber-400 hover:text-amber-300 cursor-pointer">🔄 Meta Sync</button>
+              <button type="button" onclick="openNewSavedReplyCreator()" class="text-xs font-bold text-sky-400 hover:text-sky-300 cursor-pointer">+ Add new</button>
+              <button type="button" onclick="toggleSavedRepliesPanel(false)" class="text-xs text-slate-400 hover:text-white cursor-pointer">✕</button>
+            </div>
+          </div>
+
+          <div class="relative">
+            <input type="text" id="savedReplySearch" oninput="renderSavedRepliesList()" placeholder="🔍 Search saved replies..." class="w-full bg-slate-800 text-white text-xs px-3 py-2 rounded-lg border border-slate-700 outline-none focus:border-sky-500">
+          </div>
+
+          <div id="addNewSavedReplyBox" class="hidden bg-slate-800/80 border border-slate-700 rounded-xl p-2.5 space-y-2">
+            <div class="flex items-center justify-between text-[11px] text-slate-400">
+              <span>নতুন Saved Reply (টাইপ করলেই Auto Save হবে — এই পেজের সব মডারেটর পাবে)</span>
+              <button type="button" onclick="finishAutoSavedReply()" class="text-emerald-400 font-bold hover:underline cursor-pointer">✓ সম্পন্ন</button>
+            </div>
+            <input type="text" id="newSavedReplyTitle" oninput="autoSaveDraftSavedReply()" placeholder="Short Title (যেমন: 1590, number, kon, mark)..." class="w-full bg-slate-900 text-white text-xs font-bold px-3 py-1.5 rounded-lg border border-slate-700 outline-none focus:border-sky-500">
+            <textarea id="newSavedReplyBody" rows="2" oninput="autoSaveDraftSavedReply()" placeholder="এখানে রিপ্লাই মেসেজ লিখুন..." class="w-full bg-slate-900 text-white text-xs px-3 py-1.5 rounded-lg border border-slate-700 outline-none focus:border-sky-500"></textarea>
+          </div>
+
+          <div id="savedRepliesList" class="space-y-1.5 max-h-48 overflow-y-auto pr-1"></div>
+        </div>
+
+        <!-- Sticker / Emoji Popover -->
+        <div id="stickerPanel" class="hidden px-4 py-2.5 bg-slate-900 border-t border-slate-800 space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-amber-400">😊 Post Sticker / Emoji</span>
+            <button type="button" onclick="toggleStickerPanel(false)" class="text-xs text-slate-400 hover:text-white cursor-pointer">✕</button>
+          </div>
+          <div id="stickerGrid" class="flex flex-wrap gap-2">
+            <button type="button" onclick="sendStickerNow('😊')" class="text-2xl hover:scale-110 transition px-1.5 py-0.5 rounded bg-slate-800/70 cursor-pointer">😊</button>
+            <button type="button" onclick="sendStickerNow('❤️')" class="text-2xl hover:scale-110 transition px-1.5 py-0.5 rounded bg-slate-800/70 cursor-pointer">❤️</button>
+            <button type="button" onclick="sendStickerNow('🔥')" class="text-2xl hover:scale-110 transition px-1.5 py-0.5 rounded bg-slate-800/70 cursor-pointer">🔥</button>
+            <button type="button" onclick="sendStickerNow('😍')" class="text-2xl hover:scale-110 transition px-1.5 py-0.5 rounded bg-slate-800/70 cursor-pointer">😍</button>
+            <button type="button" onclick="sendStickerNow('🙏')" class="text-2xl hover:scale-110 transition px-1.5 py-0.5 rounded bg-slate-800/70 cursor-pointer">🙏</button>
+            <button type="button" onclick="sendStickerNow('✨')" class="text-2xl hover:scale-110 transition px-1.5 py-0.5 rounded bg-slate-800/70 cursor-pointer">✨</button>
+            <button type="button" onclick="sendStickerNow('🎉')" class="text-2xl hover:scale-110 transition px-1.5 py-0.5 rounded bg-slate-800/70 cursor-pointer">🎉</button>
+            <button type="button" onclick="sendStickerNow('👌')" class="text-2xl hover:scale-110 transition px-1.5 py-0.5 rounded bg-slate-800/70 cursor-pointer">👌</button>
+            <button type="button" onclick="sendStickerNow('❄️')" class="text-2xl hover:scale-110 transition px-1.5 py-0.5 rounded bg-slate-800/70 cursor-pointer">❄️</button>
+            <button type="button" onclick="sendStickerNow('💯')" class="text-2xl hover:scale-110 transition px-1.5 py-0.5 rounded bg-slate-800/70 cursor-pointer">💯</button>
+          </div>
+        </div>
+
+        <!-- Selected Images Preview Bar -->
+        <div id="imagePreviewBar" class="hidden px-4 py-2 bg-slate-900 border-t border-slate-800 flex items-center gap-3">
+          <div id="previewThumbList" class="flex items-center gap-2 overflow-x-auto max-w-md py-0.5"></div>
+          <span id="previewCountLabel" class="text-xs text-slate-300 flex-1">ছবি সিলেক্ট করা হয়েছে</span>
+          <button type="button" onclick="clearSelectedImage()" class="text-xs text-rose-400 hover:underline px-2 py-1 cursor-pointer shrink-0">✕ বাতিল</button>
+        </div>
+
+        <!-- Quick Saved Reply Suggestion -->
+        <div id="quickSuggestBox" class="hidden px-4 py-2 bg-slate-900 border-t border-slate-800 space-y-1"></div>
+
+        <!-- Reply Input -->
+        <form onsubmit="event.preventDefault(); sendReply();" class="p-3 bg-slate-900 border-t border-slate-800 space-y-1.5">
+          <div class="flex items-center justify-between px-1 text-[11px] text-slate-400">
+            <span id="autoSaveBadge" class="text-emerald-400/90">💾 Auto Save সক্রিয়</span>
+            <span>Short title লিখলে Saved Reply দেখাবে (Tab চাপলে বসে যাবে)</span>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <input type="file" id="imageFileInput" accept="image/*" multiple class="hidden" onchange="handleImageSelect(event)">
+
+            <button type="button" onclick="document.getElementById('imageFileInput').click()" title="Attach File (একাধিক ছবি)" class="bg-slate-800 hover:bg-slate-700 text-slate-200 p-3 rounded-xl border border-slate-700 transition cursor-pointer shrink-0">
+              📎
+            </button>
+
+            <button type="button" onclick="toggleSavedRepliesPanel()" title="Insert Saved Reply" class="bg-slate-800 hover:bg-slate-700 text-sky-300 p-3 rounded-xl border border-slate-700 transition cursor-pointer shrink-0">
+              💬
+            </button>
+
+            <button type="button" onclick="toggleStickerPanel()" title="Post Sticker" class="bg-slate-800 hover:bg-slate-700 text-amber-300 p-3 rounded-xl border border-slate-700 transition cursor-pointer shrink-0">
+              😊
+            </button>
+
+            <button type="button" onclick="sendLikeNow()" title="Send Like (👍)" class="bg-slate-800 hover:bg-slate-700 text-blue-400 p-3 rounded-xl border border-slate-700 transition cursor-pointer shrink-0 font-bold">
+              👍
+            </button>
+
+            <textarea id="replyInput" rows="1" oninput="handleDraftInput()" onkeydown="handleReplyKeydown(event)" placeholder="এখানে রিপ্লাই লিখুন... (Shift+Enter = নতুন লাইন)" autocomplete="off" class="flex-1 bg-slate-800 text-white text-sm px-4 py-3 rounded-xl border border-slate-700 outline-none focus:border-blue-500 resize-none leading-snug" style="max-height:160px"></textarea>
+            <button type="submit" id="sendBtn" class="bg-blue-600 hover:bg-blue-500 text-white font-semibold px-6 py-3 rounded-xl transition cursor-pointer shrink-0">
+              Send
+            </button>
+          </div>
+        </form>
+      </div>
+    </main>
+
+  </div>
 
   <script>
-    function todayDhaka() {
-      const now = new Date(Date.now() + 6 * 3600 * 1000);
-      return now.toISOString().slice(0, 10);
+    let currentMod = sessionStorage.getItem("mod_name") || "";
+    let modPass = sessionStorage.getItem("mod_pass") || "";
+    let currentPageFilter = sessionStorage.getItem("mod_page") || "all";
+    let currentBucket = "pending";
+    let selectedCustomer = null;
+    let selectedImagesList = [];
+    let currentMessagesCache = [];
+    let isSendingMessage = false;
+    let activeAutoSaveItemId = null;
+    let sharedSavedRepliesCache = [];
+    let autoSaveDebounceTimer = null;
+    let currentSuggestions = [];
+    let lastQueue = [];
+
+    function dhakaToday() {
+      return new Date(Date.now() + 6 * 3600 * 1000).toISOString().slice(0, 10);
     }
+    let viewDate = dhakaToday();
+    function isViewingToday() { return viewDate === dhakaToday(); }
 
-    document.getElementById("reportDateInput").value = todayDhaka();
-
-    function esc(s) {
+    function escHtml(s) {
       return String(s || "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
     }
 
-    function renderModeratorRows(mods) {
-      const list = Array.isArray(mods) ? mods : [];
-      const totalCust = list.reduce((a, b) => a + (b.total_conversations || 0), 0);
-      const totalSms = list.reduce((a, b) => a + (b.total_messages || 0), 0);
-      const totalConf = list.reduce((a, b) => a + (b.confirmed_orders || 0), 0);
-      const totalPh = list.reduce((a, b) => a + (b.phone_numbers || 0), 0);
-      const avgSms = totalCust ? (Math.round((totalSms / totalCust) * 10) / 10) : 0;
+    function currentSavedRepliesPageRef() {
+      if (selectedCustomer && selectedCustomer.page_id) return selectedCustomer.page_id;
+      return currentPageFilter || "all";
+    }
 
-      document.getElementById("sumCustomers").innerText = totalCust;
-      document.getElementById("sumModSms").innerText = totalSms;
-      document.getElementById("sumAvgSms").innerText = avgSms;
-      document.getElementById("sumConfirmed").innerText = totalConf;
-      document.getElementById("sumPhones").innerText = totalPh;
+    function currentPageLabel() {
+      if (selectedCustomer && selectedCustomer.page_name) return selectedCustomer.page_name;
+      if (currentPageFilter === "swapons") return "Swapons World";
+      if (currentPageFilter === "stone") return "Stone Rose BD";
+      return "All Pages";
+    }
 
-      const tbody = document.getElementById("modPerfBody");
-      if (!list.length) {
-        tbody.innerHTML = `<tr><td colspan="9" class="py-6 text-center text-xs text-slate-500">এই তারিখে কোনো মডারেটর ডাটা নেই</td></tr>`;
+    async function loadSharedSavedReplies() {
+      if (!modPass) return;
+      try {
+        const res = await fetch("/api/saved-replies?page_id=" + encodeURIComponent(currentSavedRepliesPageRef()), {
+          headers: { "x-mod-pass": modPass }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.replies)) {
+            sharedSavedRepliesCache = data.replies;
+            renderSavedRepliesList();
+            renderQuickSuggest();
+          }
+        }
+      } catch (e) {}
+    }
+
+    async function syncMetaSavedReplies() {
+      if (!modPass) return;
+      const btn = document.getElementById("syncMetaBtn");
+      if (btn) btn.innerText = "⏳ Syncing...";
+      const statusEl = document.getElementById("savedReplyAutoStatus");
+      try {
+        const res = await fetch("/api/saved-replies/sync-meta", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-mod-pass": modPass },
+          body: JSON.stringify({ page_id: currentSavedRepliesPageRef() })
+        });
+        const data = await res.json();
+        if (Array.isArray(data.replies)) {
+          sharedSavedRepliesCache = data.replies;
+          renderSavedRepliesList();
+          renderQuickSuggest();
+        }
+        if (statusEl) {
+          if (data.errors && data.errors.length && !data.imported) {
+            statusEl.innerText = "⚠️ Meta Sync ব্যর্থ";
+            statusEl.title = data.errors.join("\n");
+            alert("Meta Sync সমস্যা:\n" + data.errors.join("\n"));
+          } else {
+            statusEl.innerText = data.imported ? `✓ ${data.imported} Meta Synced` : "🌐 Shared Auto Save";
+          }
+        }
+      } catch (e) {
+      } finally {
+        if (btn) btn.innerText = "🔄 Meta Sync";
+      }
+    }
+
+    function renderSavedRepliesList() {
+      const box = document.getElementById("savedRepliesList");
+      if (!box) return;
+      const q = ((document.getElementById("savedReplySearch") && document.getElementById("savedReplySearch").value) || "").trim().toLowerCase();
+      const list = sharedSavedRepliesCache;
+      const filtered = q
+        ? list.filter(item => String(item.title || "").toLowerCase().includes(q) || String(item.text || "").toLowerCase().includes(q))
+        : list;
+
+      if (!filtered.length) {
+        box.innerHTML = `<div class="text-xs text-slate-500 py-3 text-center">কোনো Saved Reply পাওয়া যায়নি</div>`;
         return;
       }
 
-      const maxSms = Math.max(1, ...list.map(m => m.total_messages || 0));
-      tbody.innerHTML = list.map((m, idx) => {
-        const sms = m.total_messages || 0;
-        const pct = Math.min(100, Math.round((sms / maxSms) * 100));
+      box.innerHTML = filtered.map((item) => {
+        const metaBadge = item.source === "meta" ? `<span class="text-[9px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded ml-1.5">Meta</span>` : "";
+        const allBadge = item.page_group === "all" ? `<span class="text-[9px] bg-slate-700 text-slate-300 px-1.5 py-0.5 rounded ml-1.5">সব পেজ</span>` : "";
         return `
-          <tr class="hover:bg-slate-800/40">
-            <td class="py-3 px-4 text-slate-400">${idx + 1}</td>
-            <td class="py-3 px-4 font-bold text-white">${esc(m.name)}</td>
-            <td class="py-3 px-4">
-              <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
-                <div class="h-full bg-emerald-400 rounded-full" style="width:${pct}%"></div>
+          <div class="flex items-start justify-between gap-2 bg-slate-800/80 hover:bg-slate-800 border border-slate-700/80 rounded-xl p-2.5 transition">
+            <button type="button" onclick="insertSavedReplyById('${escHtml(item.id)}')" class="flex-1 flex items-start gap-2.5 text-left cursor-pointer min-w-0">
+              <div class="w-8 h-8 rounded-lg bg-slate-900 border border-slate-700 flex items-center justify-center text-slate-400 shrink-0 mt-0.5">💬</div>
+              <div class="min-w-0">
+                <div class="text-xs font-bold text-white truncate">${escHtml(item.title || "Reply")}${metaBadge}${allBadge}</div>
+                <div class="text-xs text-slate-300 whitespace-pre-line break-words mt-0.5">${escHtml(item.text || "")}</div>
               </div>
-            </td>
-            <td class="py-3 px-4 font-bold text-slate-200">${m.total_conversations || 0}</td>
-            <td class="py-3 px-4 font-bold text-emerald-400">${sms}</td>
-            <td class="py-3 px-4 font-semibold text-sky-400">${m.msgs_per_customer ?? 0}</td>
-            <td class="py-3 px-4 font-bold text-purple-400">${m.confirmed_orders || 0}</td>
-            <td class="py-3 px-4 font-semibold text-amber-400">${m.phone_numbers || 0}</td>
-            <td class="py-3 px-4 text-slate-300">${m.avg_minutes_per_message ?? "-"}</td>
-          </tr>
+            </button>
+            <button type="button" onclick="deleteSavedReply('${escHtml(item.id)}')" title="মুছে ফেলুন" class="text-xs text-slate-400 hover:text-rose-400 px-1.5 py-0.5 cursor-pointer shrink-0">🗑️</button>
+          </div>
         `;
       }).join("");
     }
 
-    async function loadMonitoring() {
-      const date = document.getElementById("reportDateInput").value || todayDhaka();
-      const page = document.getElementById("reportPageFilter").value;
-      const shift = document.getElementById("reportShiftFilter").value;
-      const token = sessionStorage.getItem("dash_token") || sessionStorage.getItem("boss_token") || "";
+    function insertSavedReplyById(id) {
+      const item = sharedSavedRepliesCache.find(r => r.id === id);
+      if (!item || !item.text) return;
+      const input = document.getElementById("replyInput");
+      input.value = input.value ? `${input.value.trim()} ${item.text}` : item.text;
+      saveCurrentDraft();
+      hideQuickSuggest();
+      toggleSavedRepliesPanel(false);
+      input.focus();
+    }
 
+    async function deleteSavedReply(id) {
+      sharedSavedRepliesCache = sharedSavedRepliesCache.filter(item => item.id !== id);
+      renderSavedRepliesList();
       try {
-        const headers = token ? { Authorization: `Bearer ${token}` } : {};
-        const res = await fetch(`/api/daily-report?date=${encodeURIComponent(date)}&page_id=${encodeURIComponent(page)}&shift=${encodeURIComponent(shift)}`, { headers });
-
-        if (res.ok) {
-          const data = await res.json();
-          renderModeratorRows(data.moderators || []);
-          document.getElementById("lastUpdatedBadge").innerText = `Updated: ${new Date().toLocaleTimeString()}`;
-          return;
-        }
+        await fetch(`/api/saved-replies/${encodeURIComponent(id)}`, {
+          method: "DELETE",
+          headers: { "x-mod-pass": modPass }
+        });
       } catch (e) {}
+    }
 
-      // Fallback: show registered moderators if report endpoint requires separate auth
+    function openNewSavedReplyCreator() {
+      const addBox = document.getElementById("addNewSavedReplyBox");
+      activeAutoSaveItemId = "sr_" + Date.now();
+      document.getElementById("newSavedReplyTitle").value = "";
+      document.getElementById("newSavedReplyBody").value = "";
+      addBox.classList.remove("hidden");
+      document.getElementById("newSavedReplyTitle").focus();
+    }
+
+    let srChain = Promise.resolve();
+    function pushSavedReply(record) {
+      srChain = srChain.then(() =>
+        fetch("/api/saved-replies", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-mod-pass": modPass },
+          body: JSON.stringify(record)
+        }).catch(() => {})
+      );
+      return srChain;
+    }
+
+    function buildSavedReplyRecord() {
+      if (!activeAutoSaveItemId) return null;
+      const titleVal = (document.getElementById("newSavedReplyTitle").value || "").trim();
+      const bodyVal = (document.getElementById("newSavedReplyBody").value || "").replace(/\r\n/g, "\n").trim();
+      if (!titleVal && !bodyVal) return null;
+      return {
+        id: activeAutoSaveItemId,
+        title: titleVal || "quick",
+        text: bodyVal,
+        source: "shared",
+        created_by: currentMod || "moderator",
+        updated_at: Date.now(),
+        page_id: currentSavedRepliesPageRef()
+      };
+    }
+
+    function autoSaveDraftSavedReply() {
+      const record = buildSavedReplyRecord();
+      if (!record) return;
+
+      const localRecord = { ...record, page_group: record.page_id === "all" ? "all" : "page" };
+      const idx = sharedSavedRepliesCache.findIndex(item => item.id === record.id);
+      if (idx >= 0) sharedSavedRepliesCache[idx] = localRecord;
+      else sharedSavedRepliesCache.unshift(localRecord);
+      renderSavedRepliesList();
+
+      clearTimeout(autoSaveDebounceTimer);
+      autoSaveDebounceTimer = setTimeout(async () => {
+        await pushSavedReply(record);
+        const statusEl = document.getElementById("savedReplyAutoStatus");
+        if (statusEl) {
+          statusEl.innerText = "💾 Auto Saved (সব মডারেটর)";
+          setTimeout(() => { statusEl.innerText = "🌐 Shared Auto Save"; }, 1400);
+        }
+      }, 500);
+    }
+
+    async function finishAutoSavedReply() {
+      clearTimeout(autoSaveDebounceTimer);
+      const record = buildSavedReplyRecord();
+      activeAutoSaveItemId = null;
+      document.getElementById("addNewSavedReplyBox").classList.add("hidden");
+      document.getElementById("newSavedReplyTitle").value = "";
+      document.getElementById("newSavedReplyBody").value = "";
+      if (record) await pushSavedReply(record);
+      loadSharedSavedReplies();
+    }
+
+    function toggleSavedRepliesPanel(forceState) {
+      const panel = document.getElementById("savedRepliesPanel");
+      const sticker = document.getElementById("stickerPanel");
+      if (sticker) sticker.classList.add("hidden");
+      const nextOpen = typeof forceState === "boolean" ? forceState : panel.classList.contains("hidden");
+      if (nextOpen) {
+        document.getElementById("savedReplyPageLabel").innerText = currentPageLabel();
+        loadSharedSavedReplies();
+        renderSavedRepliesList();
+        hideQuickSuggest();
+        panel.classList.remove("hidden");
+      } else {
+        panel.classList.add("hidden");
+      }
+    }
+
+    function toggleStickerPanel(forceState) {
+      const panel = document.getElementById("stickerPanel");
+      const replies = document.getElementById("savedRepliesPanel");
+      if (replies) replies.classList.add("hidden");
+      const nextOpen = typeof forceState === "boolean" ? forceState : panel.classList.contains("hidden");
+      if (nextOpen) {
+        hideQuickSuggest();
+        panel.classList.remove("hidden");
+      } else {
+        panel.classList.add("hidden");
+      }
+    }
+
+    /* ---------------- Quick suggestion ---------------- */
+    function hideQuickSuggest() {
+      currentSuggestions = [];
+      const box = document.getElementById("quickSuggestBox");
+      if (box) {
+        box.classList.add("hidden");
+        box.innerHTML = "";
+      }
+    }
+
+    function renderQuickSuggest() {
+      const box = document.getElementById("quickSuggestBox");
+      const input = document.getElementById("replyInput");
+      if (!box || !input) return;
+
+      const typed = (input.value || "").trim().toLowerCase();
+      const panelOpen = !document.getElementById("savedRepliesPanel").classList.contains("hidden");
+      if (!typed || typed.length > 40 || panelOpen || !selectedCustomer) {
+        hideQuickSuggest();
+        return;
+      }
+
+      const matches = sharedSavedRepliesCache
+        .filter(item => item.text && String(item.title || "").trim().toLowerCase().includes(typed))
+        .sort((a, b) => {
+          const aStarts = String(a.title || "").trim().toLowerCase().startsWith(typed) ? 0 : 1;
+          const bStarts = String(b.title || "").trim().toLowerCase().startsWith(typed) ? 0 : 1;
+          return aStarts - bStarts;
+        })
+        .slice(0, 4);
+
+      currentSuggestions = matches;
+      if (!matches.length) {
+        hideQuickSuggest();
+        return;
+      }
+
+      box.innerHTML = `
+        <div class="text-[11px] text-slate-400">Saved reply · Click to insert <span class="text-slate-500">(Tab চাপলে প্রথমটি বসবে)</span></div>
+        ${matches.map(item => `
+          <button type="button" onclick="applySuggestion('${escHtml(item.id)}')" class="w-full text-left flex items-start gap-2 hover:bg-slate-800 rounded-lg px-2 py-1.5 transition cursor-pointer">
+            <span class="text-xs font-bold text-sky-300 shrink-0">${escHtml(item.title)}</span>
+            <span class="text-xs text-slate-300 truncate">· ${escHtml(item.text)}</span>
+          </button>
+        `).join("")}
+      `;
+      box.classList.remove("hidden");
+    }
+
+    function applySuggestion(id) {
+      const item = sharedSavedRepliesCache.find(r => r.id === id);
+      if (!item) return;
+      const input = document.getElementById("replyInput");
+      input.value = item.text;
+      saveCurrentDraft();
+      hideQuickSuggest();
+      input.focus();
+    }
+
+    function handleReplyKeydown(e) {
+      if (e.key === "Tab" && currentSuggestions.length) {
+        e.preventDefault();
+        applySuggestion(currentSuggestions[0].id);
+      } else if (e.key === "Escape") {
+        hideQuickSuggest();
+      } else if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+        e.preventDefault();
+        sendReply();
+      }
+    }
+
+    function autoGrowReply() {
+      const el = document.getElementById("replyInput");
+      if (!el) return;
+      el.style.height = "auto";
+      el.style.height = Math.min(el.scrollHeight, 160) + "px";
+    }
+
+    function getDraftKey(cust) {
+      if (!cust || !cust.page_id || !cust.sender_id) return "";
+      return `mod_draft_${cust.page_id}_${cust.sender_id}`;
+    }
+
+    function saveCurrentDraft() {
+      autoGrowReply();
+      if (!selectedCustomer) return;
+      const key = getDraftKey(selectedCustomer);
+      const val = document.getElementById("replyInput").value;
       try {
-        const modRes = await fetch("/api/mod/list");
-        if (modRes.ok) {
-          const modData = await modRes.json();
-          const fallbackMods = (modData.moderators || []).map(name => ({
-            name,
-            total_conversations: 0,
-            total_messages: 0,
-            msgs_per_customer: 0,
-            confirmed_orders: 0,
-            phone_numbers: 0,
-            avg_minutes_per_message: "-"
-          }));
-          renderModeratorRows(fallbackMods);
-          document.getElementById("lastUpdatedBadge").innerText = "Moderator list loaded";
+        if (val && val.trim()) {
+          localStorage.setItem(key, val);
+          document.getElementById("autoSaveBadge").innerText = "💾 Auto Saved";
+        } else {
+          localStorage.removeItem(key);
+          document.getElementById("autoSaveBadge").innerText = "💾 Auto Save সক্রিয়";
         }
       } catch (e) {}
     }
 
-    loadMonitoring();
-    setInterval(loadMonitoring, 15000);
+    function restoreCustomerDraft(cust) {
+      const input = document.getElementById("replyInput");
+      const key = getDraftKey(cust);
+      let saved = "";
+      try { saved = (key && localStorage.getItem(key)) || ""; } catch (e) {}
+      input.value = saved;
+      autoGrowReply();
+      document.getElementById("autoSaveBadge").innerText = saved ? "💾 Draft Auto-Restored" : "💾 Auto Save সক্রিয়";
+    }
+
+    function handleDraftInput() {
+      saveCurrentDraft();
+      renderQuickSuggest();
+    }
+
+    function deduplicateMessages(list) {
+      const result = [];
+      for (const item of (list || [])) {
+        const txt = (item.text || "").trim();
+        const t = Number(item.time || 0);
+        const isDup = result.some(existing => {
+          const exTxt = (existing.text || "").trim();
+          const exT = Number(existing.time || 0);
+          const sameSender = existing.sender === item.sender;
+          const sameText = exTxt && txt && exTxt === txt;
+          const sameImg = Boolean(existing.image_url) === Boolean(item.image_url);
+          const closeInTime = (!t || !exT) || Math.abs(t - exT) <= 15000;
+          return sameSender && sameText && sameImg && closeInTime;
+        });
+        if (!isDup) result.push(item);
+      }
+      return result;
+    }
+
+    function renderCustomerIdentity(customer, sizeClass = "w-10 h-10", unread = false) {
+      const displayName = escHtml((customer && customer.name) || (customer && customer.customer_name) || "Customer");
+      const picUrl = customer && customer.profile_pic;
+      const fallbackBadge = `<div class="${sizeClass} rounded-full bg-blue-600/30 text-blue-300 flex items-center justify-center font-bold text-sm shrink-0">👤</div>`;
+      const picHtml = picUrl
+        ? `<img src="${picUrl}" alt="${displayName}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" class="${sizeClass} rounded-full object-cover shrink-0 ${unread ? '' : 'opacity-60'}">${fallbackBadge.replace('flex items-center justify-center', 'hidden items-center justify-center')}`
+        : fallbackBadge;
+      const nameCls = unread ? "font-bold text-white" : "font-medium text-slate-400";
+
+      return `
+        <div class="flex items-center gap-2.5 min-w-0">
+          ${picHtml}
+          <span class="${nameCls} text-sm truncate">${displayName}</span>
+        </div>
+      `;
+    }
+
+    async function loadModList() {
+      const res = await fetch("/api/mod/list");
+      const data = await res.json();
+      const select = document.getElementById("modSelect");
+      select.innerHTML = `<option value="">-- নাম নির্বাচন করুন --</option>` +
+        data.moderators.map(name => `<option value="${name}">${name}</option>`).join("");
+    }
+
+    async function modLogin() {
+      const name = document.getElementById("modSelect").value;
+      const pass = document.getElementById("modPassInput").value.trim();
+      const page = document.getElementById("loginPageSelect").value;
+      if (!name || !pass) return;
+
+      viewDate = dhakaToday();
+
+      const res = await fetch("/api/mod/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-mod-pass": pass },
+        body: JSON.stringify({ moderator: name, requestNew: true, pageFilter: page, bucket: "pending", date: viewDate })
+      });
+
+      if (res.status === 401) {
+        document.getElementById("modLoginErr").classList.remove("hidden");
+        return;
+      }
+
+      currentMod = name;
+      modPass = pass;
+      currentPageFilter = page;
+      currentBucket = "pending";
+      sessionStorage.setItem("mod_name", name);
+      sessionStorage.setItem("mod_pass", pass);
+      sessionStorage.setItem("mod_page", page);
+
+      document.getElementById("headerPageFilter").value = page;
+      document.getElementById("modLoginModal").classList.add("hidden");
+      document.getElementById("activeModBadge").innerText = `👤 ${currentMod}`;
+      initDateInput();
+      const data = await res.json();
+      renderBatch(data);
+      loadSharedSavedReplies();
+    }
+
+    function initDateInput() {
+      const el = document.getElementById("viewDate");
+      el.max = dhakaToday();
+      el.value = viewDate;
+    }
+
+    function changeViewDate() {
+      const v = document.getElementById("viewDate").value;
+      viewDate = v || dhakaToday();
+      saveCurrentDraft();
+      selectedCustomer = null;
+      hideQuickSuggest();
+      document.getElementById("activeChatBox").classList.add("hidden");
+      document.getElementById("emptyChatState").classList.remove("hidden");
+      fetchBatch(false);
+    }
+
+    function goToday() {
+      viewDate = dhakaToday();
+      initDateInput();
+      changeViewDate();
+    }
+
+    function switchBucket(bucket) {
+      saveCurrentDraft();
+      currentBucket = bucket;
+      selectedCustomer = null;
+      hideQuickSuggest();
+      document.getElementById("activeChatBox").classList.add("hidden");
+      document.getElementById("emptyChatState").classList.remove("hidden");
+
+      const base = "relative py-1.5 px-1 rounded-lg text-[11px] font-bold cursor-pointer border ";
+      const styles = {
+        pending: base + "bg-amber-500/20 text-amber-300 border-amber-500/40",
+        average: base + "bg-sky-500/20 text-sky-300 border-sky-500/40",
+        good: base + "bg-emerald-500/20 text-emerald-300 border-emerald-500/40",
+        poor: base + "bg-rose-500/20 text-rose-300 border-rose-500/40",
+        msgsent: base + "bg-indigo-500/20 text-indigo-300 border-indigo-500/40",
+        number: base + "bg-teal-500/20 text-teal-300 border-teal-500/40"
+      };
+      const inactive = "relative py-1.5 px-1 rounded-lg text-[11px] font-semibold bg-slate-800/60 text-slate-400 hover:text-white cursor-pointer";
+
+      ["pending", "average", "good", "poor", "msgsent", "number"].forEach(b => {
+        document.getElementById(`tab_${b}`).className = (b === bucket) ? styles[b] : inactive;
+      });
+
+      const titles = {
+        pending: "Pending ব্যাচ (১০ জন করে)",
+        average: "Average কাস্টমার তালিকা",
+        good: "Good কাস্টমার তালিকা",
+        poor: "Poor কাস্টমার তালিকা",
+        msgsent: "Message Send কাস্টমার তালিকা",
+        number: "Number Collect কাস্টমার তালিকা"
+      };
+      document.getElementById("bucketTitleLabel").innerText = titles[bucket];
+      fetchBatch(false);
+    }
+
+    function changePageFilter() {
+      saveCurrentDraft();
+      currentPageFilter = document.getElementById("headerPageFilter").value;
+      sessionStorage.setItem("mod_page", currentPageFilter);
+      selectedCustomer = null;
+      hideQuickSuggest();
+      document.getElementById("activeChatBox").classList.add("hidden");
+      document.getElementById("emptyChatState").classList.remove("hidden");
+      loadSharedSavedReplies();
+      fetchBatch(true);
+    }
+
+    function logoutMod() {
+      saveCurrentDraft();
+      sessionStorage.removeItem("mod_name");
+      sessionStorage.removeItem("mod_pass");
+      sessionStorage.removeItem("mod_page");
+      location.reload();
+    }
+
+    async function fetchBatch(requestNew = false) {
+      if (!currentMod || !modPass) return;
+      try {
+        const res = await fetch("/api/mod/batch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-mod-pass": modPass },
+          body: JSON.stringify({
+            moderator: currentMod,
+            requestNew,
+            pageFilter: currentPageFilter,
+            bucket: currentBucket,
+            date: viewDate
+          })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          renderBatch(data);
+        }
+      } catch (e) {}
+    }
+
+    function renderBatch(data) {
+      const isToday = data.is_today !== false;
+      lastQueue = data.queue || [];
+
+      document.getElementById("globalQueueCount").innerText = data.global_unassigned || 0;
+      if (data.counts) {
+        document.getElementById("cnt_pending").innerText = data.counts.pending || 0;
+        document.getElementById("cnt_average").innerText = data.counts.average || 0;
+        document.getElementById("cnt_good").innerText = data.counts.good || 0;
+        document.getElementById("cnt_poor").innerText = data.counts.poor || 0;
+        document.getElementById("cnt_msgsent").innerText = data.counts.msgsent || 0;
+        document.getElementById("cnt_number").innerText = data.counts.number || 0;
+        document.getElementById("st_pending").innerText = data.counts.pending || 0;
+      }
+
+      // হিসাব chip
+      document.getElementById("st_label").innerText = isToday ? "আজ" : (data.day || viewDate);
+      document.getElementById("st_assigned").innerText = data.assigned_total || 0;
+      document.getElementById("st_sent").innerText = data.sent_messages || 0;
+
+      // পুরনো দিনের banner
+      const banner = document.getElementById("pastBanner");
+      if (isToday) banner.classList.add("hidden");
+      else {
+        document.getElementById("pastBannerDate").innerText = data.day || viewDate;
+        banner.classList.remove("hidden");
+      }
+
+      // Label tab-এ unread badge
+      let totalUnreadMsgs = 0;
+      const unread = data.unread || {};
+      ["pending", "average", "good", "poor", "msgsent", "number"].forEach(b => {
+        const u = unread[b] || { customers: 0, messages: 0 };
+        if (isToday) totalUnreadMsgs += u.messages || 0;
+        if (b === "pending") return;
+        const el = document.getElementById("ub_" + b);
+        if (!el) return;
+        if (isToday && u.messages > 0) {
+          el.innerText = u.messages > 99 ? "99+" : String(u.messages);
+          el.title = `${u.customers} জন কাস্টমারের ${u.messages}টি নতুন মেসেজ`;
+          el.style.display = "flex";
+        } else {
+          el.style.display = "none";
+        }
+      });
+      document.title = (totalUnreadMsgs > 0 ? `(${totalUnreadMsgs}) ` : "") + "Moderator Batch Inbox";
+
+      const listEl = document.getElementById("customerList");
+      if (lastQueue.length === 0) {
+        listEl.innerHTML = `
+          <div class="p-8 text-center space-y-3">
+            <div class="text-3xl">📭</div>
+            <p class="text-xs text-slate-400">এই ফোল্ডারে কোনো কাস্টমার নেই</p>
+            ${(currentBucket === 'pending' && isToday) ? `<button onclick="fetchBatch(true)" class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-4 py-2 rounded-lg cursor-pointer">নতুন কাস্টমার লোড করুন</button>` : ''}
+          </div>`;
+        return;
+      }
+
+      listEl.innerHTML = lastQueue.map((c, i) => {
+        const isSelected = selectedCustomer && selectedCustomer.sender_id === c.sender_id && selectedCustomer.page_id === c.page_id;
+        const unreadCount = isToday ? Number(c.unread_count || 0) : 0;
+        const isUnread = unreadCount > 0 && !isSelected;
+        const pageColor = c.page_name.includes("Stone") ? "bg-purple-500/20 text-purple-300 border border-purple-500/30" : "bg-blue-500/20 text-blue-300 border border-blue-500/30";
+
+        let rowCls;
+        if (isSelected) rowCls = "bg-blue-600/20 border-l-4 border-blue-500";
+        else if (isUnread) rowCls = "bg-slate-800/70 border-l-4 border-blue-500 hover:bg-slate-800";
+        else rowCls = "border-l-4 border-transparent hover:bg-slate-800/40";
+
+        const msgCls = isUnread ? "text-slate-100 font-semibold" : "text-slate-500";
+        const badge = isUnread
+          ? `<span class="min-w-[20px] h-5 px-1.5 rounded-full bg-blue-500 text-white text-[11px] font-bold flex items-center justify-center shrink-0">${unreadCount > 99 ? "99+" : unreadCount}</span>`
+          : "";
+
+        return `
+          <div onclick="openChatByIdx(${i})" class="p-3 cursor-pointer transition ${rowCls}">
+            <div class="flex justify-between items-center gap-2">
+              ${renderCustomerIdentity(c, "w-9 h-9", isUnread)}
+              <span class="text-[9px] px-1.5 py-0.5 rounded shrink-0 ${pageColor}">${escHtml(c.page_name)}</span>
+            </div>
+            ${c.ad_data ? `<div class="text-[10px] text-amber-400 truncate mt-1 pl-11">📢 ${escHtml(c.ad_data.ad_title || 'Ad')}</div>` : ''}
+            <div class="flex items-center justify-between gap-2 mt-0.5 pl-11">
+              <p class="text-xs ${msgCls} truncate">${escHtml(c.last_message || "New message")}</p>
+              ${badge}
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function openChatByIdx(i) {
+      const c = lastQueue[i];
+      if (c) openChat(c);
+    }
+
+    /* ---------------- Ad banner + preview ---------------- */
+    let currentActiveAdData = null;
+
+    function isImageUrl(u) {
+      return /\.(jpe?g|png|webp|gif)(\?|$)/i.test(String(u || ""));
+    }
+
+    function adExternalUrl(ad) {
+      if (!ad) return "";
+      if (ad.video_page_url) return ad.video_page_url;
+      if (ad.post_url) return ad.post_url;
+      if (ad.ad_id) return `https://www.facebook.com/ads/library/?id=${encodeURIComponent(ad.ad_id)}`;
+      return "";
+    }
+
+    function adPosterUrl(ad) {
+      if (!ad) return "";
+      if (ad.photo_url) return ad.photo_url;
+      if (ad.video_url && isImageUrl(ad.video_url)) return ad.video_url;
+      return "";
+    }
+
+    function adIsVideo(ad) {
+      return Boolean(ad && (ad.media_type === "video" || ad.video_id || ad.video_url));
+    }
+
+    function showAdBanner(adData, customer) {
+      currentActiveAdData = adData || null;
+      const titleEl = document.getElementById("adTitleText");
+      const idEl = document.getElementById("adIdText");
+      const thumb = document.getElementById("adThumb");
+      const btnLabel = document.getElementById("adPostBtnLabel");
+
+      if (!adData) {
+        titleEl.innerText = "Direct Messenger / Ad referral পাওয়া যায়নি";
+        idEl.innerText = "এই কাস্টমার সরাসরি ইনবক্সে এসেছেন বা Meta ad তথ্য পাঠায়নি";
+        thumb.classList.add("hidden");
+        btnLabel.innerText = "অ্যাড দেখুন";
+        return;
+      }
+
+      const isVid = adIsVideo(adData);
+      const poster = adPosterUrl(adData);
+
+      titleEl.innerText = adData.ad_title || "Facebook Ad";
+      idEl.innerText = (adData.ad_id ? `Ad ID: ${adData.ad_id} · ` : "") + (isVid ? "Video Ad" : (poster ? "Picture Ad" : "Facebook Ad"));
+
+      if (poster) {
+        thumb.src = poster;
+        thumb.classList.remove("hidden");
+      } else {
+        thumb.classList.add("hidden");
+      }
+
+      btnLabel.innerText = isVid ? "ভিডিও অ্যাড দেখুন" : "অ্যাড দেখুন";
+    }
+
+    function showAdNote(text) {
+      const noteEl = document.getElementById("modalAdFallbackNote");
+      document.getElementById("modalAdNoteText").innerText = text;
+      noteEl.classList.remove("hidden");
+    }
+
+    function openAdPreviewModal() {
+      const ad = currentActiveAdData;
+      const vidEl = document.getElementById("modalAdVideo");
+      const imgEl = document.getElementById("modalAdImg");
+      const noteEl = document.getElementById("modalAdFallbackNote");
+      const badgeEl = document.getElementById("modalAdTypeBadge");
+      const linkEl = document.getElementById("modalAdExternalLink");
+
+      vidEl.onerror = null;
+      vidEl.pause();
+      vidEl.removeAttribute("src");
+      vidEl.removeAttribute("poster");
+      vidEl.classList.add("hidden");
+      imgEl.classList.add("hidden");
+      noteEl.classList.add("hidden");
+
+      if (!ad) {
+        document.getElementById("modalAdTitle").innerText = "Ad পাওয়া যায়নি";
+        document.getElementById("modalAdSub").innerText = selectedCustomer ? selectedCustomer.page_name : "";
+        linkEl.classList.add("hidden");
+        badgeEl.innerText = "ℹ️ No Ad Data";
+        showAdNote("এই কাস্টমারের মেসেজের সাথে Meta কোনো Ad referral পাঠায়নি। সম্ভবত কাস্টমার সরাসরি পেজে মেসেজ করেছেন, অথবা এটা Click-to-Messenger অ্যাড থেকে আসেনি।");
+        document.getElementById("adPreviewModal").classList.remove("hidden");
+        return;
+      }
+
+      const extUrl = adExternalUrl(ad);
+      const poster = adPosterUrl(ad);
+      const playable = ad.video_url && !isImageUrl(ad.video_url);
+
+      document.getElementById("modalAdTitle").innerText = ad.ad_title || "Facebook Ad";
+      document.getElementById("modalAdSub").innerText = ad.ad_id ? `Ad ID: ${ad.ad_id}` : (selectedCustomer ? selectedCustomer.page_name : "Ad");
+
+      if (extUrl) {
+        linkEl.href = extUrl;
+        linkEl.classList.remove("hidden");
+      } else {
+        linkEl.classList.add("hidden");
+      }
+
+      if (adIsVideo(ad) && playable) {
+        if (poster) vidEl.setAttribute("poster", poster);
+        vidEl.src = ad.video_url;
+        vidEl.classList.remove("hidden");
+        badgeEl.innerText = "🎬 Video Content Ad";
+        vidEl.onerror = () => {
+          vidEl.onerror = null;
+          vidEl.classList.add("hidden");
+          if (poster) {
+            imgEl.src = poster;
+            imgEl.classList.remove("hidden");
+          }
+          showAdNote("ভিডিও সরাসরি চালানো যায়নি। নিচের বাটনে ক্লিক করে Facebook-এ ভিডিও অ্যাডটি দেখুন।");
+          badgeEl.innerText = "🎬 Video Ad (Facebook-এ দেখুন)";
+        };
+        vidEl.play().catch(() => {});
+      } else if (poster) {
+        imgEl.src = poster;
+        imgEl.classList.remove("hidden");
+        if (adIsVideo(ad)) {
+          badgeEl.innerText = "🎬 Video Ad (Thumbnail)";
+          showAdNote("এটা ভিডিও অ্যাড। পুরো ভিডিও দেখতে নিচের বাটনে ক্লিক করুন।");
+        } else {
+          badgeEl.innerText = "🖼️ Picture Content Ad";
+        }
+      } else {
+        badgeEl.innerText = "🔗 External Ad Link";
+        let msg = "এই অ্যাডের সরাসরি ছবি/ভিডিও পাওয়া যায়নি।" + (extUrl ? " নিচের বাটন থেকে Facebook-এ অ্যাডটি খুলুন।" : "");
+        if (ad.enrich_error) msg += "\n(Meta: " + ad.enrich_error + ")";
+        showAdNote(msg);
+      }
+
+      document.getElementById("adPreviewModal").classList.remove("hidden");
+    }
+
+    function closeAdPreviewModal() {
+      const vidEl = document.getElementById("modalAdVideo");
+      if (vidEl) {
+        vidEl.onerror = null;
+        vidEl.pause();
+        vidEl.removeAttribute("src");
+        vidEl.load();
+      }
+      document.getElementById("adPreviewModal").classList.add("hidden");
+    }
+
+    /* ---------------- Stats modal (সব মডারেটরের হিসাব) ---------------- */
+    function openStatsModal() {
+      document.getElementById("statsDate").max = dhakaToday();
+      document.getElementById("statsDate").value = viewDate;
+      document.getElementById("statsModal").classList.remove("hidden");
+      loadStats();
+    }
+
+    function closeStatsModal() {
+      document.getElementById("statsModal").classList.add("hidden");
+    }
+
+    function shiftStatsDate(delta) {
+      const el = document.getElementById("statsDate");
+      const cur = el.value || dhakaToday();
+      let next = new Date(Date.parse(cur + "T00:00:00Z") + delta * 86400000).toISOString().slice(0, 10);
+      if (next > dhakaToday()) next = dhakaToday();
+      el.value = next;
+      loadStats();
+    }
+
+    async function loadStats() {
+      const date = document.getElementById("statsDate").value || dhakaToday();
+      const body = document.getElementById("statsBody");
+      body.innerHTML = `<tr><td colspan="9" class="py-6 text-center text-slate-500">লোড হচ্ছে...</td></tr>`;
+      try {
+        const res = await fetch(`/api/mod/stats?date=${encodeURIComponent(date)}&page_id=${encodeURIComponent(currentPageFilter)}`, {
+          headers: { "x-mod-pass": modPass }
+        });
+        const data = await res.json();
+        document.getElementById("statsScopeLabel").innerText = `${date} · ${data.scope || "All Pages"}`;
+
+        if (!data.rows || !data.rows.length) {
+          body.innerHTML = `<tr><td colspan="9" class="py-6 text-center text-slate-500">এই তারিখে কোনো তথ্য নেই</td></tr>`;
+          return;
+        }
+
+        const rowsHtml = data.rows.map(r => {
+          const isMe = r.name === currentMod;
+          return `
+            <tr class="border-b border-slate-800 ${isMe ? 'bg-blue-600/10' : ''}">
+              <td class="py-2 px-2 font-bold ${isMe ? 'text-blue-300' : 'text-white'}">${escHtml(r.name)}${isMe ? ' (আপনি)' : ''}</td>
+              <td class="py-2 px-2 text-center text-white font-semibold">${r.assigned}</td>
+              <td class="py-2 px-2 text-center text-emerald-400 font-semibold">${r.messages_sent}</td>
+              <td class="py-2 px-2 text-center text-amber-300 font-semibold">${r.pending}</td>
+              <td class="py-2 px-2 text-center text-sky-300">${r.average}</td>
+              <td class="py-2 px-2 text-center text-emerald-300">${r.good}</td>
+              <td class="py-2 px-2 text-center text-rose-300">${r.poor}</td>
+              <td class="py-2 px-2 text-center text-indigo-300">${r.msgsent || 0}</td>
+              <td class="py-2 px-2 text-center text-teal-300">${r.number || 0}</td>
+            </tr>`;
+        }).join("");
+
+        const t = data.total || {};
+        body.innerHTML = rowsHtml + `
+          <tr class="bg-slate-800/70 font-bold">
+            <td class="py-2 px-2 text-slate-200">মোট</td>
+            <td class="py-2 px-2 text-center text-white">${t.assigned || 0}</td>
+            <td class="py-2 px-2 text-center text-emerald-400">${t.messages_sent || 0}</td>
+            <td class="py-2 px-2 text-center text-amber-300">${t.pending || 0}</td>
+            <td class="py-2 px-2 text-center text-sky-300">${t.average || 0}</td>
+            <td class="py-2 px-2 text-center text-emerald-300">${t.good || 0}</td>
+            <td class="py-2 px-2 text-center text-rose-300">${t.poor || 0}</td>
+            <td class="py-2 px-2 text-center text-indigo-300">${t.msgsent || 0}</td>
+            <td class="py-2 px-2 text-center text-teal-300">${t.number || 0}</td>
+          </tr>`;
+      } catch (e) {
+        body.innerHTML = `<tr><td colspan="9" class="py-6 text-center text-rose-400">হিসাব লোড করা যায়নি</td></tr>`;
+      }
+    }
+
+    function paintMessages(msgs) {
+      currentMessagesCache = deduplicateMessages(msgs);
+      const box = document.getElementById("messagesContainer");
+      box.innerHTML = currentMessagesCache.map(m => {
+        const isPage = m.sender === "page";
+        const cleanTxt = (m.text && m.text !== "[ছবি পাঠিয়েছেন]" && m.text !== "[ছবি পাঠানো হয়েছে]") ? m.text : "";
+        if (!cleanTxt && !m.image_url) return "";
+
+        return `
+          <div class="flex flex-col ${isPage ? 'items-end' : 'items-start'}">
+            <div class="max-w-md px-4 py-2.5 rounded-2xl text-sm space-y-2 ${isPage ? 'bg-blue-600 text-white rounded-br-none' : 'bg-slate-800 text-slate-100 rounded-bl-none'}">
+              ${m.image_url ? `<a href="${m.image_url}" target="_blank" rel="noopener noreferrer"><img src="${m.image_url}" class="max-h-64 rounded-xl border border-white/10"></a>` : ''}
+              ${cleanTxt ? `<div class="whitespace-pre-line break-words">${escHtml(cleanTxt)}</div>` : ''}
+            </div>
+            ${isPage && m.moderator ? `<span class="text-[10px] text-slate-500 mt-0.5">Sent by ${escHtml(m.moderator)}</span>` : ''}
+          </div>
+        `;
+      }).join("");
+      box.scrollTop = box.scrollHeight;
+    }
+
+    async function openChat(customer) {
+      saveCurrentDraft();
+      selectedCustomer = customer;
+      clearSelectedImage();
+      toggleSavedRepliesPanel(false);
+      toggleStickerPanel(false);
+      hideQuickSuggest();
+      restoreCustomerDraft(customer);
+      document.getElementById("emptyChatState").classList.add("hidden");
+      document.getElementById("activeChatBox").classList.remove("hidden");
+      document.getElementById("chatCustomerName").innerText = customer.customer_name;
+      document.getElementById("chatPageBadge").innerText = customer.page_name;
+      document.getElementById("headerAvatarBox").innerHTML = customer.profile_pic
+        ? `<img src="${customer.profile_pic}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" class="w-11 h-11 rounded-full object-cover"><span style="display:none">👤</span>`
+        : `<span>👤</span>`;
+      showAdBanner(customer.ad_data, customer);
+
+      // লিস্টে সাথে সাথে read দেখানো
+      customer.unread_count = 0;
+      renderBatchFromCache();
+
+      loadSharedSavedReplies();
+      await loadChatMessages();   // সার্ভারে read মার্ক হয়ে যায়
+      fetchBatch(false);          // tab-এর unread সংখ্যা আপডেট
+    }
+
+    function renderBatchFromCache() {
+      // শুধু লিস্ট আবার আঁকা (সংখ্যা অপরিবর্তিত থাকে, পরের fetch-এ ঠিক হয়ে যাবে)
+      const listEl = document.getElementById("customerList");
+      if (!lastQueue.length) return;
+      const isToday = isViewingToday();
+      listEl.innerHTML = lastQueue.map((c, i) => {
+        const isSelected = selectedCustomer && selectedCustomer.sender_id === c.sender_id && selectedCustomer.page_id === c.page_id;
+        const unreadCount = isToday ? Number(c.unread_count || 0) : 0;
+        const isUnread = unreadCount > 0 && !isSelected;
+        const pageColor = c.page_name.includes("Stone") ? "bg-purple-500/20 text-purple-300 border border-purple-500/30" : "bg-blue-500/20 text-blue-300 border border-blue-500/30";
+        let rowCls;
+        if (isSelected) rowCls = "bg-blue-600/20 border-l-4 border-blue-500";
+        else if (isUnread) rowCls = "bg-slate-800/70 border-l-4 border-blue-500 hover:bg-slate-800";
+        else rowCls = "border-l-4 border-transparent hover:bg-slate-800/40";
+        const msgCls = isUnread ? "text-slate-100 font-semibold" : "text-slate-500";
+        const badge = isUnread
+          ? `<span class="min-w-[20px] h-5 px-1.5 rounded-full bg-blue-500 text-white text-[11px] font-bold flex items-center justify-center shrink-0">${unreadCount > 99 ? "99+" : unreadCount}</span>`
+          : "";
+        return `
+          <div onclick="openChatByIdx(${i})" class="p-3 cursor-pointer transition ${rowCls}">
+            <div class="flex justify-between items-center gap-2">
+              ${renderCustomerIdentity(c, "w-9 h-9", isUnread)}
+              <span class="text-[9px] px-1.5 py-0.5 rounded shrink-0 ${pageColor}">${escHtml(c.page_name)}</span>
+            </div>
+            ${c.ad_data ? `<div class="text-[10px] text-amber-400 truncate mt-1 pl-11">📢 ${escHtml(c.ad_data.ad_title || 'Ad')}</div>` : ''}
+            <div class="flex items-center justify-between gap-2 mt-0.5 pl-11">
+              <p class="text-xs ${msgCls} truncate">${escHtml(c.last_message || "New message")}</p>
+              ${badge}
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    async function classifyCustomer(targetBucket) {
+      if (!selectedCustomer) return;
+      if (!isViewingToday()) {
+        alert("পুরনো দিনের কাস্টমার লেবেল করা যাবে না। 'আজ' বাটনে ক্লিক করুন।");
+        return;
+      }
+      const key = getDraftKey(selectedCustomer);
+      try { if (key) localStorage.removeItem(key); } catch (e) {}
+
+      const res = await fetch("/api/mod/classify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-mod-pass": modPass },
+        body: JSON.stringify({
+          page_id: selectedCustomer.page_id,
+          sender_id: selectedCustomer.sender_id,
+          moderator: currentMod,
+          bucket: targetBucket
+        })
+      });
+
+      if (res.ok) {
+        selectedCustomer = null;
+        document.getElementById("replyInput").value = "";
+        hideQuickSuggest();
+        document.getElementById("activeChatBox").classList.add("hidden");
+        document.getElementById("emptyChatState").classList.remove("hidden");
+        await fetchBatch(true);
+      }
+    }
+
+    async function loadChatMessages() {
+      if (!selectedCustomer || isSendingMessage) return;
+      const res = await fetch(`/api/mod/chat?page_id=${selectedCustomer.page_id}&sender_id=${selectedCustomer.sender_id}`, {
+        headers: { "x-mod-pass": modPass }
+      });
+      const data = await res.json();
+      if (isSendingMessage) return;
+      showAdBanner(data.ad_data, selectedCustomer);
+      if (data.customer) {
+        document.getElementById("chatCustomerName").innerText = data.customer.name;
+        document.getElementById("headerAvatarBox").innerHTML = data.customer.profile_pic
+          ? `<img src="${data.customer.profile_pic}" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" class="w-11 h-11 rounded-full object-cover"><span style="display:none">👤</span>`
+          : `<span>👤</span>`;
+      }
+      paintMessages(data.messages || []);
+    }
+
+    function handleImageSelect(event) {
+      const files = Array.from((event.target && event.target.files) || []);
+      if (!files.length) return;
+
+      selectedImagesList = [];
+      const thumbBox = document.getElementById("previewThumbList");
+      thumbBox.innerHTML = "";
+
+      Promise.all(
+        files.map(file => new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target.result);
+          reader.onerror = () => resolve(null);
+          reader.readAsDataURL(file);
+        }))
+      ).then((results) => {
+        selectedImagesList = results.filter(Boolean);
+        if (!selectedImagesList.length) return;
+        thumbBox.innerHTML = selectedImagesList.map(src =>
+          `<img src="${src}" class="h-14 w-14 object-cover rounded-lg border border-blue-500 shrink-0">`
+        ).join("");
+        document.getElementById("previewCountLabel").innerText =
+          `${selectedImagesList.length}টি ছবি সিলেক্ট করা হয়েছে (Send চাপলে চলে যাবে)`;
+        document.getElementById("imagePreviewBar").classList.remove("hidden");
+      });
+    }
+
+    function clearSelectedImage() {
+      selectedImagesList = [];
+      document.getElementById("imageFileInput").value = "";
+      document.getElementById("previewThumbList").innerHTML = "";
+      document.getElementById("imagePreviewBar").classList.add("hidden");
+    }
+
+    function insertQuickConfirm() {
+      const input = document.getElementById("replyInput");
+      input.value = `Your order confirm. ধন্যবাদ! - ${currentMod}`;
+      saveCurrentDraft();
+      hideQuickSuggest();
+      input.focus();
+    }
+
+    async function sendDirectTextMessage(msgText) {
+      if (!selectedCustomer || isSendingMessage || !msgText) return;
+      isSendingMessage = true;
+      const targetCust = { ...selectedCustomer };
+      const sendTime = Date.now();
+
+      paintMessages([
+        ...currentMessagesCache,
+        {
+          sender: "page",
+          text: msgText,
+          image_url: null,
+          moderator: currentMod,
+          time: sendTime
+        }
+      ]);
+
+      try {
+        const res = await fetch("/api/mod/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-mod-pass": modPass },
+          body: JSON.stringify({
+            page_id: targetCust.page_id,
+            sender_id: targetCust.sender_id,
+            text: msgText,
+            imageBase64: "",
+            moderator: currentMod
+          })
+        });
+        const result = await res.json();
+        if (result.error) {
+          alert("মেসেজ পাঠাতে সমস্যা হয়েছে: " + result.error);
+        }
+      } catch (e) {
+        alert("নেটওয়ার্ক সমস্যা: মেসেজ পাঠানো যায়নি।");
+      } finally {
+        isSendingMessage = false;
+      }
+    }
+
+    async function sendStickerNow(stickerChar) {
+      toggleStickerPanel(false);
+      await sendDirectTextMessage(stickerChar);
+    }
+
+    async function sendLikeNow() {
+      toggleSavedRepliesPanel(false);
+      toggleStickerPanel(false);
+      hideQuickSuggest();
+      await sendDirectTextMessage("👍");
+    }
+
+    async function sendReply() {
+      if (!selectedCustomer || isSendingMessage) return;
+      const input = document.getElementById("replyInput");
+      const text = input.value.trim();
+      const imgsToSend = selectedImagesList.slice();
+      if (!text && !imgsToSend.length) return;
+
+      toggleSavedRepliesPanel(false);
+      toggleStickerPanel(false);
+      hideQuickSuggest();
+
+      isSendingMessage = true;
+      const targetCust = { ...selectedCustomer };
+      const draftKey = getDraftKey(targetCust);
+      const sendTime = Date.now();
+
+      const optimisticMsgs = [];
+      if (imgsToSend.length) {
+        imgsToSend.forEach((imgSrc, idx) => {
+          optimisticMsgs.push({
+            sender: "page",
+            text: idx === 0 && text ? text : "[ছবি পাঠানো হয়েছে]",
+            image_url: imgSrc,
+            moderator: currentMod,
+            time: sendTime + idx
+          });
+        });
+      } else if (text) {
+        optimisticMsgs.push({
+          sender: "page",
+          text,
+          image_url: null,
+          moderator: currentMod,
+          time: sendTime
+        });
+      }
+
+      paintMessages([...currentMessagesCache, ...optimisticMsgs]);
+
+      input.value = "";
+      input.style.height = "auto";
+      try { if (draftKey) localStorage.removeItem(draftKey); } catch (e) {}
+      document.getElementById("autoSaveBadge").innerText = "💾 Auto Save সক্রিয়";
+      clearSelectedImage();
+      input.focus();
+
+      try {
+        if (imgsToSend.length > 0) {
+          for (let i = 0; i < imgsToSend.length; i++) {
+            const res = await fetch("/api/mod/send", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "x-mod-pass": modPass },
+              body: JSON.stringify({
+                page_id: targetCust.page_id,
+                sender_id: targetCust.sender_id,
+                text: i === 0 ? text : "",
+                imageBase64: imgsToSend[i],
+                moderator: currentMod
+              })
+            });
+            const result = await res.json();
+            if (result.error) {
+              alert("মেসেজ পাঠাতে সমস্যা হয়েছে: " + result.error);
+              break;
+            }
+          }
+        } else {
+          const res = await fetch("/api/mod/send", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-mod-pass": modPass },
+            body: JSON.stringify({
+              page_id: targetCust.page_id,
+              sender_id: targetCust.sender_id,
+              text,
+              imageBase64: "",
+              moderator: currentMod
+            })
+          });
+          const result = await res.json();
+          if (result.error) {
+            alert("মেসেজ পাঠাতে সমস্যা হয়েছে: " + result.error);
+          }
+        }
+      } catch (e) {
+        alert("নেটওয়ার্ক সমস্যা: মেসেজ পাঠানো যায়নি।");
+      } finally {
+        isSendingMessage = false;
+        fetchBatch(false); // পাঠানো মেসেজের সংখ্যা সাথে সাথে আপডেট
+      }
+    }
+
+    loadModList();
+    initDateInput();
+    if (currentMod && modPass) {
+      document.getElementById("headerPageFilter").value = currentPageFilter;
+      document.getElementById("modLoginModal").classList.add("hidden");
+      document.getElementById("activeModBadge").innerText = `👤 ${currentMod}`;
+      fetchBatch(true);
+      loadSharedSavedReplies();
+    }
+
+    setInterval(async () => {
+      if (currentMod && modPass && !isSendingMessage) {
+        // আগে খোলা চ্যাট refresh (read মার্ক হয়), তারপর লিস্ট/সংখ্যা
+        if (selectedCustomer) { try { await loadChatMessages(); } catch (e) {} }
+        fetchBatch(false);
+        if (!activeAutoSaveItemId) loadSharedSavedReplies();
+      }
+    }, 15000);
   </script>
 </body>
 </html>
