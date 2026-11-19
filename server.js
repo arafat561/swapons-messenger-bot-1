@@ -50,6 +50,8 @@ const DAY_R_CREATED = "date(r.created_at, '+6 hours')";
 const DAY_R_TIME = "date((r.reply_time / 1000), 'unixepoch', '+6 hours')";
 const DAY_R = `CASE WHEN r.reply_time IS NOT NULL AND r.reply_time > 0 THEN ${DAY_R_TIME} ELSE ${DAY_R_CREATED} END`;
 
+const BUCKETS = ["pending", "average", "good", "poor", "msgsent", "number"];
+
 const SHIFTS = {
   all: { label: "Full day", startH: 0, endH: 24 },
   morning: { label: "Morning (9am–5pm)", startH: 9, endH: 17 },
@@ -1271,7 +1273,7 @@ app.post("/api/mod/batch", requireModAuth, async (req, res) => {
     const day = /^\d{4}-\d{2}-\d{2}$/.test(String(date || "")) ? String(date) : todayStr;
     const isToday = day === todayStr;
 
-    const activeBucket = ["pending", "average", "good", "poor"].includes(bucket) ? bucket : "pending";
+    const activeBucket = BUCKETS.includes(bucket) ? bucket : "pending";
     const scope = resolveScope(pageFilter || "all");
     const pcM = pageClause(scope.ids, "m.page_id");
     const pcA = pageClause(scope.ids, "a.page_id");
@@ -1312,13 +1314,15 @@ app.post("/api/mod/batch", requireModAuth, async (req, res) => {
     // শুধু আজকের দিনে নতুন কাস্টমার assign হবে; পুরনো দিন শুধু দেখার জন্য
     if (isToday && (activeBucket === "pending" || requestNew)) {
       // সব পেজ মিলিয়ে এই moderator-এর মোট pending কত
+      const pcPend = pageClause(scope.ids, "a.page_id");
       const totalPending = db.prepare(`
         SELECT COUNT(DISTINCT a.page_id || ':' || a.sender_id) AS cnt
         FROM moderator_assignments a
         JOIN messages m ON m.page_id = a.page_id AND m.sender_id = a.sender_id AND ${DAY_M} = ?
         WHERE a.day = ? AND a.moderator = ?
           AND COALESCE(NULLIF(a.bucket, ''), 'pending') = 'pending'
-      `).get(todayStr, todayStr, moderator).cnt;
+          ${pcPend.sql}
+      `).get(todayStr, todayStr, moderator, ...pcPend.params).cnt;
 
       const slotsNeeded = 10 - totalPending;
       if (slotsNeeded > 0) {
@@ -1380,13 +1384,9 @@ app.post("/api/mod/batch", requireModAuth, async (req, res) => {
       GROUP BY b
     `).all(day, moderator, ...pcA.params, day);
 
-    const counts = { pending: 0, average: 0, good: 0, poor: 0 };
-    const unread = {
-      pending: { customers: 0, messages: 0 },
-      average: { customers: 0, messages: 0 },
-      good: { customers: 0, messages: 0 },
-      poor: { customers: 0, messages: 0 }
-    };
+    const counts = {};
+    const unread = {};
+    BUCKETS.forEach((b) => { counts[b] = 0; unread[b] = { customers: 0, messages: 0 }; });
     bucketRows.forEach((r) => {
       if (counts[r.b] === undefined) return;
       counts[r.b] = r.cust;
@@ -1395,7 +1395,7 @@ app.post("/api/mod/batch", requireModAuth, async (req, res) => {
       }
     });
 
-    const assignedTotal = counts.pending + counts.average + counts.good + counts.poor;
+    const assignedTotal = BUCKETS.reduce((s, b) => s + counts[b], 0);
     const sentMap = sentMessagesByModerator(day, scope.ids);
     const myName = normalizeModeratorName(moderator) || moderator;
     const sentMessages = (sentMap.get(myName) || { msgs: 0 }).msgs;
@@ -1436,7 +1436,7 @@ app.post("/api/mod/batch", requireModAuth, async (req, res) => {
 app.post("/api/mod/classify", requireModAuth, (req, res) => {
   try {
     const { page_id, sender_id, moderator, bucket } = req.body;
-    if (!page_id || !sender_id || !moderator || !["pending", "average", "good", "poor"].includes(bucket)) {
+    if (!page_id || !sender_id || !moderator || !BUCKETS.includes(bucket)) {
       return res.status(400).json({ error: "Invalid request" });
     }
 
@@ -1535,6 +1535,8 @@ app.get("/api/mod/stats", requireModAuth, (req, res) => {
           average: 0,
           good: 0,
           poor: 0,
+          msgsent: 0,
+          number: 0,
           messages_sent: 0,
           customers_replied: 0
         });
@@ -1580,10 +1582,12 @@ app.get("/api/mod/stats", requireModAuth, (req, res) => {
         t.average += r.average;
         t.good += r.good;
         t.poor += r.poor;
+        t.msgsent += r.msgsent;
+        t.number += r.number;
         t.messages_sent += r.messages_sent;
         return t;
       },
-      { assigned: 0, pending: 0, average: 0, good: 0, poor: 0, messages_sent: 0 }
+      { assigned: 0, pending: 0, average: 0, good: 0, poor: 0, msgsent: 0, number: 0, messages_sent: 0 }
     );
 
     res.json({ date: day, scope: scope.label, rows, total });
@@ -1973,9 +1977,129 @@ app.post("/api/ads/toggle", requireAuth, async (req, res) => {
 
     await postMetaCampaignStatus(campaignId, targetStatus);
     adsCache.clear();
+    detailCache.clear();
     res.json({ ok: true, campaign_id: campaignId, status: targetStatus });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+/* Campaign -> Ad sets -> Ads detail */
+const detailCache = new Map();
+
+function buildMetricRow(row, objective) {
+  const spend = parseFloat((row && row.spend) || 0);
+  const acts = (row && row.actions) || [];
+  const m = acts.find((a) => a.action_type === "onsite_conversion.messaging_conversation_started_7d");
+  const o = acts.find((a) => a.action_type === "purchase" || a.action_type === "offsite_conversion.fb_pixel_purchase");
+  const msgs = m ? parseInt(m.value || 0, 10) : 0;
+  const orders = o ? parseInt(o.value || 0, 10) : 0;
+  const obj = String(objective || "").toUpperCase();
+  const isMsgObj = obj.includes("MESSAGES") || obj.includes("ENGAGEMENT");
+  const isSalesObj = obj.includes("OUTCOME_SALES") || obj.includes("CONVERSIONS");
+
+  let msgSpend = 0;
+  let salesSpend = 0;
+  if (msgs > 0 && orders === 0) msgSpend = spend;
+  else if (orders > 0 && msgs === 0) salesSpend = spend;
+  else if (isMsgObj && !isSalesObj) msgSpend = spend;
+  else if (isSalesObj && !isMsgObj) salesSpend = spend;
+  else {
+    if (msgs > 0) msgSpend = spend / 2;
+    if (orders > 0) salesSpend = spend / 2;
+  }
+
+  return {
+    spend: spend.toFixed(2),
+    messages: msgs,
+    msg_spend: msgSpend.toFixed(2),
+    cost_per_msg_cents: msgs > 0 && msgSpend > 0 ? ((msgSpend / msgs) * 100).toFixed(1) : "0.0",
+    orders,
+    sales_spend: salesSpend.toFixed(2),
+    cost_per_order_usd: orders > 0 && salesSpend > 0 ? (salesSpend / orders).toFixed(2) : "0.00"
+  };
+}
+
+app.get("/api/ads/campaign-detail", requireAuth, async (req, res) => {
+  try {
+    if (!META_ACCESS_TOKEN) return res.status(400).json({ error: "META_ACCESS_TOKEN সেট করা নেই" });
+    const campaignId = String(req.query.campaign_id || "").trim();
+    const objective = String(req.query.objective || "");
+    const rawDate = String(req.query.date || "");
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : dhakaDate();
+    if (!/^\d+$/.test(campaignId)) return res.status(400).json({ error: "Invalid campaign_id" });
+
+    const key = `${campaignId}|${date}|${objective}`;
+    const hit = detailCache.get(key);
+    if (hit && Date.now() - hit.t < 30000) return res.json(hit.v);
+
+    const base = `https://graph.facebook.com/${META_API_VERSION}/${campaignId}`;
+    const insightUrl = (level, fields) =>
+      `${base}/insights?${new URLSearchParams({
+        access_token: META_ACCESS_TOKEN,
+        level,
+        fields,
+        time_range: JSON.stringify({ since: date, until: date }),
+        use_unified_attribution_setting: "true",
+        limit: "500"
+      })}`;
+    const listUrl = (edge, fields) =>
+      `${base}/${edge}?${new URLSearchParams({ access_token: META_ACCESS_TOKEN, fields, limit: "500" })}`;
+
+    const [setIns, adIns, setList, adList] = await Promise.all([
+      fetchAllInsights(insightUrl("adset", "adset_id,adset_name,spend,actions")),
+      fetchAllInsights(insightUrl("ad", "ad_id,ad_name,adset_id,adset_name,spend,actions")),
+      fetchPagedList(listUrl("adsets", "id,name,status")),
+      fetchPagedList(listUrl("ads", "id,name,status,adset_id"))
+    ]);
+
+    const err = setIns.error || adIns.error || setList.error || adList.error;
+    if (err) return res.status(502).json({ error: err });
+
+    const sets = new Map();
+    const touch = (id, name) => {
+      if (!sets.has(id)) sets.set(id, { id, name: name || `Ad set ${id}`, status: "ACTIVE", row: null, ads: new Map() });
+      return sets.get(id);
+    };
+
+    setList.rows.forEach((s) => {
+      const x = touch(String(s.id), s.name);
+      x.status = String(s.status || "ACTIVE").toUpperCase();
+    });
+    setIns.rows.forEach((r) => { touch(String(r.adset_id), r.adset_name).row = r; });
+    adList.rows.forEach((a) => {
+      if (!a.adset_id) return;
+      touch(String(a.adset_id), "").ads.set(String(a.id), {
+        id: String(a.id), name: a.name, status: String(a.status || "ACTIVE").toUpperCase(), row: null
+      });
+    });
+    adIns.rows.forEach((r) => {
+      const x = touch(String(r.adset_id), r.adset_name);
+      const id = String(r.ad_id);
+      const cur = x.ads.get(id) || { id, name: r.ad_name, status: "ACTIVE", row: null };
+      cur.row = r;
+      cur.name = cur.name || r.ad_name;
+      x.ads.set(id, cur);
+    });
+
+    const bySpend = (a, b) => parseFloat(b.spend) - parseFloat(a.spend);
+    const adsets = [];
+    sets.forEach((s) => {
+      const ads = Array.from(s.ads.values())
+        .map((a) => ({ id: a.id, name: a.name || `Ad ${a.id}`, status: a.status, ...buildMetricRow(a.row, objective) }))
+        .filter((a) => parseFloat(a.spend) > 0 || a.status === "ACTIVE")
+        .sort(bySpend);
+      const item = { id: s.id, name: s.name, status: s.status, ...buildMetricRow(s.row, objective), ads };
+      if (parseFloat(item.spend) > 0 || item.status === "ACTIVE") adsets.push(item);
+    });
+    adsets.sort(bySpend);
+
+    const v = { campaign_id: campaignId, date, adsets };
+    detailCache.set(key, { t: Date.now(), v });
+    if (detailCache.size > 200) detailCache.clear();
+    res.json(v);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
