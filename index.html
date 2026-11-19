@@ -345,6 +345,15 @@
       *, *::before, *::after { animation: none !important; transition: none !important; }
       html { scroll-behavior: auto; }
     }
+
+    .camp-row { cursor: pointer; }
+    .camp-row:hover td, .camp-row.open td { background: var(--raised); }
+    .camp-row.open .chev, tr.set-open .chev { transform: rotate(90deg); }
+    .camp-detail-row td, .camp-detail-row .det-box { padding: 0 !important; background: transparent !important; }
+    .det-box { padding: 10px 0 14px 28px !important; }
+    .set-row { cursor: pointer; background: var(--raised); }
+    .ad-leaf td:nth-child(2) { padding-left: 34px; }
+    .ad-leaf td { opacity: .92; }
   </style>
 </head>
 <body>
@@ -597,6 +606,10 @@
         scope: safeGet("dash_scope") || "all",
         shift: safeGet("dash_shift") || "all",
         expandedAccountId: "",
+        expandedCampId: "",
+        expandedCampObjective: "",
+        campDetails: {},
+        expandedSets: {},
         accountsMap: {},
         reqId: 0,
         countdown: REFRESH_SECONDS,
@@ -988,6 +1001,70 @@
           if (nextRow && nextRow.classList.contains("sub-drop-row")) nextRow.remove();
         }
         state.expandedAccountId = "";
+        state.expandedCampId = "";
+      }
+
+      function metricCells(c) {
+        return '<td class="num strong">' + money(c.spend) + '</td>' +
+          '<td><span class="num strong c-msg">' + fmt(c.messages) + '</span><div class="detail num">spend ' + money(c.msg_spend) + '</div></td>' +
+          '<td><span class="pill msg num">' + esc(c.cost_per_msg_cents) + '¢</span></td>' +
+          '<td><span class="num strong c-sale">' + fmt(c.orders) + '</span><div class="detail num">spend ' + money(c.sales_spend) + '</div></td>' +
+          '<td><span class="pill sale num">' + money(c.cost_per_order_usd) + '</span></td>';
+      }
+
+      function objToggle(o, kind, campId) {
+        var isOn = String(o.status || "ACTIVE").toUpperCase() === "ACTIVE";
+        return '<div class="ad-toggle-wrap">' +
+          '<button type="button" class="ad-switch" data-obj-toggle="1" data-kind="' + kind + '" data-camp-id="' + esc(campId) + '" data-obj-id="' + esc(o.id) + '" data-next-status="' + (isOn ? "PAUSED" : "ACTIVE") + '" data-active="' + (isOn ? "true" : "false") + '"></button>' +
+          '<span class="ad-state-txt ' + (isOn ? "on" : "off") + '">' + (isOn ? "ON" : "OFF") + '</span></div>';
+      }
+
+      function buildDetailHtml(campId) {
+        var d = state.campDetails[campId];
+        if (!d) return '<div class="det-box"><div class="empty" style="padding:14px">Ad sets লোড হচ্ছে…</div></div>';
+        if (d.error) return '<div class="det-box"><div class="notice">' + esc(d.error) + '</div></div>';
+        if (!d.adsets || !d.adsets.length) return '<div class="det-box"><div class="empty" style="padding:14px">এই তারিখে কোনো Ad set / Ad পাওয়া যায়নি।</div></div>';
+
+        var rows = "";
+        d.adsets.forEach(function (s) {
+          var open = !!state.expandedSets[s.id];
+          rows += '<tr class="set-row' + (open ? ' set-open' : '') + '" data-set-id="' + esc(s.id) + '">' +
+            '<td>' + objToggle(s, "adset", campId) + '</td>' +
+            '<td><div class="camp-name"><span class="chev">▸</span> 🗂 ' + esc(s.name) + '</div><div class="camp-obj">Ad set · ' + s.ads.length + ' ads · #' + esc(s.id) + '</div></td>' +
+            metricCells(s) + '</tr>';
+          s.ads.forEach(function (a) {
+            rows += '<tr class="ad-leaf" data-parent-set="' + esc(s.id) + '"' + (open ? '' : ' hidden') + '>' +
+              '<td>' + objToggle(a, "ad", campId) + '</td>' +
+              '<td><div class="camp-name">🖼 ' + esc(a.name) + '</div><div class="camp-obj">Ad · #' + esc(a.id) + '</div></td>' +
+              metricCells(a) + '</tr>';
+          });
+        });
+
+        return '<div class="det-box"><div class="scroll"><table class="sub-table">' +
+          '<thead><tr><th>Off / On</th><th>Ad set / Ad (ad set-এ ক্লিক করলে Ads দেখাবে)</th><th>Spend</th><th>Messages</th><th>Cost / msg</th><th>Orders</th><th>Cost / order</th></tr></thead>' +
+          '<tbody>' + rows + '</tbody></table></div></div>';
+      }
+
+      function rerenderDrop() {
+        var accObj = state.accountsMap[state.expandedAccountId];
+        var td = $("adsTableBody").querySelector("tr.sub-drop-row > td");
+        if (accObj && td) td.innerHTML = buildCampaignsSubHtml(accObj);
+      }
+
+      function loadCampDetail(campId, objective) {
+        var qs = "campaign_id=" + encodeURIComponent(campId) +
+          "&objective=" + encodeURIComponent(objective || "") +
+          "&date=" + encodeURIComponent($("datePicker").value);
+        return fetch("/api/ads/campaign-detail?" + qs, { headers: { Authorization: state.auth } })
+          .then(function (res) {
+            return res.json().catch(function () { return {}; }).then(function (d) { return { ok: res.ok, data: d }; });
+          }).then(function (r) {
+            state.campDetails[campId] = r.ok ? r.data : { error: r.data.error || "Ad sets লোড করা যায়নি", adsets: [] };
+            if (state.expandedCampId === campId) rerenderDrop();
+          }).catch(function () {
+            state.campDetails[campId] = { error: "নেটওয়ার্ক সমস্যা", adsets: [] };
+            if (state.expandedCampId === campId) rerenderDrop();
+          });
       }
 
       function buildCampaignsSubHtml(acc) {
@@ -1008,18 +1085,16 @@
         var rowsHtml = camps.map(function (c) {
           var isOn = String(c.status || "ACTIVE").toUpperCase() === "ACTIVE";
           var nextStatus = isOn ? "PAUSED" : "ACTIVE";
-          return '<tr>' +
+          var open = state.expandedCampId === String(c.id);
+          var row = '<tr class="camp-row' + (open ? ' open' : '') + '" data-camp-row="1" data-camp-id="' + esc(c.id) + '" data-objective="' + esc(c.objective || "") + '" title="ক্লিক করে Ad sets ও Ads দেখুন">' +
             '<td><div class="ad-toggle-wrap">' +
               '<button type="button" class="ad-switch" data-camp-toggle="1" data-acc-id="' + esc(acc.id) + '" data-camp-id="' + esc(c.id) + '" data-next-status="' + nextStatus + '" data-active="' + (isOn ? "true" : "false") + '" title="' + (isOn ? "অ্যাড অফ করতে ক্লিক করুন" : "অ্যাড অন করতে ক্লিক করুন") + '"></button>' +
               '<span class="ad-state-txt ' + (isOn ? "on" : "off") + '">' + (isOn ? "ON" : "OFF") + '</span>' +
             '</div></td>' +
-            '<td><div class="camp-name">' + esc(c.name) + '</div><div class="camp-obj">' + esc(c.objective || "Ad Campaign") + (c.id ? ' · #' + esc(c.id) : '') + '</div></td>' +
-            '<td class="num strong">' + money(c.spend) + '</td>' +
-            '<td><span class="num strong c-msg">' + fmt(c.messages) + '</span><div class="detail num">spend ' + money(c.msg_spend) + '</div></td>' +
-            '<td><span class="pill msg num">' + esc(c.cost_per_msg_cents) + '¢</span></td>' +
-            '<td><span class="num strong c-sale">' + fmt(c.orders) + '</span><div class="detail num">spend ' + money(c.sales_spend) + '</div></td>' +
-            '<td><span class="pill sale num">' + money(c.cost_per_order_usd) + '</span></td>' +
-          '</tr>';
+            '<td><div class="camp-name"><span class="chev">▸</span> ' + esc(c.name) + '</div><div class="camp-obj">' + esc(c.objective || "Ad Campaign") + (c.id ? ' · #' + esc(c.id) : '') + '</div></td>' +
+            metricCells(c) + '</tr>';
+          if (open) row += '<tr class="camp-detail-row"><td colspan="7">' + buildDetailHtml(String(c.id)) + '</td></tr>';
+          return row;
         }).join("");
 
         return '<div class="sub-drop-box">' + headerHtml +
@@ -1094,6 +1169,10 @@
           '<td class="num c-sale">' + fmt(sum.total_orders) + '</td>' +
           '<td class="num">' + money(sum.avg_cost_per_order_usd) + '</td>' +
         '</tr>';
+
+        if (state.expandedCampId && state.expandedAccountId) {
+          loadCampDetail(state.expandedCampId, state.expandedCampObjective);
+        }
       }
 
       $("adsTableBody").addEventListener("click", function (e) {
@@ -1132,6 +1211,59 @@
             toast("নেটওয়ার্ক সমস্যা: স্ট্যাটাস আপডেট হয়নি");
             toggleBtn.disabled = false;
           });
+          return;
+        }
+
+        var objBtn = e.target.closest("[data-obj-toggle]");
+        if (objBtn) {
+          var objId = objBtn.getAttribute("data-obj-id");
+          var objCamp = objBtn.getAttribute("data-camp-id");
+          var objNext = objBtn.getAttribute("data-next-status");
+          objBtn.disabled = true;
+          fetch("/api/ads/toggle", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: state.auth },
+            body: JSON.stringify({ campaign_id: objId, status: objNext })
+          }).then(function (res) {
+            return res.json().catch(function () { return {}; }).then(function (d) { return { ok: res.ok, data: d }; });
+          }).then(function (r) {
+            if (!r.ok) { toast(r.data.error || "স্ট্যাটাস পরিবর্তন করা যায়নি"); objBtn.disabled = false; return; }
+            var det = state.campDetails[objCamp];
+            if (det && det.adsets) {
+              det.adsets.forEach(function (s) {
+                if (String(s.id) === objId) s.status = objNext;
+                s.ads.forEach(function (a) { if (String(a.id) === objId) a.status = objNext; });
+              });
+            }
+            rerenderDrop();
+            toast(objNext === "PAUSED" ? "OFF (Paused) করা হয়েছে" : "ON (Active) করা হয়েছে");
+          }).catch(function () { toast("নেটওয়ার্ক সমস্যা"); objBtn.disabled = false; });
+          return;
+        }
+
+        var setRow = e.target.closest("tr.set-row");
+        if (setRow) {
+          var sid = setRow.getAttribute("data-set-id");
+          state.expandedSets[sid] = !state.expandedSets[sid];
+          setRow.classList.toggle("set-open", !!state.expandedSets[sid]);
+          setRow.closest("table").querySelectorAll("tr.ad-leaf").forEach(function (l) {
+            if (l.getAttribute("data-parent-set") === sid) l.hidden = !state.expandedSets[sid];
+          });
+          return;
+        }
+
+        var campRow = e.target.closest("tr.camp-row");
+        if (campRow) {
+          var cid = campRow.getAttribute("data-camp-id");
+          if (state.expandedCampId === cid) {
+            state.expandedCampId = "";
+          } else {
+            state.expandedCampId = cid;
+            state.expandedCampObjective = campRow.getAttribute("data-objective") || "";
+            delete state.campDetails[cid];
+            loadCampDetail(cid, state.expandedCampObjective);
+          }
+          rerenderDrop();
           return;
         }
 
