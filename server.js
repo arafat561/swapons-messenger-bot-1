@@ -374,6 +374,16 @@ function loadDbAliases() {
 }
 loadDbAliases();
 
+// Customer chat read/unread track korar jonno
+db.exec(`
+  CREATE TABLE IF NOT EXISTS mod_reads (
+    page_id TEXT NOT NULL,
+    sender_id TEXT NOT NULL,
+    read_at INTEGER NOT NULL,
+    PRIMARY KEY (page_id, sender_id)
+  );
+`);
+
 try { db.prepare(`DELETE FROM echo_log WHERE created_ms < ?`).run(Date.now() - 7 * 24 * 3600 * 1000); } catch (e) {}
 
 const existingSrCount = db.prepare(`SELECT COUNT(*) as cnt FROM saved_replies`).get().cnt;
@@ -939,11 +949,6 @@ async function handleMessagingEvent(pageId, event) {
       extractPhoneNumber(rawText)
     );
 
-    db.prepare(`
-      UPDATE moderator_assignments SET bucket = 'pending'
-      WHERE page_id = ? AND sender_id = ? AND day = ? AND bucket != 'pending'
-    `).run(pageId, senderId, today);
-
     syncCustomerAndAdFromGraph(pageId, senderId).catch(() => {});
     return;
   }
@@ -1233,17 +1238,47 @@ app.get("/api/mod/list", (req, res) => {
   res.json({ moderators: MODERATORS.map((m) => m.name) });
 });
 
+function sentMessagesByModerator(day, ids) {
+  const pcR = pageClause(ids, "r.page_id");
+  const rows = db
+    .prepare(
+      `SELECT r.moderator, COUNT(*) AS msgs, COUNT(DISTINCT r.page_id || ':' || r.sender_id) AS custs
+       FROM replies r
+       WHERE ${DAY_R} = ?${pcR.sql}
+         AND r.moderator IS NOT NULL AND r.moderator != ''
+       GROUP BY r.moderator`
+    )
+    .all(day, ...pcR.params);
+
+  const map = new Map();
+  for (const r of rows) {
+    const name = normalizeModeratorName(r.moderator);
+    if (!name) continue;
+    const cur = map.get(name) || { msgs: 0, custs: 0 };
+    cur.msgs += r.msgs;
+    cur.custs += r.custs;
+    map.set(name, cur);
+  }
+  return map;
+}
+
 app.post("/api/mod/batch", requireModAuth, async (req, res) => {
   try {
-    const { moderator, requestNew, pageFilter, bucket } = req.body;
+    const { moderator, requestNew, pageFilter, bucket, date } = req.body;
     if (!moderator) return res.status(400).json({ error: "Moderator name required" });
 
-    const today = dhakaDate();
+    const todayStr = dhakaDate();
+    const day = /^\d{4}-\d{2}-\d{2}$/.test(String(date || "")) ? String(date) : todayStr;
+    const isToday = day === todayStr;
+
     const activeBucket = ["pending", "average", "good", "poor"].includes(bucket) ? bucket : "pending";
     const scope = resolveScope(pageFilter || "all");
     const pcM = pageClause(scope.ids, "m.page_id");
+    const pcA = pageClause(scope.ids, "a.page_id");
 
     const getBucketCustomers = (targetBucket) => {
+      const orderSql =
+        targetBucket === "pending" ? "MIN(m.id) ASC" : "(unread_count > 0) DESC, last_time DESC";
       return db.prepare(`
         SELECT 
           m.page_id,
@@ -1251,9 +1286,16 @@ app.post("/api/mod/batch", requireModAuth, async (req, res) => {
           COALESCE(NULLIF(MAX(c.name), ''), 'Customer_' || substr(m.sender_id, -4)) as customer_name,
           MAX(c.profile_pic) as profile_pic,
           COALESCE(MAX(c.ad_info), MAX(m.ad_info)) as ad_info,
-          MAX(m.message_text) as last_message,
+          (SELECT lm.message_text FROM messages lm
+             WHERE lm.page_id = m.page_id AND lm.sender_id = m.sender_id
+             ORDER BY COALESCE(lm.message_time, 0) DESC, lm.id DESC LIMIT 1) as last_message,
           MAX(m.message_time) as last_time,
-          COUNT(m.id) as msg_count
+          COUNT(m.id) as msg_count,
+          (SELECT COUNT(*) FROM messages um
+             WHERE um.page_id = m.page_id AND um.sender_id = m.sender_id
+               AND COALESCE(um.message_time, 0) > COALESCE(
+                 (SELECT rd.read_at FROM mod_reads rd WHERE rd.page_id = m.page_id AND rd.sender_id = m.sender_id), 0)
+          ) as unread_count
         FROM messages m
         JOIN moderator_assignments a 
           ON a.page_id = m.page_id AND a.sender_id = m.sender_id AND a.day = ?
@@ -1263,39 +1305,47 @@ app.post("/api/mod/batch", requireModAuth, async (req, res) => {
           AND ${DAY_M} = ?
           ${pcM.sql}
         GROUP BY m.page_id, m.sender_id
-        ORDER BY MIN(m.id) ASC
-      `).all(today, moderator, targetBucket, today, ...pcM.params);
+        ORDER BY ${orderSql}
+      `).all(day, moderator, targetBucket, day, ...pcM.params);
     };
 
-    let pendingQueue = getBucketCustomers("pending");
+    // শুধু আজকের দিনে নতুন কাস্টমার assign হবে; পুরনো দিন শুধু দেখার জন্য
+    if (isToday && (activeBucket === "pending" || requestNew)) {
+      // সব পেজ মিলিয়ে এই moderator-এর মোট pending কত
+      const totalPending = db.prepare(`
+        SELECT COUNT(DISTINCT a.page_id || ':' || a.sender_id) AS cnt
+        FROM moderator_assignments a
+        JOIN messages m ON m.page_id = a.page_id AND m.sender_id = a.sender_id AND ${DAY_M} = ?
+        WHERE a.day = ? AND a.moderator = ?
+          AND COALESCE(NULLIF(a.bucket, ''), 'pending') = 'pending'
+      `).get(todayStr, todayStr, moderator).cnt;
 
-    const slotsNeeded = 10 - pendingQueue.length;
-    if (slotsNeeded > 0 && (activeBucket === "pending" || requestNew)) {
-      const unassignedCustomers = db.prepare(`
-        SELECT DISTINCT m.page_id, m.sender_id
-        FROM messages m
-        LEFT JOIN moderator_assignments a 
-          ON a.page_id = m.page_id AND a.sender_id = m.sender_id AND a.day = ?
-        WHERE a.moderator IS NULL
-          AND m.status != 'replied'
-          AND ${DAY_M} = ?
-          ${pcM.sql}
-        ORDER BY m.id ASC
-        LIMIT ?
-      `).all(today, today, ...pcM.params, slotsNeeded);
+      const slotsNeeded = 10 - totalPending;
+      if (slotsNeeded > 0) {
+        const unassignedCustomers = db.prepare(`
+          SELECT DISTINCT m.page_id, m.sender_id
+          FROM messages m
+          LEFT JOIN moderator_assignments a 
+            ON a.page_id = m.page_id AND a.sender_id = m.sender_id AND a.day = ?
+          WHERE a.moderator IS NULL
+            AND m.status != 'replied'
+            AND ${DAY_M} = ?
+            ${pcM.sql}
+          ORDER BY m.id ASC
+          LIMIT ?
+        `).all(todayStr, todayStr, ...pcM.params, slotsNeeded);
 
-      const assignTransaction = db.transaction((list) => {
-        const now = Date.now();
-        for (const item of list) {
-          stmts.assignModerator.run(item.page_id, item.sender_id, today, moderator, now);
-        }
-      });
-      assignTransaction(unassignedCustomers);
-
-      pendingQueue = getBucketCustomers("pending");
+        const assignTransaction = db.transaction((list) => {
+          const now = Date.now();
+          for (const item of list) {
+            stmts.assignModerator.run(item.page_id, item.sender_id, todayStr, moderator, now);
+          }
+        });
+        assignTransaction(unassignedCustomers);
+      }
     }
 
-    let currentList = activeBucket === "pending" ? pendingQueue : getBucketCustomers(activeBucket);
+    const currentList = getBucketCustomers(activeBucket);
 
     const missingProfiles = currentList.filter(
       (q) => !q.profile_pic || q.customer_name.startsWith("Customer_")
@@ -1306,18 +1356,49 @@ app.post("/api/mod/batch", requireModAuth, async (req, res) => {
       ).catch(() => {});
     }
 
-    const countRows = db.prepare(`
-      SELECT COALESCE(NULLIF(a.bucket, ''), 'pending') as b, COUNT(DISTINCT a.page_id || ':' || a.sender_id) as cnt
-      FROM moderator_assignments a
-      JOIN messages m ON m.page_id = a.page_id AND m.sender_id = a.sender_id AND ${DAY_M} = ?
-      WHERE a.day = ? AND a.moderator = ? ${pcM.sql}
+    // প্রতিটি bucket-এর কাস্টমার সংখ্যা + unread (নতুন মেসেজ) সংখ্যা
+    const bucketRows = db.prepare(`
+      SELECT b,
+             COUNT(*) AS cust,
+             SUM(CASE WHEN u > 0 THEN 1 ELSE 0 END) AS ucust,
+             SUM(u) AS umsgs
+      FROM (
+        SELECT COALESCE(NULLIF(a.bucket, ''), 'pending') AS b,
+               a.page_id, a.sender_id,
+               (SELECT COUNT(*) FROM messages um
+                  WHERE um.page_id = a.page_id AND um.sender_id = a.sender_id
+                    AND COALESCE(um.message_time, 0) > COALESCE(
+                      (SELECT rd.read_at FROM mod_reads rd WHERE rd.page_id = a.page_id AND rd.sender_id = a.sender_id), 0)
+               ) AS u
+        FROM moderator_assignments a
+        WHERE a.day = ? AND a.moderator = ? ${pcA.sql}
+          AND EXISTS (
+            SELECT 1 FROM messages m
+            WHERE m.page_id = a.page_id AND m.sender_id = a.sender_id AND ${DAY_M} = ?
+          )
+      )
       GROUP BY b
-    `).all(today, today, moderator, ...pcM.params);
+    `).all(day, moderator, ...pcA.params, day);
 
     const counts = { pending: 0, average: 0, good: 0, poor: 0 };
-    countRows.forEach((r) => {
-      if (counts[r.b] !== undefined) counts[r.b] = r.cnt;
+    const unread = {
+      pending: { customers: 0, messages: 0 },
+      average: { customers: 0, messages: 0 },
+      good: { customers: 0, messages: 0 },
+      poor: { customers: 0, messages: 0 }
+    };
+    bucketRows.forEach((r) => {
+      if (counts[r.b] === undefined) return;
+      counts[r.b] = r.cust;
+      if (isToday) {
+        unread[r.b] = { customers: r.ucust || 0, messages: r.umsgs || 0 };
+      }
     });
+
+    const assignedTotal = counts.pending + counts.average + counts.good + counts.poor;
+    const sentMap = sentMessagesByModerator(day, scope.ids);
+    const myName = normalizeModeratorName(moderator) || moderator;
+    const sentMessages = (sentMap.get(myName) || { msgs: 0 }).msgs;
 
     const globalUnassigned = db.prepare(`
       SELECT COUNT(DISTINCT m.page_id || ':' || m.sender_id) as count
@@ -1328,14 +1409,20 @@ app.post("/api/mod/batch", requireModAuth, async (req, res) => {
         AND m.status != 'replied'
         AND ${DAY_M} = ?
         ${pcM.sql}
-    `).get(today, today, ...pcM.params).count;
+    `).get(todayStr, todayStr, ...pcM.params).count;
 
     res.json({
       moderator,
+      day,
+      is_today: isToday,
       bucket: activeBucket,
       counts,
+      unread,
+      assigned_total: assignedTotal,
+      sent_messages: sentMessages,
       queue: currentList.map((q) => ({
         ...q,
+        unread_count: isToday ? q.unread_count : 0,
         ad_data: parseAdJson(q.ad_info),
         page_name: PAGE_NAMES[q.page_id] || "Page"
       })),
@@ -1386,14 +1473,12 @@ app.get("/api/mod/chat", requireModAuth, async (req, res) => {
 
     let custRow = db.prepare(`SELECT name, profile_pic, ad_info FROM customers WHERE page_id = ? AND sender_id = ?`).get(page_id, sender_id);
 
-    // customers টেবিলের ad_info আগে, না থাকলে মেসেজের সাথে আসা ad_info
     let adData = parseAdJson(custRow && custRow.ad_info);
     if (!adData) {
       const withAd = incoming.filter((i) => i.ad_info).map((i) => parseAdJson(i.ad_info)).filter(Boolean);
       if (withAd.length) adData = withAd[withAd.length - 1];
     }
 
-    // ad_id আছে কিন্তু ভিডিও/ছবি এখনো আনা হয়নি → এখনই Meta থেকে এনে সেভ করা
     if (adData && adNeedsEnrich(adData)) {
       try {
         adData = await enrichAndStoreAd(String(page_id), String(sender_id), adData);
@@ -1403,6 +1488,15 @@ app.get("/api/mod/chat", requireModAuth, async (req, res) => {
     if (!custRow || !custRow.profile_pic) {
       syncCustomerAndAdFromGraph(page_id, sender_id).catch(() => {});
     }
+
+    // চ্যাট খোলা মানেই read — এই কাস্টমারের সব মেসেজ read মার্ক
+    try {
+      const maxIncoming = incoming.reduce((mx, i) => Math.max(mx, Number(i.time) || 0), 0);
+      db.prepare(`
+        INSERT INTO mod_reads (page_id, sender_id, read_at) VALUES (?, ?, ?)
+        ON CONFLICT(page_id, sender_id) DO UPDATE SET read_at = excluded.read_at
+      `).run(String(page_id), String(sender_id), Math.max(Date.now(), maxIncoming));
+    } catch (e) {}
 
     const merged = [...incoming, ...outgoing]
       .map((m) => ({ sender: m.sender, text: m.text, image_url: m.image_url, time: m.time, moderator: m.moderator }))
@@ -1416,6 +1510,83 @@ app.get("/api/mod/chat", requireModAuth, async (req, res) => {
         profile_pic: (custRow && custRow.profile_pic) || ""
       }
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// সব moderator-এর দিনভিত্তিক হিসাব: /api/mod/stats?date=YYYY-MM-DD&page_id=all|swapons|stone
+app.get("/api/mod/stats", requireModAuth, (req, res) => {
+  try {
+    const rawDate = String(req.query.date || "");
+    const day = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : dhakaDate();
+    const scope = resolveScope(req.query.page_id || req.query.scope || "all");
+    const pcA = pageClause(scope.ids, "a.page_id");
+
+    const map = new Map();
+    const getRow = (raw) => {
+      const name = normalizeModeratorName(raw);
+      if (!name) return null;
+      if (!map.has(name)) {
+        map.set(name, {
+          name,
+          assigned: 0,
+          pending: 0,
+          average: 0,
+          good: 0,
+          poor: 0,
+          messages_sent: 0,
+          customers_replied: 0
+        });
+      }
+      return map.get(name);
+    };
+
+    const assignRows = db.prepare(`
+      SELECT a.moderator, COALESCE(NULLIF(a.bucket, ''), 'pending') AS b,
+             COUNT(DISTINCT a.page_id || ':' || a.sender_id) AS cnt
+      FROM moderator_assignments a
+      WHERE a.day = ? ${pcA.sql}
+        AND EXISTS (
+          SELECT 1 FROM messages m
+          WHERE m.page_id = a.page_id AND m.sender_id = a.sender_id AND ${DAY_M} = ?
+        )
+      GROUP BY a.moderator, b
+    `).all(day, ...pcA.params, day);
+
+    for (const r of assignRows) {
+      const row = getRow(r.moderator);
+      if (!row) continue;
+      row.assigned += r.cnt;
+      if (row[r.b] !== undefined) row[r.b] += r.cnt;
+    }
+
+    const sentMap = sentMessagesByModerator(day, scope.ids);
+    for (const [name, v] of sentMap.entries()) {
+      const row = getRow(name);
+      if (!row) continue;
+      row.messages_sent += v.msgs;
+      row.customers_replied += v.custs;
+    }
+
+    const rows = Array.from(map.values())
+      .filter((r) => r.assigned > 0 || r.messages_sent > 0)
+      .sort((a, b) => b.messages_sent - a.messages_sent || b.assigned - a.assigned);
+
+    const total = rows.reduce(
+      (t, r) => {
+        t.assigned += r.assigned;
+        t.pending += r.pending;
+        t.average += r.average;
+        t.good += r.good;
+        t.poor += r.poor;
+        t.messages_sent += r.messages_sent;
+        return t;
+      },
+      { assigned: 0, pending: 0, average: 0, good: 0, poor: 0, messages_sent: 0 }
+    );
+
+    res.json({ date: day, scope: scope.label, rows, total });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
