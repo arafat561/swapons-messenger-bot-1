@@ -133,7 +133,7 @@ const MODERATORS = [
   { name: "apurbo", fb_link: "https://www.facebook.com/profile.php?id=61592804760356", aliases: ["apurbo", "অপুর্ব", "অপূর্ব", "61592804760356"] },
   { name: "ruman", fb_link: "https://www.facebook.com/ruman.hossen.342329", aliases: ["ruman", "রুমান", "Ruman Hossen", "ruman.hossen.342329"] },
   { name: "saidul", fb_link: "https://www.facebook.com/profile.php?id=61592488485671", aliases: ["saidul", "সাইদুল", "61592488485671"] },
-  { name: "সামির", fb_link: "", aliases: ["সামির", "samir"] }
+  { name: "samir", fb_link: "https://www.facebook.com/share/r/1DWP6xPJpU/?mibextid=wwXIfr", aliases: ["samir", "সামির", "1DWP6xPJpU"] }
 ];
 
 function extractFbIdentifier(raw) {
@@ -144,7 +144,8 @@ function extractFbIdentifier(raw) {
   const idQuery = s.match(/[?&]id=(\d{5,})/i);
   if (idQuery) return idQuery[1];
 
-  const sharePath = s.match(/facebook\.com\/share\/([A-Za-z0-9_-]+)/i);
+  // share/XXXX  অথবা  share/r/XXXX  (reel/post share link)
+  const sharePath = s.match(/facebook\.com\/share\/(?:[a-z]\/)?([A-Za-z0-9_-]+)/i);
   if (sharePath) return sharePath[1];
 
   const userPath = s.match(/facebook\.com\/([A-Za-z0-9._-]+)\/?(?:\?|$)/i);
@@ -159,17 +160,19 @@ function extractFbIdentifier(raw) {
 }
 
 const FB_LINK_TO_MODERATOR = new Map();
+
+function registerAlias(alias, modName) {
+  if (!alias || !modName) return;
+  const rawKey = String(alias).trim();
+  if (!rawKey) return;
+  FB_LINK_TO_MODERATOR.set(rawKey.toLowerCase(), modName);
+  const extracted = extractFbIdentifier(rawKey);
+  if (extracted) FB_LINK_TO_MODERATOR.set(extracted.toLowerCase(), modName);
+}
+
 for (const mod of MODERATORS) {
   const keys = [mod.name, mod.fb_link, ...(mod.aliases || [])];
-  for (const k of keys) {
-    if (!k) continue;
-    const rawKey = String(k).trim();
-    const extracted = extractFbIdentifier(rawKey);
-    FB_LINK_TO_MODERATOR.set(rawKey.toLowerCase(), mod.name);
-    if (extracted) {
-      FB_LINK_TO_MODERATOR.set(extracted.toLowerCase(), mod.name);
-    }
-  }
+  for (const k of keys) registerAlias(k, mod.name);
 }
 
 function detectModeratorByFbLink(rawOrText) {
@@ -205,6 +208,7 @@ function escapeRegex(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+// "আমি mony" / "ami mony" / "I am mony" — welcome message থেকে moderator চেনা
 const MODERATOR_WELCOME_RULES = MODERATORS.map((m) => {
   const names = [m.name, ...(m.aliases || [])].filter((t) => t && !/^\d+$/.test(String(t).trim()));
   const alt = names
@@ -212,7 +216,9 @@ const MODERATOR_WELCOME_RULES = MODERATORS.map((m) => {
     .join("|");
   return {
     name: m.name,
-    re: alt ? new RegExp(`(?<![${BN_RANGE}])আমি\\s+(?:${alt})(?![${BN_RANGE}])`, "i") : null
+    re: alt
+      ? new RegExp(`(?<![\\w${BN_RANGE}])(?:আমি|ami|I\\s*am|I'm)\\s+(?:${alt})(?![\\w${BN_RANGE}])`, "i")
+      : null
   };
 });
 
@@ -307,7 +313,27 @@ db.exec(`
     reply_text TEXT NOT NULL,
     source TEXT DEFAULT 'local',
     created_by TEXT,
-    updated_at INTEGER NOT NULL
+    updated_at INTEGER NOT NULL,
+    page_group TEXT DEFAULT 'all'
+  );
+
+  CREATE TABLE IF NOT EXISTS mod_aliases (
+    alias TEXT PRIMARY KEY,
+    moderator TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS echo_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    page_id TEXT,
+    customer_id TEXT,
+    mid TEXT,
+    text TEXT,
+    from_id TEXT,
+    from_name TEXT,
+    app_id TEXT,
+    via TEXT,
+    moderator TEXT,
+    created_ms INTEGER
   );
 
   CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
@@ -315,8 +341,10 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(page_id, sender_id);
   CREATE INDEX IF NOT EXISTS idx_replies_sender ON replies(page_id, sender_id);
   CREATE INDEX IF NOT EXISTS idx_replies_created_at ON replies(created_at);
+  CREATE INDEX IF NOT EXISTS idx_replies_time ON replies(reply_time);
   CREATE INDEX IF NOT EXISTS idx_assign_day ON moderator_assignments(day);
   CREATE INDEX IF NOT EXISTS idx_saved_replies_updated ON saved_replies(updated_at);
+  CREATE INDEX IF NOT EXISTS idx_echo_log_ms ON echo_log(created_ms);
 `);
 
 try { db.exec(`ALTER TABLE messages ADD COLUMN read_time INTEGER;`); } catch (e) {}
@@ -330,10 +358,24 @@ try { db.exec(`ALTER TABLE replies ADD COLUMN image_url TEXT;`); } catch (e) {}
 try { db.exec(`ALTER TABLE customers ADD COLUMN ad_info TEXT;`); } catch (e) {}
 try { db.exec(`ALTER TABLE customers ADD COLUMN profile_pic TEXT;`); } catch (e) {}
 try { db.exec(`ALTER TABLE moderator_assignments ADD COLUMN bucket TEXT DEFAULT 'pending';`); } catch (e) {}
+try { db.exec(`ALTER TABLE saved_replies ADD COLUMN page_group TEXT DEFAULT 'all';`); } catch (e) {}
+try { db.exec(`UPDATE saved_replies SET page_group = 'all' WHERE page_group IS NULL OR page_group = '';`); } catch (e) {}
+
+// DB-তে সেভ করা extra moderator alias (Meta-র আসল ID ম্যাপ করার জন্য)
+function loadDbAliases() {
+  try {
+    for (const r of db.prepare(`SELECT alias, moderator FROM mod_aliases`).all()) {
+      registerAlias(r.alias, r.moderator);
+    }
+  } catch (e) {}
+}
+loadDbAliases();
+
+try { db.prepare(`DELETE FROM echo_log WHERE created_ms < ?`).run(Date.now() - 7 * 24 * 3600 * 1000); } catch (e) {}
 
 const existingSrCount = db.prepare(`SELECT COUNT(*) as cnt FROM saved_replies`).get().cnt;
 if (existingSrCount === 0) {
-  const seedStmt = db.prepare(`INSERT OR IGNORE INTO saved_replies (id, title, reply_text, source, created_by, updated_at) VALUES (?, ?, ?, 'default', 'system', ?)`);
+  const seedStmt = db.prepare(`INSERT OR IGNORE INTO saved_replies (id, title, reply_text, source, created_by, updated_at, page_group) VALUES (?, ?, ?, 'default', 'system', ?, 'all')`);
   const nowSeed = Date.now();
   seedStmt.run("sr_default_1", "number", "📞 বিস্তারিত জানতে অনুগ্রহ করে আপনার মোবাইল নাম্বারটি দিন। চ্যাটে অনেক সময় লাগতে পারে, তাই আমাদের প্রতিনিধি আপনাকে ফোন করে বিস্তারিত জানিয়ে দেবে। 😊", nowSeed - 4000);
   seedStmt.run("sr_default_2", "kon", "স্যার, আপনি কি এমন কোনো প্রোডাক্ট খুঁজছিলেন? আপনার পছন্দের কালার বা ডিজাইনটি জানালে আমি বিস্তারিত জানাচ্ছি। 😊", nowSeed - 3000);
@@ -392,17 +434,19 @@ const stmts = {
   deleteSession: db.prepare(`DELETE FROM sessions WHERE token_hash = ?`),
   purgeSessions: db.prepare(`DELETE FROM sessions WHERE created_at < ?`),
   upsertSavedReply: db.prepare(`
-    INSERT INTO saved_replies (id, title, reply_text, source, created_by, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO saved_replies (id, title, reply_text, source, created_by, updated_at, page_group)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       title = excluded.title,
       reply_text = excluded.reply_text,
       source = COALESCE(excluded.source, saved_replies.source),
       created_by = COALESCE(excluded.created_by, saved_replies.created_by),
-      updated_at = excluded.updated_at
+      updated_at = excluded.updated_at,
+      page_group = excluded.page_group
   `),
   deleteSavedReply: db.prepare(`DELETE FROM saved_replies WHERE id = ?`),
-  listSavedReplies: db.prepare(`SELECT id, title, reply_text, source, created_by, updated_at FROM saved_replies ORDER BY updated_at DESC`)
+  listSavedRepliesAll: db.prepare(`SELECT id, title, reply_text, source, created_by, updated_at, page_group FROM saved_replies ORDER BY updated_at DESC`),
+  listSavedRepliesByGroup: db.prepare(`SELECT id, title, reply_text, source, created_by, updated_at, page_group FROM saved_replies WHERE page_group IN ('all', ?) ORDER BY updated_at DESC`)
 };
 
 function extractPhoneNumber(text) {
@@ -659,6 +703,13 @@ function requireModAuth(req, res, next) {
   return res.status(401).json({ error: "ভুল মডারেটর পাসওয়ার্ড!" });
 }
 
+// ব্রাউজারের URL থেকে সরাসরি debug দেখার জন্য: ?key=DASHBOARD_PASS (বা MOD_PASS)
+function requireDebugAuth(req, res, next) {
+  const key = String(req.query.key || "");
+  if (key && (safeEqual(key, DASHBOARD_PASS) || safeEqual(key, MOD_PASS))) return next();
+  return requireModAuth(req, res, next);
+}
+
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "index.html"));
 });
@@ -709,20 +760,39 @@ function extractAdReferral(event) {
   });
 }
 
+/**
+ * Page থেকে যাওয়া reply (echo) কে কোন moderator পাঠিয়েছে সেটা বের করে।
+ * ক্রম: (১) welcome text "আমি mony"  (২) echo-র from  (৩) Graph message from
+ *       (৪) conversation থেকে  (৫) ওই কাস্টমারের আজকের assigned moderator
+ * ফেরত দেয়: { mod, via, fromId, fromName }
+ */
 async function resolveEchoModerator(pageId, customerId, event) {
+  const info = { mod: null, via: "", fromId: "", fromName: "" };
   const replyText = String((event.message && event.message.text) || "").trim();
 
   const welcomeName = detectModeratorFromWelcomeText(replyText);
-  if (welcomeName) return welcomeName;
-
-  if (event.message && event.message.from && String(event.message.from.id) !== String(pageId)) {
-    const fromIdMatch = detectModeratorByFbLink(event.message.from.id);
-    if (fromIdMatch) return fromIdMatch;
-    if (event.message.from.name) {
-      const fromNameMatch = detectModeratorByFbLink(event.message.from.name) || detectModeratorFromWelcomeText(event.message.from.name);
-      if (fromNameMatch) return fromNameMatch;
-    }
+  if (welcomeName) {
+    info.mod = welcomeName;
+    info.via = "welcome_text";
+    return info;
   }
+
+  const tryFrom = (from, via) => {
+    if (!from || !from.id || String(from.id) === String(pageId)) return false;
+    if (!info.fromId) {
+      info.fromId = String(from.id);
+      info.fromName = String(from.name || "");
+    }
+    const byId = detectModeratorByFbLink(from.id);
+    if (byId) { info.mod = byId; info.via = via + ":id"; return true; }
+    if (from.name) {
+      const byName = detectModeratorByFbLink(from.name) || detectModeratorFromWelcomeText(from.name);
+      if (byName) { info.mod = byName; info.via = via + ":name"; return true; }
+    }
+    return false;
+  };
+
+  if (event.message && tryFrom(event.message.from, "echo_from")) return info;
 
   const token = getPageToken(pageId);
   const mid = event.message && event.message.mid;
@@ -731,14 +801,7 @@ async function resolveEchoModerator(pageId, customerId, event) {
     try {
       const msgUrl = `https://graph.facebook.com/${META_API_VERSION}/${encodeURIComponent(mid)}?fields=from&access_token=${encodeURIComponent(token)}`;
       const msgInfo = await httpsGetJson(msgUrl);
-      if (msgInfo && msgInfo.from && String(msgInfo.from.id) !== String(pageId)) {
-        const matchById = detectModeratorByFbLink(msgInfo.from.id);
-        if (matchById) return matchById;
-        if (msgInfo.from.name) {
-          const matchByName = detectModeratorByFbLink(msgInfo.from.name) || detectModeratorFromWelcomeText(msgInfo.from.name);
-          if (matchByName) return matchByName;
-        }
-      }
+      if (msgInfo && tryFrom(msgInfo.from, "graph_msg")) return info;
     } catch (e) {}
   }
 
@@ -751,19 +814,23 @@ async function resolveEchoModerator(pageId, customerId, event) {
         const exactMid = mid && msgs.find((m) => String(m.id) === String(mid));
         const byText = !exactMid && replyText && msgs.find((m) => String(m.message || "").trim() === replyText && m.from && String(m.from.id) !== String(pageId));
         const matchedMsg = exactMid || byText;
-        if (matchedMsg && matchedMsg.from && String(matchedMsg.from.id) !== String(pageId)) {
-          const idHit = detectModeratorByFbLink(matchedMsg.from.id);
-          if (idHit) return idHit;
-          if (matchedMsg.from.name) {
-            const nameHit = detectModeratorByFbLink(matchedMsg.from.name) || detectModeratorFromWelcomeText(matchedMsg.from.name);
-            if (nameHit) return nameHit;
-          }
-        }
+        if (matchedMsg && tryFrom(matchedMsg.from, "conv")) return info;
       }
     } catch (e) {}
   }
 
-  return null;
+  // শেষ ভরসা: ওই কাস্টমার আজ যে moderator-এর কাছে assigned
+  try {
+    const row = db
+      .prepare(`SELECT moderator FROM moderator_assignments WHERE page_id = ? AND sender_id = ? AND day = ?`)
+      .get(pageId, customerId, dhakaDate(event.timestamp || Date.now()));
+    if (row && row.moderator) {
+      info.mod = row.moderator;
+      info.via = "assignment_fallback";
+    }
+  } catch (e) {}
+
+  return info;
 }
 
 async function handleMessagingEvent(pageId, event) {
@@ -834,12 +901,45 @@ async function handleMessagingEvent(pageId, event) {
 
     const replyTime = event.timestamp || Date.now();
     const replyDay = dhakaDate(replyTime);
+
+    // এই dashboard থেকে পাঠানো মেসেজের echo আবার গুনলে double count হয় — স্কিপ
+    let sentFromDashboard = null;
+    if (replyText) {
+      sentFromDashboard = db
+        .prepare(`SELECT id FROM replies WHERE page_id = ? AND sender_id = ? AND message_id LIKE 'mod_%' AND reply_text = ? AND ABS(COALESCE(reply_time, 0) - ?) <= 30000`)
+        .get(pageId, customerId, replyText, replyTime);
+    } else if (replyImg) {
+      sentFromDashboard = db
+        .prepare(`SELECT id FROM replies WHERE page_id = ? AND sender_id = ? AND message_id LIKE 'mod_%' AND image_url IS NOT NULL AND ABS(COALESCE(reply_time, 0) - ?) <= 30000`)
+        .get(pageId, customerId, replyTime);
+    }
+    if (sentFromDashboard) return;
+
     const isConfirm = replyText.toLowerCase().includes("your order confirm") ? 1 : 0;
-    const mod = await resolveEchoModerator(pageId, customerId, event);
+    const resolved = await resolveEchoModerator(pageId, customerId, event);
+    const mod = resolved.mod;
 
     const exists = db.prepare(`SELECT id FROM replies WHERE message_id = ?`).get(event.message.mid);
     if (!exists) {
       stmts.insertReply.run(pageId, customerId, event.message.mid, replyText || (replyImg ? "[ছবি]" : "👍"), replyImg, replyTime, mod, isConfirm);
+
+      try {
+        db.prepare(`
+          INSERT INTO echo_log (page_id, customer_id, mid, text, from_id, from_name, app_id, via, moderator, created_ms)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          pageId,
+          String(customerId),
+          event.message.mid || "",
+          String(replyText).slice(0, 80),
+          resolved.fromId,
+          resolved.fromName,
+          String(event.message.app_id || ""),
+          resolved.via || "unresolved",
+          mod || "",
+          Date.now()
+        );
+      } catch (e) {}
     }
 
     if (mod) stmts.assignModerator.run(pageId, customerId, replyDay, mod, replyTime);
@@ -869,18 +969,61 @@ app.post("/webhook", (req, res) => {
 });
 
 /* ------------------------------------------------------------------ */
-/* Shared Saved Replies (Railway Backend + Meta Business Page Sync)   */
+/* Moderator ID debug / mapping                                        */
 /* ------------------------------------------------------------------ */
-app.get("/api/saved-replies", requireModAuth, (req, res) => {
-  const rows = stmts.listSavedReplies.all().map((r) => ({
+// দেখুন Meta আসলে কোন ID/নাম পাঠাচ্ছে: /api/echo-log?key=YOUR_PASS
+app.get("/api/echo-log", requireDebugAuth, (req, res) => {
+  const rows = db
+    .prepare(`SELECT page_id, customer_id, text, from_id, from_name, app_id, via, moderator, created_ms FROM echo_log ORDER BY id DESC LIMIT 150`)
+    .all();
+  res.json({ count: rows.length, rows });
+});
+
+// ID ম্যাপ করুন: /api/mod-alias?key=PASS&alias=<from_id>&moderator=mony
+app.get("/api/mod-alias", requireDebugAuth, (req, res) => {
+  const alias = String(req.query.alias || "").trim();
+  const modName = normalizeModeratorName(String(req.query.moderator || ""));
+  const known = MODERATORS.find((m) => m.name === modName);
+  if (!alias || !known) {
+    return res.status(400).json({ error: "alias আর সঠিক moderator নাম দিন", moderators: MODERATORS.map((m) => m.name) });
+  }
+  db.prepare(`INSERT INTO mod_aliases (alias, moderator) VALUES (?, ?) ON CONFLICT(alias) DO UPDATE SET moderator = excluded.moderator`).run(alias, known.name);
+  registerAlias(alias, known.name);
+  const upd = db
+    .prepare(`UPDATE replies SET moderator = ? WHERE message_id IN (SELECT mid FROM echo_log WHERE from_id = ?)`)
+    .run(known.name, alias);
+  res.json({ ok: true, alias, moderator: known.name, old_replies_fixed: upd.changes });
+});
+
+/* ------------------------------------------------------------------ */
+/* Shared Saved Replies (Page-wise + Meta Sync)                        */
+/* ------------------------------------------------------------------ */
+function groupOf(raw) {
+  const v = String(raw || "").trim();
+  if (!v || v === "all") return "";
+  return PAGE_TO_GROUP[v] || (PAGE_GROUPS[v] ? v : "");
+}
+
+function mapSavedRow(r) {
+  return {
     id: r.id,
     title: r.title,
     text: r.reply_text,
     source: r.source,
     created_by: r.created_by,
-    updated_at: r.updated_at
-  }));
-  res.json({ replies: rows });
+    updated_at: r.updated_at,
+    page_group: r.page_group || "all"
+  };
+}
+
+function listSavedRepliesFor(rawPage) {
+  const g = groupOf(rawPage);
+  const rows = g ? stmts.listSavedRepliesByGroup.all(g) : stmts.listSavedRepliesAll.all();
+  return rows.map(mapSavedRow);
+}
+
+app.get("/api/saved-replies", requireModAuth, (req, res) => {
+  res.json({ replies: listSavedRepliesFor(req.query.page_id) });
 });
 
 app.post("/api/saved-replies", requireModAuth, (req, res) => {
@@ -889,16 +1032,17 @@ app.post("/api/saved-replies", requireModAuth, (req, res) => {
   const title = String(body.title || "quick").trim() || "quick";
   const text = String(body.text || "").trim();
   const createdBy = String(body.created_by || "moderator").trim();
+  const group = groupOf(body.page_id || body.page_group) || "all";
   const now = Date.now();
 
   if (!text && !title) {
     return res.status(400).json({ error: "Title or reply text required" });
   }
 
-  stmts.upsertSavedReply.run(id, title, text, "shared", createdBy, now);
+  stmts.upsertSavedReply.run(id, title, text, "shared", createdBy, now, group);
   res.json({
     ok: true,
-    reply: { id, title, text, source: "shared", created_by: createdBy, updated_at: now }
+    reply: { id, title, text, source: "shared", created_by: createdBy, updated_at: now, page_group: group }
   });
 });
 
@@ -909,63 +1053,102 @@ app.delete("/api/saved-replies/:id", requireModAuth, (req, res) => {
   res.json({ ok: true, id });
 });
 
+async function fetchPagedList(firstUrl) {
+  let rows = [];
+  let next = firstUrl;
+  let guard = 0;
+  while (next && guard < 10) {
+    const r = await httpsGetJson(next);
+    if (!r) return { rows, error: "Meta API-তে সংযোগ হয়নি" };
+    if (r.error) return { rows, error: r.error.message || "Meta API error" };
+    if (Array.isArray(r.data)) rows = rows.concat(r.data);
+    next = r.paging && r.paging.next ? r.paging.next : null;
+    guard += 1;
+  }
+  return { rows, error: null };
+}
+
+async function syncMetaSavedRepliesNow() {
+  let imported = 0;
+  const errors = [];
+
+  const tokenEntries = Object.entries(PAGE_TOKENS).filter(([, t]) => Boolean(t));
+  if (!tokenEntries.length && META_ACCESS_TOKEN) {
+    const pagesRes = await httpsGetJson(
+      `https://graph.facebook.com/${META_API_VERSION}/me/accounts?fields=id,name,access_token&access_token=${encodeURIComponent(META_ACCESS_TOKEN)}`
+    );
+    if (pagesRes && Array.isArray(pagesRes.data)) {
+      for (const p of pagesRes.data) {
+        if (p && p.id && p.access_token) tokenEntries.push([String(p.id), String(p.access_token)]);
+      }
+    }
+  }
+
+  const fetchedByGroup = new Map();
+  const failedGroups = new Set();
+
+  for (const [pageId, token] of tokenEntries) {
+    const group = PAGE_TO_GROUP[pageId] || "all";
+    const edges = ["saved_message_responses", "saved_replies"];
+    let result = null;
+    let lastErr = null;
+
+    for (const edge of edges) {
+      const url = `https://graph.facebook.com/${META_API_VERSION}/${encodeURIComponent(pageId)}/${edge}?fields=id,title,message&limit=100&access_token=${encodeURIComponent(token)}`;
+      const r = await fetchPagedList(url);
+      if (!r.error) { result = r; break; }
+      lastErr = r.error;
+    }
+
+    if (!result) {
+      failedGroups.add(group);
+      errors.push(`${PAGE_NAMES[pageId] || pageId}: ${lastErr}`);
+      continue;
+    }
+
+    if (!fetchedByGroup.has(group)) fetchedByGroup.set(group, new Set());
+    const now = Date.now();
+
+    for (const item of result.rows) {
+      const msgTxt = String(item.message || "").trim();
+      if (!msgTxt) continue;
+      const title = String(item.title || "").trim() || msgTxt.slice(0, 20);
+      // দুই Swapons page-এ একই reply থাকলে একবারই সেভ হবে
+      const hash = crypto.createHash("sha1").update(`${title}|${msgTxt}`).digest("hex").slice(0, 12);
+      const srId = `meta_${group}_${hash}`;
+      stmts.upsertSavedReply.run(srId, title, msgTxt, "meta", PAGE_NAMES[pageId] || pageId, now, group);
+      fetchedByGroup.get(group).add(srId);
+      imported += 1;
+    }
+  }
+
+  // Meta থেকে ডিলিট হওয়া reply এখানেও মুছে ফেলা (শুধু সফলভাবে sync হওয়া group-এর জন্য)
+  for (const [group, idSet] of fetchedByGroup.entries()) {
+    if (failedGroups.has(group)) continue;
+    const existing = db
+      .prepare(`SELECT id FROM saved_replies WHERE source = 'meta' AND page_group = ?`)
+      .all(group);
+    for (const row of existing) {
+      if (!idSet.has(row.id)) stmts.deleteSavedReply.run(row.id);
+    }
+  }
+
+  return { imported, errors };
+}
+
 app.post("/api/saved-replies/sync-meta", requireModAuth, async (req, res) => {
   try {
-    let imported = 0;
-    const errors = [];
-
-    const tokenEntries = Object.entries(PAGE_TOKENS).filter(([, t]) => Boolean(t));
-    if (!tokenEntries.length && META_ACCESS_TOKEN) {
-      const pagesRes = await httpsGetJson(
-        `https://graph.facebook.com/${META_API_VERSION}/me/accounts?fields=id,name,access_token&access_token=${encodeURIComponent(META_ACCESS_TOKEN)}`
-      );
-      if (pagesRes && Array.isArray(pagesRes.data)) {
-        for (const p of pagesRes.data) {
-          if (p && p.id && p.access_token) {
-            tokenEntries.push([String(p.id), String(p.access_token)]);
-          }
-        }
-      }
-    }
-
-    for (const [pageId, token] of tokenEntries) {
-      const url = `https://graph.facebook.com/${META_API_VERSION}/${encodeURIComponent(pageId)}/saved_replies?fields=id,title,message&access_token=${encodeURIComponent(token)}`;
-      const data = await httpsGetJson(url);
-      if (data && Array.isArray(data.data)) {
-        const now = Date.now();
-        for (const item of data.data) {
-          const msgTxt = String(item.message || "").trim();
-          if (!msgTxt) continue;
-          const srId = `meta_${pageId}_${item.id}`;
-          stmts.upsertSavedReply.run(
-            srId,
-            String(item.title || PAGE_NAMES[pageId] || "Meta Reply").trim(),
-            msgTxt,
-            "meta",
-            PAGE_NAMES[pageId] || pageId,
-            now
-          );
-          imported += 1;
-        }
-      } else if (data && data.error) {
-        errors.push(`${PAGE_NAMES[pageId] || pageId}: ${data.error.message}`);
-      }
-    }
-
-    const replies = stmts.listSavedReplies.all().map((r) => ({
-      id: r.id,
-      title: r.title,
-      text: r.reply_text,
-      source: r.source,
-      created_by: r.created_by,
-      updated_at: r.updated_at
-    }));
-
-    res.json({ ok: true, imported, errors, replies });
+    const { imported, errors } = await syncMetaSavedRepliesNow();
+    const pageRef = (req.body && req.body.page_id) || req.query.page_id;
+    res.json({ ok: true, imported, errors, replies: listSavedRepliesFor(pageRef) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
+
+// সার্ভার নিজে থেকেই প্রতি ১০ মিনিটে Meta page-এর saved reply টেনে আনবে
+setTimeout(() => { syncMetaSavedRepliesNow().catch(() => {}); }, 8000);
+setInterval(() => { syncMetaSavedRepliesNow().catch(() => {}); }, 10 * 60 * 1000).unref();
 
 app.get("/api/mod/list", (req, res) => {
   res.json({ moderators: MODERATORS.map((m) => m.name) });
@@ -1559,7 +1742,6 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
 
     const pc = pageClause(scope.ids);
     const pcM = pageClause(scope.ids, "m.page_id");
-    const pcA = pageClause(scope.ids, "a.page_id");
     const pcR = pageClause(scope.ids, "r.page_id");
 
     const CUST = "page_id || ':' || sender_id";
@@ -1624,46 +1806,24 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       [targetDate, ...pc.params]
     );
 
+    /* ------------------------------------------------------------ *
+     * Moderator হিসাব (নতুন নিয়ম)
+     *  - Customers : যে moderator ওই কাস্টমারকে আজ প্রথম reply দিয়েছে
+     *                শুধু তার নামেই ১ customer গোনা হবে
+     *  - Messages  : যে যতগুলো মেসেজ পাঠিয়েছে, প্রত্যেকের নামে আলাদা গোনা হবে
+     *  - Phones    : কাস্টমার নাম্বার দিলে সেটা প্রথম reply-দাতার নামে যাবে
+     * ------------------------------------------------------------ */
     const isShift = win.key !== "all";
-    const shiftAssignSql = isShift ? " AND a.assigned_at >= ? AND a.assigned_at < ?" : "";
-    const shiftReplySql = isShift ? " AND r.reply_time >= ? AND r.reply_time < ?" : "";
-    const shiftParams = isShift ? [win.startMs, win.endMs] : [];
+    const inShift = (t) => !isShift || (t >= win.startMs && t < win.endMs);
 
-    const convRows = db
+    const dayReplies = db
       .prepare(
-        `SELECT a.moderator AS raw_mod,
-                COUNT(DISTINCT a.page_id || ':' || a.sender_id) AS total_conversations
-         FROM moderator_assignments a
-         WHERE a.day = ?
-           AND a.moderator IS NOT NULL${shiftAssignSql}${pcA.sql}
-         GROUP BY a.moderator`
-      )
-      .all(targetDate, ...shiftParams, ...pcA.params);
-
-    const replyRows = db
-      .prepare(
-        `SELECT r.moderator AS raw_mod,
-                COUNT(r.id) AS total_messages,
-                SUM(CASE WHEN r.is_order_confirm = 1 THEN 1 ELSE 0 END) AS confirmed_messages
+        `SELECT r.page_id, r.sender_id, r.moderator, r.reply_time, r.created_at, r.is_order_confirm
          FROM replies r
-         WHERE ${DAY_R} = ?
-           AND r.moderator IS NOT NULL${shiftReplySql}${pcR.sql}
-         GROUP BY r.moderator`
+         WHERE ${DAY_R} = ?${pcR.sql}
+         ORDER BY COALESCE(r.reply_time, 0) ASC, r.id ASC`
       )
-      .all(targetDate, ...shiftParams, ...pcR.params);
-
-    const phoneRows = db
-      .prepare(
-        `SELECT a.moderator AS raw_mod,
-                COUNT(DISTINCT m.phone_number) AS phones
-         FROM messages m
-         JOIN moderator_assignments a
-           ON a.page_id = m.page_id AND a.sender_id = m.sender_id AND a.day = ?
-         WHERE m.phone_number IS NOT NULL AND m.phone_number != ''
-           AND ${DAY_M} = ?${shiftAssignSql}${pcA.sql}
-         GROUP BY a.moderator`
-      )
-      .all(targetDate, targetDate, ...shiftParams, ...pcA.params);
+      .all(targetDate, ...pcR.params);
 
     const mergedByMod = new Map();
     const ensureMod = (rawMod) => {
@@ -1681,22 +1841,54 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       return mergedByMod.get(modName);
     };
 
-    for (const c of convRows) {
-      const cur = ensureMod(c.raw_mod);
-      if (cur) cur.total_conversations += c.total_conversations || 0;
-    }
+    const firstByCustomer = new Map();
+    let unattributedMessages = 0;
 
-    for (const r of replyRows) {
-      const cur = ensureMod(r.raw_mod);
-      if (cur) {
-        cur.total_messages += r.total_messages || 0;
-        cur.confirmed_orders += r.confirmed_messages || 0;
+    for (const r of dayReplies) {
+      const t = Number(r.reply_time) > 0 ? Number(r.reply_time) : Date.parse(String(r.created_at).replace(" ", "T") + "Z") || 0;
+      const cur = ensureMod(r.moderator);
+
+      if (!cur) {
+        if (inShift(t)) unattributedMessages += 1;
+        continue;
+      }
+
+      const custKey = `${r.page_id}:${r.sender_id}`;
+      if (!firstByCustomer.has(custKey)) {
+        firstByCustomer.set(custKey, { mod: cur.name, time: t });
+      }
+
+      if (inShift(t)) {
+        cur.total_messages += 1;
+        if (r.is_order_confirm) cur.confirmed_orders += 1;
       }
     }
 
-    for (const p of phoneRows) {
-      const cur = ensureMod(p.raw_mod);
-      if (cur) cur.phone_numbers += p.phones || 0;
+    for (const info of firstByCustomer.values()) {
+      if (inShift(info.time)) {
+        const cur = ensureMod(info.mod);
+        if (cur) cur.total_conversations += 1;
+      }
+    }
+
+    const phoneMsgs = db
+      .prepare(
+        `SELECT page_id, sender_id, phone_number
+         FROM messages
+         WHERE phone_number IS NOT NULL AND phone_number != '' AND ${DAY} = ?${pc.sql}`
+      )
+      .all(targetDate, ...pc.params);
+
+    const phoneSetByMod = new Map();
+    for (const p of phoneMsgs) {
+      const first = firstByCustomer.get(`${p.page_id}:${p.sender_id}`);
+      if (!first || !inShift(first.time)) continue;
+      if (!phoneSetByMod.has(first.mod)) phoneSetByMod.set(first.mod, new Set());
+      phoneSetByMod.get(first.mod).add(p.phone_number);
+    }
+    for (const [modName, set] of phoneSetByMod.entries()) {
+      const cur = ensureMod(modName);
+      if (cur) cur.phone_numbers += set.size;
     }
 
     const board = Array.from(mergedByMod.values());
@@ -1746,7 +1938,8 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
         unread_pending: unreadPending,
         read_without_reply: readNoReply,
         total_confirmed_orders: orderConfirms,
-        total_phone_numbers: phoneCount
+        total_phone_numbers: phoneCount,
+        unattributed_messages: unattributedMessages
       },
       moderators: moderatorStats,
       ads: adsData
