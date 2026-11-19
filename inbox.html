@@ -79,6 +79,8 @@
               <th class="py-2 px-2 text-center text-sky-300">Average</th>
               <th class="py-2 px-2 text-center text-emerald-300">Good</th>
               <th class="py-2 px-2 text-center text-rose-300">Poor</th>
+              <th class="py-2 px-2 text-center text-indigo-300">Msg Send</th>
+              <th class="py-2 px-2 text-center text-teal-300">Number</th>
             </tr>
           </thead>
           <tbody id="statsBody"></tbody>
@@ -161,7 +163,7 @@
 
     <!-- Left Sidebar -->
     <aside class="w-80 md:w-96 bg-slate-900/60 border-r border-slate-800 flex flex-col">
-      <div class="grid grid-cols-4 gap-1 p-2 bg-slate-950/60 border-b border-slate-800 text-center">
+      <div class="grid grid-cols-3 gap-1 p-2 bg-slate-950/60 border-b border-slate-800 text-center">
         <button onclick="switchBucket('pending')" id="tab_pending" class="relative py-1.5 px-1 rounded-lg text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 cursor-pointer">
           Pending (<span id="cnt_pending">0</span>)
         </button>
@@ -176,6 +178,14 @@
         <button onclick="switchBucket('poor')" id="tab_poor" class="relative py-1.5 px-1 rounded-lg text-[11px] font-semibold bg-slate-800/60 text-slate-400 hover:text-white cursor-pointer">
           Poor (<span id="cnt_poor">0</span>)
           <span id="ub_poor" style="display:none" class="absolute -top-1.5 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold items-center justify-center"></span>
+        </button>
+        <button onclick="switchBucket('msgsent')" id="tab_msgsent" class="relative py-1.5 px-1 rounded-lg text-[11px] font-semibold bg-slate-800/60 text-slate-400 hover:text-white cursor-pointer">
+          Msg Send (<span id="cnt_msgsent">0</span>)
+          <span id="ub_msgsent" style="display:none" class="absolute -top-1.5 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold items-center justify-center"></span>
+        </button>
+        <button onclick="switchBucket('number')" id="tab_number" class="relative py-1.5 px-1 rounded-lg text-[11px] font-semibold bg-slate-800/60 text-slate-400 hover:text-white cursor-pointer">
+          Number (<span id="cnt_number">0</span>)
+          <span id="ub_number" style="display:none" class="absolute -top-1.5 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold items-center justify-center"></span>
         </button>
       </div>
 
@@ -224,6 +234,12 @@
             </button>
             <button onclick="classifyCustomer('poor')" class="bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-xs font-bold px-3 py-1.5 rounded-lg transition cursor-pointer">
               ⚠️ Poor
+            </button>
+            <button onclick="classifyCustomer('msgsent')" class="bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 text-xs font-bold px-3 py-1.5 rounded-lg transition cursor-pointer">
+              📨 Message Send
+            </button>
+            <button onclick="classifyCustomer('number')" class="bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 border border-teal-500/40 text-xs font-bold px-3 py-1.5 rounded-lg transition cursor-pointer">
+              📞 Number Collect
             </button>
             <button onclick="insertQuickConfirm()" class="bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/40 text-xs font-semibold px-3 py-1.5 rounded-lg transition cursor-pointer ml-1">
               ✅ Order Confirm
@@ -339,7 +355,7 @@
               👍
             </button>
 
-            <input type="text" id="replyInput" oninput="handleDraftInput()" onkeydown="handleReplyKeydown(event)" placeholder="এখানে রিপ্লাই লিখুন..." autocomplete="off" class="flex-1 bg-slate-800 text-white text-sm px-4 py-3 rounded-xl border border-slate-700 outline-none focus:border-blue-500">
+            <textarea id="replyInput" rows="1" oninput="handleDraftInput()" onkeydown="handleReplyKeydown(event)" placeholder="এখানে রিপ্লাই লিখুন... (Shift+Enter = নতুন লাইন)" autocomplete="off" class="flex-1 bg-slate-800 text-white text-sm px-4 py-3 rounded-xl border border-slate-700 outline-none focus:border-blue-500 resize-none leading-snug" style="max-height:160px"></textarea>
             <button type="submit" id="sendBtn" class="bg-blue-600 hover:bg-blue-500 text-white font-semibold px-6 py-3 rounded-xl transition cursor-pointer shrink-0">
               Send
             </button>
@@ -499,53 +515,64 @@
       document.getElementById("newSavedReplyTitle").focus();
     }
 
-    function autoSaveDraftSavedReply() {
-      if (!activeAutoSaveItemId) return;
-      const titleVal = (document.getElementById("newSavedReplyTitle").value || "").trim();
-      const bodyVal = (document.getElementById("newSavedReplyBody").value || "").trim();
-      if (!titleVal && !bodyVal) return;
+    let srChain = Promise.resolve();
+    function pushSavedReply(record) {
+      srChain = srChain.then(() =>
+        fetch("/api/saved-replies", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-mod-pass": modPass },
+          body: JSON.stringify(record)
+        }).catch(() => {})
+      );
+      return srChain;
+    }
 
-      const pageRef = currentSavedRepliesPageRef();
-      const record = {
+    function buildSavedReplyRecord() {
+      if (!activeAutoSaveItemId) return null;
+      const titleVal = (document.getElementById("newSavedReplyTitle").value || "").trim();
+      const bodyVal = (document.getElementById("newSavedReplyBody").value || "").replace(/\r\n/g, "\n").trim();
+      if (!titleVal && !bodyVal) return null;
+      return {
         id: activeAutoSaveItemId,
         title: titleVal || "quick",
         text: bodyVal,
         source: "shared",
         created_by: currentMod || "moderator",
         updated_at: Date.now(),
-        page_id: pageRef
+        page_id: currentSavedRepliesPageRef()
       };
+    }
 
-      const localRecord = { ...record, page_group: pageRef === "all" ? "all" : "page" };
-      const idx = sharedSavedRepliesCache.findIndex(item => item.id === activeAutoSaveItemId);
+    function autoSaveDraftSavedReply() {
+      const record = buildSavedReplyRecord();
+      if (!record) return;
+
+      const localRecord = { ...record, page_group: record.page_id === "all" ? "all" : "page" };
+      const idx = sharedSavedRepliesCache.findIndex(item => item.id === record.id);
       if (idx >= 0) sharedSavedRepliesCache[idx] = localRecord;
       else sharedSavedRepliesCache.unshift(localRecord);
       renderSavedRepliesList();
 
       clearTimeout(autoSaveDebounceTimer);
       autoSaveDebounceTimer = setTimeout(async () => {
-        try {
-          await fetch("/api/saved-replies", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "x-mod-pass": modPass },
-            body: JSON.stringify(record)
-          });
-          const statusEl = document.getElementById("savedReplyAutoStatus");
-          if (statusEl) {
-            statusEl.innerText = "💾 Auto Saved (সব মডারেটর)";
-            setTimeout(() => { statusEl.innerText = "🌐 Shared Auto Save"; }, 1400);
-          }
-        } catch (e) {}
-      }, 250);
+        await pushSavedReply(record);
+        const statusEl = document.getElementById("savedReplyAutoStatus");
+        if (statusEl) {
+          statusEl.innerText = "💾 Auto Saved (সব মডারেটর)";
+          setTimeout(() => { statusEl.innerText = "🌐 Shared Auto Save"; }, 1400);
+        }
+      }, 500);
     }
 
-    function finishAutoSavedReply() {
-      autoSaveDraftSavedReply();
+    async function finishAutoSavedReply() {
+      clearTimeout(autoSaveDebounceTimer);
+      const record = buildSavedReplyRecord();
       activeAutoSaveItemId = null;
       document.getElementById("addNewSavedReplyBox").classList.add("hidden");
       document.getElementById("newSavedReplyTitle").value = "";
       document.getElementById("newSavedReplyBody").value = "";
-      setTimeout(loadSharedSavedReplies, 500);
+      if (record) await pushSavedReply(record);
+      loadSharedSavedReplies();
     }
 
     function toggleSavedRepliesPanel(forceState) {
@@ -642,7 +669,17 @@
         applySuggestion(currentSuggestions[0].id);
       } else if (e.key === "Escape") {
         hideQuickSuggest();
+      } else if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+        e.preventDefault();
+        sendReply();
       }
+    }
+
+    function autoGrowReply() {
+      const el = document.getElementById("replyInput");
+      if (!el) return;
+      el.style.height = "auto";
+      el.style.height = Math.min(el.scrollHeight, 160) + "px";
     }
 
     function getDraftKey(cust) {
@@ -651,6 +688,7 @@
     }
 
     function saveCurrentDraft() {
+      autoGrowReply();
       if (!selectedCustomer) return;
       const key = getDraftKey(selectedCustomer);
       const val = document.getElementById("replyInput").value;
@@ -671,6 +709,7 @@
       let saved = "";
       try { saved = (key && localStorage.getItem(key)) || ""; } catch (e) {}
       input.value = saved;
+      autoGrowReply();
       document.getElementById("autoSaveBadge").innerText = saved ? "💾 Draft Auto-Restored" : "💾 Auto Save সক্রিয়";
     }
 
@@ -790,15 +829,18 @@
       document.getElementById("activeChatBox").classList.add("hidden");
       document.getElementById("emptyChatState").classList.remove("hidden");
 
+      const base = "relative py-1.5 px-1 rounded-lg text-[11px] font-bold cursor-pointer border ";
       const styles = {
-        pending: "relative py-1.5 px-1 rounded-lg text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 cursor-pointer",
-        average: "relative py-1.5 px-1 rounded-lg text-[11px] font-bold bg-sky-500/20 text-sky-300 border border-sky-500/40 cursor-pointer",
-        good: "relative py-1.5 px-1 rounded-lg text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 cursor-pointer",
-        poor: "relative py-1.5 px-1 rounded-lg text-[11px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40 cursor-pointer"
+        pending: base + "bg-amber-500/20 text-amber-300 border-amber-500/40",
+        average: base + "bg-sky-500/20 text-sky-300 border-sky-500/40",
+        good: base + "bg-emerald-500/20 text-emerald-300 border-emerald-500/40",
+        poor: base + "bg-rose-500/20 text-rose-300 border-rose-500/40",
+        msgsent: base + "bg-indigo-500/20 text-indigo-300 border-indigo-500/40",
+        number: base + "bg-teal-500/20 text-teal-300 border-teal-500/40"
       };
       const inactive = "relative py-1.5 px-1 rounded-lg text-[11px] font-semibold bg-slate-800/60 text-slate-400 hover:text-white cursor-pointer";
 
-      ["pending", "average", "good", "poor"].forEach(b => {
+      ["pending", "average", "good", "poor", "msgsent", "number"].forEach(b => {
         document.getElementById(`tab_${b}`).className = (b === bucket) ? styles[b] : inactive;
       });
 
@@ -806,7 +848,9 @@
         pending: "Pending ব্যাচ (১০ জন করে)",
         average: "Average কাস্টমার তালিকা",
         good: "Good কাস্টমার তালিকা",
-        poor: "Poor কাস্টমার তালিকা"
+        poor: "Poor কাস্টমার তালিকা",
+        msgsent: "Message Send কাস্টমার তালিকা",
+        number: "Number Collect কাস্টমার তালিকা"
       };
       document.getElementById("bucketTitleLabel").innerText = titles[bucket];
       fetchBatch(false);
@@ -863,6 +907,8 @@
         document.getElementById("cnt_average").innerText = data.counts.average || 0;
         document.getElementById("cnt_good").innerText = data.counts.good || 0;
         document.getElementById("cnt_poor").innerText = data.counts.poor || 0;
+        document.getElementById("cnt_msgsent").innerText = data.counts.msgsent || 0;
+        document.getElementById("cnt_number").innerText = data.counts.number || 0;
         document.getElementById("st_pending").innerText = data.counts.pending || 0;
       }
 
@@ -879,10 +925,10 @@
         banner.classList.remove("hidden");
       }
 
-      // Label tab-এ unread badge (Average / Good / Poor)
+      // Label tab-এ unread badge
       let totalUnreadMsgs = 0;
       const unread = data.unread || {};
-      ["pending", "average", "good", "poor"].forEach(b => {
+      ["pending", "average", "good", "poor", "msgsent", "number"].forEach(b => {
         const u = unread[b] || { customers: 0, messages: 0 };
         if (isToday) totalUnreadMsgs += u.messages || 0;
         if (b === "pending") return;
@@ -1119,7 +1165,7 @@
     async function loadStats() {
       const date = document.getElementById("statsDate").value || dhakaToday();
       const body = document.getElementById("statsBody");
-      body.innerHTML = `<tr><td colspan="7" class="py-6 text-center text-slate-500">লোড হচ্ছে...</td></tr>`;
+      body.innerHTML = `<tr><td colspan="9" class="py-6 text-center text-slate-500">লোড হচ্ছে...</td></tr>`;
       try {
         const res = await fetch(`/api/mod/stats?date=${encodeURIComponent(date)}&page_id=${encodeURIComponent(currentPageFilter)}`, {
           headers: { "x-mod-pass": modPass }
@@ -1128,7 +1174,7 @@
         document.getElementById("statsScopeLabel").innerText = `${date} · ${data.scope || "All Pages"}`;
 
         if (!data.rows || !data.rows.length) {
-          body.innerHTML = `<tr><td colspan="7" class="py-6 text-center text-slate-500">এই তারিখে কোনো তথ্য নেই</td></tr>`;
+          body.innerHTML = `<tr><td colspan="9" class="py-6 text-center text-slate-500">এই তারিখে কোনো তথ্য নেই</td></tr>`;
           return;
         }
 
@@ -1143,6 +1189,8 @@
               <td class="py-2 px-2 text-center text-sky-300">${r.average}</td>
               <td class="py-2 px-2 text-center text-emerald-300">${r.good}</td>
               <td class="py-2 px-2 text-center text-rose-300">${r.poor}</td>
+              <td class="py-2 px-2 text-center text-indigo-300">${r.msgsent || 0}</td>
+              <td class="py-2 px-2 text-center text-teal-300">${r.number || 0}</td>
             </tr>`;
         }).join("");
 
@@ -1156,9 +1204,11 @@
             <td class="py-2 px-2 text-center text-sky-300">${t.average || 0}</td>
             <td class="py-2 px-2 text-center text-emerald-300">${t.good || 0}</td>
             <td class="py-2 px-2 text-center text-rose-300">${t.poor || 0}</td>
+            <td class="py-2 px-2 text-center text-indigo-300">${t.msgsent || 0}</td>
+            <td class="py-2 px-2 text-center text-teal-300">${t.number || 0}</td>
           </tr>`;
       } catch (e) {
-        body.innerHTML = `<tr><td colspan="7" class="py-6 text-center text-rose-400">হিসাব লোড করা যায়নি</td></tr>`;
+        body.innerHTML = `<tr><td colspan="9" class="py-6 text-center text-rose-400">হিসাব লোড করা যায়নি</td></tr>`;
       }
     }
 
@@ -1424,6 +1474,7 @@
       paintMessages([...currentMessagesCache, ...optimisticMsgs]);
 
       input.value = "";
+      input.style.height = "auto";
       try { if (draftKey) localStorage.removeItem(draftKey); } catch (e) {}
       document.getElementById("autoSaveBadge").innerText = "💾 Auto Save সক্রিয়";
       clearSelectedImage();
