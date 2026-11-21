@@ -240,12 +240,10 @@ function detectModeratorByFbLink(rawOrText) {
   return null;
 }
 
-const BN_RANGE = "\\u0980-\\u09FF";
 function escapeRegex(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-// "আমি আপন । আপনার সাথে..." থেকে "আপনার"-এর বদলে শুধু "আপন" -> "Apon" ধরা
 const MODERATOR_WELCOME_RULES = MODERATORS.map((m) => {
   const names = [m.name, ...(m.aliases || [])].filter((t) => t && !/^\d+$/.test(String(t).trim()));
   const alt = names
@@ -492,7 +490,6 @@ const stmts = {
   listSavedRepliesByGroup: db.prepare(`SELECT id, title, reply_text, source, created_by, updated_at, page_group FROM saved_replies WHERE page_group IN ('all', ?) ORDER BY updated_at DESC`)
 };
 
-// বাংলাদেশের ১১ ডিজিটের ফোন নম্বর (013..019 বা +88013..019 থেকে ১১ ডিজিট)
 function extractPhoneNumber(text) {
   if (!text) return null;
   const match = String(text).match(/(?:\+?88)?(01[3-9]\d{8})\b/);
@@ -558,6 +555,21 @@ function httpsGetJson(url) {
     req.on("timeout", () => req.destroy(new Error("timeout")));
     req.on("error", () => resolve(null));
   });
+}
+
+async function fetchPagedList(firstUrl) {
+  let rows = [];
+  let next = firstUrl;
+  let guard = 0;
+  while (next && guard < 10) {
+    const r = await httpsGetJson(next);
+    if (!r) return { rows, error: "Meta API-তে সংযোগ হয়নি" };
+    if (r.error) return { rows, error: r.error.message || "Meta API error" };
+    if (Array.isArray(r.data)) rows = rows.concat(r.data);
+    next = r.paging && r.paging.next ? r.paging.next : null;
+    guard += 1;
+  }
+  return { rows, error: null };
 }
 
 function parseAdJson(raw) {
@@ -1107,7 +1119,6 @@ function listSavedRepliesFor(rawPage) {
   return rows.map(mapSavedRow);
 }
 
-// আলাদা Moderator Inbox Router মাউন্ট করা
 const modInboxRouter = createModeratorInboxRouter({
   db,
   stmts,
@@ -1265,7 +1276,7 @@ async function fetchMetaAdsMetrics(targetDate, brand) {
           cSalesSpend = campSpend;
         } else if (isMsgObj && !isSalesObj) {
           cMsgSpend = campSpend;
-        } else if (isSalesObj && !isSalesObj) {
+        } else if (isSalesObj && !isMsgObj) {
           cSalesSpend = campSpend;
         } else {
           if (campMsgs > 0) cMsgSpend = campSpend / 2;
@@ -1590,7 +1601,6 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
     const CUST_M = "m.page_id || ':' || m.sender_id";
     const count = (sql, params) => db.prepare(sql).get(...params).count;
 
-    // আজকের দিনে ইউনিক কাস্টমার (Ads, Direct visit, Returning সব মিলিয়ে; একজন একাধিক মেসেজ দিলেও ১জন)
     const totalReceived = count(
       `SELECT COUNT(DISTINCT ${CUST}) AS count FROM messages WHERE ${DAY} = ?${pc.sql}`,
       [targetDate, ...pc.params]
@@ -1601,7 +1611,6 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       [targetDate, ...pc.params]
     );
 
-    // Early / Returning customers: আগের দিনে মেসেজ দিয়েছিল কিন্তু আজকে আবার মেসেজ দিয়েছে এমন ইউনিক কাস্টমার
     const returningCustomers = count(
       `SELECT COUNT(DISTINCT ${CUST_M}) AS count
        FROM messages m
@@ -1628,7 +1637,6 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       [targetDate, ...pc.params]
     );
 
-    // Seen, no reply: মডারেটর seen করার পর ৩০ মিনিট পার হলেও রিপ্লাই না দিলে
     const nowMs = Date.now();
     const seenThresholdMs = nowMs - SEEN_NO_REPLY_MS;
     const readNoReply = count(
@@ -1646,7 +1654,6 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       [seenThresholdMs, targetDate, ...pcM.params, targetDate]
     );
 
-    // Confirmed orders: "your order is confirm" থাকলে
     const dayReplyRowsForOrder = db
       .prepare(`SELECT page_id, sender_id, reply_text, is_order_confirm FROM replies WHERE ${DAY} = ?${pc.sql}`)
       .all(targetDate, ...pc.params);
@@ -1658,7 +1665,6 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
     }
     const orderConfirms = confirmedCustSet.size;
 
-    // 11-digit phone numbers
     const dayPhoneRows = db
       .prepare(`SELECT page_id, sender_id, message_text, phone_number FROM messages WHERE ${DAY} = ?${pc.sql}`)
       .all(targetDate, ...pc.params);
