@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Live Analytics & Operations Dashboard</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;600;700;800&family=Hind+Siliguri:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="[https://fonts.googleapis.com](https://fonts.googleapis.com)">
+  <link rel="preconnect" href="[https://fonts.gstatic.com](https://fonts.gstatic.com)" crossorigin>
+  <link href="[https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;600;700;800&family=Hind+Siliguri:wght@400;500;600;700&display=swap](https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;600;700;800&family=Hind+Siliguri:wght@400;500;600;700&display=swap)" rel="stylesheet">
   <script>
     (function () {
       try {
@@ -436,7 +436,9 @@
       <div class="snr-head">
         <div>
           <h3 class="display" id="snrTitle">Seen, no reply (&gt;30 min)</h3>
-          <div class="detail" id="snrSub">Customer-এর নাম কপি করে Meta Business Suite Inbox-এ সার্চ করুন।</div>
+          <div class="detail" id="snrSub">
+            <strong>চেক করার নিয়ম:</strong> Meta Business Suite-এ ID দিয়ে সার্চ কাজ করে না। তাই আগে <strong>Copy Name</strong> চাপুন, <strong>Meta Inbox ↗</strong> খুলে Search বক্সে নাম পেস্ট করুন (সঠিক পেজ সিলেক্ট রাখুন)। নাম না পেলে <strong>Copy Msg</strong> চেপে শেষ মেসেজ বা ওয়েটিং সময় দেখে ইনবক্সে খুঁজুন। আপনি Meta-তে রিপ্লাই দিলে তা Meta-তেই থাকবে এবং নতুন রিপ্লাই ডাটাবেসে সেভ হবে না।
+          </div>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
           <button type="button" class="btn" id="snrExportBtn" style="height:34px;font-size:.82rem">Export CSV</button>
@@ -444,7 +446,7 @@
         </div>
       </div>
       <div class="snr-tools">
-        <input type="search" id="snrSearch" placeholder="Customer name, ID, page বা শেষ মেসেজ লিখুন…">
+        <input type="search" id="snrSearch" placeholder="Customer name, page বা শেষ মেসেজ লিখুন…">
         <span class="detail" id="snrCountBadge">0 customers</span>
       </div>
       <div class="snr-body">
@@ -452,11 +454,11 @@
           <thead>
             <tr>
               <th>#</th>
-              <th>Customer Name &amp; ID</th>
+              <th>Customer Name</th>
               <th>Page</th>
               <th>Last Message</th>
               <th>Waiting</th>
-              <th>Action (Meta Search)</th>
+              <th>Action (Meta Check)</th>
             </tr>
           </thead>
           <tbody id="snrTableBody">
@@ -587,7 +589,7 @@
           <span class="num val" id="statUnread">0</span>
           <div class="detail" id="pctUnread">—</div>
         </div>
-        <div class="panel tile bad" id="seenNoReplyTile" role="button" tabindex="0" title="ক্লিক করে Seen, no reply কাস্টমারদের নাম ও ID লিস্ট দেখুন">
+        <div class="panel tile bad" id="seenNoReplyTile" role="button" tabindex="0" title="ক্লিক করে Seen, no reply কাস্টমারদের নাম লিস্ট দেখুন">
           <div class="lbl">Seen, no reply ↗</div>
           <span class="num val" id="statReadNoReply">0</span>
           <div class="detail" id="pctSeen">No reply after 30 min · Click list</div>
@@ -856,13 +858,13 @@
           var waitTxt = hrs > 0 ? hrs + "h " + mins + "m" : mins + " min";
           return '<tr>' +
             '<td class="num">' + (idx + 1) + '</td>' +
-            '<td><div class="strong">' + esc(it.customer_name) + '</div><div class="detail num">ID: ' + esc(it.sender_id) + '</div></td>' +
+            '<td><div class="strong">' + esc(it.customer_name) + '</div><div class="detail num">PSID: ' + esc(it.sender_id) + '</div></td>' +
             '<td><span class="pill msg">' + esc(it.page_name) + '</span></td>' +
             '<td>' + esc(String(it.last_message || "").slice(0, 70)) + '</td>' +
             '<td class="num" style="color:var(--bad);font-weight:700">' + waitTxt + '</td>' +
             '<td style="display:flex;gap:6px;flex-wrap:wrap">' +
               '<button type="button" class="snr-mini-btn" data-copy-val="' + esc(it.customer_name) + '" data-copy-lbl="Name">Copy Name</button>' +
-              '<button type="button" class="snr-mini-btn" data-copy-val="' + esc(it.sender_id) + '" data-copy-lbl="PSID">Copy ID</button>' +
+              '<button type="button" class="snr-mini-btn" data-copy-val="' + esc(it.last_message) + '" data-copy-lbl="Message">Copy Msg</button>' +
               '<a class="snr-mini-btn" href="' + esc(it.business_suite_url) + '" target="_blank" rel="noopener">Meta Inbox ↗</a>' +
             '</td>' +
           '</tr>';
