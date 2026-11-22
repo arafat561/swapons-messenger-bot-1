@@ -1044,59 +1044,23 @@ async function handleMessagingEvent(pageId, event) {
     const customerId = event.recipient && event.recipient.id;
     if (!customerId) return;
 
-    const replyText = event.message.text || "";
-    let replyImg = null;
-    if (event.message.attachments && event.message.attachments.length > 0) {
-      const att = event.message.attachments[0];
-      if (att.payload && att.payload.url && !isBlockedStickerUrl(att.payload.url)) {
-        replyImg = att.payload.url;
-      }
-    }
-
     const replyTime = event.timestamp || Date.now();
     const replyDay = dhakaDate(replyTime);
 
-    let sentFromDashboard = null;
-    if (replyText) {
-      sentFromDashboard = db
-        .prepare(`SELECT id FROM replies WHERE page_id = ? AND sender_id = ? AND message_id LIKE 'mod_%' AND reply_text = ? AND ABS(COALESCE(reply_time, 0) - ?) <= 30000`)
-        .get(pageId, customerId, replyText, replyTime);
-    } else if (replyImg) {
-      sentFromDashboard = db
-        .prepare(`SELECT id FROM replies WHERE page_id = ? AND sender_id = ? AND message_id LIKE 'mod_%' AND image_url IS NOT NULL AND ABS(COALESCE(reply_time, 0) - ?) <= 30000`)
-        .get(pageId, customerId, replyTime);
-    }
-    if (sentFromDashboard) return;
+    // রিপ্লাই Meta-তেই থাকছে; ডাটাবেসের `replies` বা `echo_log` টেবিলে নতুন রেকর্ড সেভ করা হচ্ছে না
+    db.prepare(`
+      UPDATE messages
+      SET status = 'replied'
+      WHERE page_id = ? AND sender_id = ?
+        AND status IN ('unread', 'read')
+        AND COALESCE(message_time, 0) <= ?
+    `).run(pageId, customerId, replyTime);
 
-    const isConfirm = isOrderConfirmText(replyText) ? 1 : 0;
-    const resolved = await resolveEchoModerator(pageId, customerId, event);
-    const mod = resolved.mod;
+    try {
+      const mod = (await resolveEchoModerator(pageId, customerId, event)).mod;
+      if (mod) stmts.assignModerator.run(pageId, customerId, replyDay, mod, replyTime);
+    } catch (e) {}
 
-    const exists = db.prepare(`SELECT id FROM replies WHERE message_id = ?`).get(event.message.mid);
-    if (!exists) {
-      stmts.insertReply.run(pageId, customerId, event.message.mid, replyText || (replyImg ? "[ছবি]" : "👍"), replyImg, replyTime, mod, isConfirm);
-
-      try {
-        db.prepare(`
-          INSERT INTO echo_log (page_id, customer_id, mid, text, from_id, from_name, app_id, via, moderator, created_ms)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
-          pageId,
-          String(customerId),
-          event.message.mid || "",
-          String(replyText).slice(0, 80),
-          resolved.fromId,
-          resolved.fromName,
-          String(event.message.app_id || ""),
-          resolved.via || "unresolved",
-          mod || "",
-          Date.now()
-        );
-      } catch (e) {}
-    }
-
-    if (mod) stmts.assignModerator.run(pageId, customerId, replyDay, mod, replyTime);
-    stmts.markReplied.run(pageId, customerId, replyDay);
     return;
   }
 
@@ -1649,12 +1613,11 @@ function querySeenNoReplyRows(targetDate, scope) {
            SELECT 1 FROM replies r
            WHERE r.page_id = m.page_id
              AND r.sender_id = m.sender_id
-             AND ${DAY_R} = ?
-             AND COALESCE(r.reply_time, 0) >= COALESCE(m.message_time, 0)
+             AND COALESCE(r.reply_time, 0) > COALESCE(m.message_time, 0)
          )
        ORDER BY m.read_time ASC`
     )
-    .all(targetDate, ...pcM.params, seenThresholdMs, targetDate);
+    .all(targetDate, ...pcM.params, seenThresholdMs);
 }
 
 app.get("/api/seen-no-reply", requireAuth, async (req, res) => {
@@ -1663,15 +1626,19 @@ app.get("/api/seen-no-reply", requireAuth, async (req, res) => {
     const targetDate = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : dhakaDate();
     const scope = resolveScope(req.query.page_id || req.query.scope);
 
-    const rows = querySeenNoReplyRows(targetDate, scope);
+    const initialRows = querySeenNoReplyRows(targetDate, scope);
     const nowMs = Date.now();
 
-    const missing = rows
+    const toSync = initialRows
       .filter((r) => !r.customer_name || String(r.customer_name).startsWith("Customer_"))
-      .slice(0, 20);
-    for (const m of missing) {
-      syncCustomerAndAdFromGraph(m.page_id, m.sender_id).catch(() => {});
+      .slice(0, 15);
+    if (toSync.length) {
+      await Promise.all(
+        toSync.map((m) => syncCustomerAndAdFromGraph(m.page_id, m.sender_id).catch(() => null))
+      );
     }
+
+    const rows = toSync.length ? querySeenNoReplyRows(targetDate, scope) : initialRows;
 
     const items = rows.map((r) => {
       const waitMin = r.read_time ? Math.max(0, Math.round((nowMs - Number(r.read_time)) / 60000)) : 0;
