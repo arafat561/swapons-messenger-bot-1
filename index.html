@@ -160,7 +160,8 @@
     .tile .detail { padding-left: 4px; }
     .tile.ok { --tone: var(--ok); }
     .tile.warn { --tone: var(--warn); }
-    .tile.bad { --tone: var(--bad); background: linear-gradient(0deg, var(--bad-soft), var(--bad-soft)), var(--surface); }
+    .tile.bad { --tone: var(--bad); background: linear-gradient(0deg, var(--bad-soft), var(--bad-soft)), var(--surface); cursor: pointer; transition: transform .15s, border-color .15s; }
+    .tile.bad:hover { transform: translateY(-2px); border-color: var(--bad); }
     .tile.bad .val { color: var(--bad); }
     .tile.sale { --tone: var(--sale); }
     .tile.msg { --tone: var(--msg); }
@@ -283,8 +284,51 @@
     main[data-ready="false"] .num { color: transparent !important; background: linear-gradient(90deg, var(--raised), var(--line), var(--raised)); background-size: 200% 100%; border-radius: 8px; animation: shimmer 1.4s infinite; }
     main[data-ready="false"] .cost .num, main[data-ready="false"] .fill { animation: none; background: var(--raised); }
     @keyframes shimmer { to { background-position: -200% 0; } }
-    .toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); opacity: 0; pointer-events: none; background: var(--invert); color: var(--on-invert); padding: 11px 18px; border-radius: 12px; font-weight: 500; font-size: .92rem; transition: all .3s; z-index: 40; max-width: calc(100vw - 32px); }
+    .toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); opacity: 0; pointer-events: none; background: var(--invert); color: var(--on-invert); padding: 11px 18px; border-radius: 12px; font-weight: 500; font-size: .92rem; transition: all .3s; z-index: 60; max-width: calc(100vw - 32px); }
     .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+    .snr-backdrop {
+      position: fixed; inset: 0; z-index: 45;
+      background: rgba(5, 12, 18, .72);
+      display: grid; place-items: center; padding: 18px;
+    }
+    .snr-dialog {
+      width: min(920px, 100%);
+      max-height: 86vh;
+      display: flex; flex-direction: column;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: 0 24px 60px rgba(0,0,0,.55);
+      overflow: hidden;
+    }
+    .snr-head {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--line);
+      display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    }
+    .snr-head h3 { font-size: 1.12rem; font-weight: 700; color: var(--bad); }
+    .snr-tools {
+      padding: 12px 20px;
+      background: var(--raised);
+      border-bottom: 1px solid var(--line);
+      display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    }
+    .snr-tools input {
+      flex: 1; min-width: 200px; height: 36px; padding: 0 12px;
+      background: var(--surface); border: 1px solid var(--line); border-radius: 10px; font-size: .9rem;
+    }
+    .snr-body { overflow: auto; flex: 1; }
+    .snr-table { width: 100%; min-width: 680px; border-collapse: collapse; }
+    .snr-table th { position: sticky; top: 0; z-index: 2; padding: 10px 14px; font-size: .78rem; }
+    .snr-table td { padding: 11px 14px; font-size: .88rem; }
+    .snr-mini-btn {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 4px 9px; border-radius: 8px;
+      background: var(--raised); border: 1px solid var(--line);
+      font-size: .78rem; font-weight: 600; text-decoration: none; color: var(--text);
+    }
+    .snr-mini-btn:hover { background: var(--invert); color: var(--on-invert); }
 
     .gate {
       position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 20px; overflow: auto;
@@ -385,6 +429,42 @@
       <div id="loginError" class="err" role="alert" hidden></div>
       <button type="submit" class="signin-btn" id="loginBtn">Sign in</button>
     </form>
+  </div>
+
+  <div id="snrModal" class="snr-backdrop" hidden>
+    <div class="snr-dialog" role="dialog" aria-modal="true" aria-labelledby="snrTitle">
+      <div class="snr-head">
+        <div>
+          <h3 class="display" id="snrTitle">Seen, no reply (&gt;30 min)</h3>
+          <div class="detail" id="snrSub">Customer-এর নাম কপি করে Meta Business Suite Inbox-এ সার্চ করুন।</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button type="button" class="btn" id="snrExportBtn" style="height:34px;font-size:.82rem">Export CSV</button>
+          <button type="button" class="btn" id="snrCloseBtn" style="height:34px;font-size:.82rem">✕ বন্ধ করুন</button>
+        </div>
+      </div>
+      <div class="snr-tools">
+        <input type="search" id="snrSearch" placeholder="Customer name, ID, page বা শেষ মেসেজ লিখুন…">
+        <span class="detail" id="snrCountBadge">0 customers</span>
+      </div>
+      <div class="snr-body">
+        <table class="snr-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Customer Name &amp; ID</th>
+              <th>Page</th>
+              <th>Last Message</th>
+              <th>Waiting</th>
+              <th>Action (Meta Search)</th>
+            </tr>
+          </thead>
+          <tbody id="snrTableBody">
+            <tr><td colspan="6" class="empty">Loading…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
 
   <div class="wrap">
@@ -507,10 +587,10 @@
           <span class="num val" id="statUnread">0</span>
           <div class="detail" id="pctUnread">—</div>
         </div>
-        <div class="panel tile bad">
-          <div class="lbl">Seen, no reply</div>
+        <div class="panel tile bad" id="seenNoReplyTile" role="button" tabindex="0" title="ক্লিক করে Seen, no reply কাস্টমারদের নাম ও ID লিস্ট দেখুন">
+          <div class="lbl">Seen, no reply ↗</div>
           <span class="num val" id="statReadNoReply">0</span>
-          <div class="detail" id="pctSeen">No reply after 30 min</div>
+          <div class="detail" id="pctSeen">No reply after 30 min · Click list</div>
         </div>
         <div class="panel tile sale">
           <div class="lbl">Confirmed orders</div>
@@ -626,6 +706,7 @@
         campDetails: {},
         expandedSets: {},
         accountsMap: {},
+        snrItems: [],
         reqId: 0,
         countdown: REFRESH_SECONDS,
         lastOk: 0
@@ -650,6 +731,23 @@
         t.classList.add("show");
         clearTimeout(toast._t);
         toast._t = setTimeout(function () { t.classList.remove("show"); }, 4200);
+      }
+
+      function copyText(text, label) {
+        if (!text) return;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(function () {
+            toast((label || "Text") + " কপি হয়েছে: " + text);
+          }).catch(function () {});
+        } else {
+          var ta = document.createElement("textarea");
+          ta.value = text;
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand("copy");
+          ta.remove();
+          toast((label || "Text") + " কপি হয়েছে: " + text);
+        }
       }
 
       var shown = {};
@@ -732,6 +830,97 @@
         loadDashboard();
       });
       $("refreshBtn").addEventListener("click", function () { loadDashboard(); });
+
+      function renderSnrTable(filterQ) {
+        var q = String(filterQ || "").trim().toLowerCase();
+        var filtered = state.snrItems.filter(function (it) {
+          if (!q) return true;
+          return (
+            String(it.customer_name || "").toLowerCase().indexOf(q) !== -1 ||
+            String(it.sender_id || "").toLowerCase().indexOf(q) !== -1 ||
+            String(it.page_name || "").toLowerCase().indexOf(q) !== -1 ||
+            String(it.last_message || "").toLowerCase().indexOf(q) !== -1
+          );
+        });
+
+        $("snrCountBadge").textContent = filtered.length + " customers";
+        var tbody = $("snrTableBody");
+        if (!filtered.length) {
+          tbody.innerHTML = '<tr><td colspan="6" class="empty">কোনো Seen, no reply কাস্টমার পাওয়া যায়নি।</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = filtered.map(function (it, idx) {
+          var hrs = Math.floor(it.waiting_minutes / 60);
+          var mins = it.waiting_minutes % 60;
+          var waitTxt = hrs > 0 ? hrs + "h " + mins + "m" : mins + " min";
+          return '<tr>' +
+            '<td class="num">' + (idx + 1) + '</td>' +
+            '<td><div class="strong">' + esc(it.customer_name) + '</div><div class="detail num">ID: ' + esc(it.sender_id) + '</div></td>' +
+            '<td><span class="pill msg">' + esc(it.page_name) + '</span></td>' +
+            '<td>' + esc(String(it.last_message || "").slice(0, 70)) + '</td>' +
+            '<td class="num" style="color:var(--bad);font-weight:700">' + waitTxt + '</td>' +
+            '<td style="display:flex;gap:6px;flex-wrap:wrap">' +
+              '<button type="button" class="snr-mini-btn" data-copy-val="' + esc(it.customer_name) + '" data-copy-lbl="Name">Copy Name</button>' +
+              '<button type="button" class="snr-mini-btn" data-copy-val="' + esc(it.sender_id) + '" data-copy-lbl="PSID">Copy ID</button>' +
+              '<a class="snr-mini-btn" href="' + esc(it.business_suite_url) + '" target="_blank" rel="noopener">Meta Inbox ↗</a>' +
+            '</td>' +
+          '</tr>';
+        }).join("");
+      }
+
+      function openSnrModal() {
+        if (!state.auth) return;
+        $("snrModal").hidden = false;
+        $("snrSearch").value = "";
+        $("snrTableBody").innerHTML = '<tr><td colspan="6" class="empty">তালিকা লোড হচ্ছে…</td></tr>';
+
+        var qs = "date=" + encodeURIComponent($("datePicker").value) + "&page_id=" + encodeURIComponent(state.scope);
+        fetch("/api/seen-no-reply?" + qs, { headers: { Authorization: state.auth } })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            state.snrItems = data.items || [];
+            $("snrTitle").textContent = "Seen, no reply (" + state.snrItems.length + ") · " + (data.date || "");
+            renderSnrTable("");
+          })
+          .catch(function () {
+            $("snrTableBody").innerHTML = '<tr><td colspan="6" class="empty">তালিকা লোড করা যায়নি।</td></tr>';
+          });
+      }
+
+      $("seenNoReplyTile").addEventListener("click", openSnrModal);
+      $("seenNoReplyTile").addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openSnrModal(); }
+      });
+      $("snrCloseBtn").addEventListener("click", function () { $("snrModal").hidden = true; });
+      $("snrModal").addEventListener("click", function (e) {
+        if (e.target === $("snrModal")) $("snrModal").hidden = true;
+      });
+      $("snrSearch").addEventListener("input", function () {
+        renderSnrTable($("snrSearch").value);
+      });
+      $("snrTableBody").addEventListener("click", function (e) {
+        var btn = e.target.closest("[data-copy-val]");
+        if (!btn) return;
+        copyText(btn.getAttribute("data-copy-val"), btn.getAttribute("data-copy-lbl"));
+      });
+      $("snrExportBtn").addEventListener("click", function () {
+        if (!state.snrItems.length) return toast("এক্সপোর্ট করার মতো ডেটা নেই");
+        var lines = ["Customer Name,Page Name,Sender ID,Last Message,Waiting Minutes"];
+        state.snrItems.forEach(function (it) {
+          var row = [it.customer_name, it.page_name, it.sender_id, it.last_message, it.waiting_minutes]
+            .map(function (v) { return '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"'; })
+            .join(",");
+          lines.push(row);
+        });
+        var blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = "seen-no-reply-" + $("datePicker").value + ".csv";
+        a.click();
+        URL.revokeObjectURL(url);
+      });
 
       var TOKEN_KEY = "dashboard_token";
       var EXP_KEY = "dashboard_exp";
@@ -936,7 +1125,9 @@
         setNum("statPhones", st.total_phone_numbers);
         $("pctReplied").textContent = pct(st.total_replied, total) + "% of customers";
         $("pctUnread").textContent = pct(st.unread_pending, total) + "% waiting";
-        $("pctSeen").textContent = (st.read_without_reply || 0) > 0 ? pct(st.read_without_reply, total) + "% · no reply >30m" : "Nobody left waiting >30m";
+        $("pctSeen").textContent = (st.read_without_reply || 0) > 0
+          ? pct(st.read_without_reply, total) + "% · click to view names"
+          : "Nobody left waiting >30m";
 
         var r = st.total_replied || 0, s = st.read_without_reply || 0, u = st.unread_pending || 0;
         var used = r + s + u;
