@@ -23,6 +23,9 @@ const META_API_VERSION = process.env.META_API_VERSION || "v25.0";
 const SESSION_MINUTES = Number(process.env.SESSION_MINUTES || 0);
 const SESSION_MS = SESSION_MINUTES > 0 ? SESSION_MINUTES * 60 * 1000 : 0;
 
+const RETENTION_DAYS = Number(process.env.RETENTION_DAYS || 30);
+const RETENTION_MS = Math.max(1, RETENTION_DAYS) * 24 * 3600 * 1000;
+
 const PAGE_TOKENS = {
   "102803132669088": process.env.PAGE_TOKEN_SW1 || process.env.SWAPONS_WORLD_PAGE_TOKEN || "",
   "1133872699971391": process.env.PAGE_TOKEN_SW2 || process.env.SWAPONS_WORLD_PAGE_TOKEN || "",
@@ -425,7 +428,35 @@ db.exec(`
   );
 `);
 
-try { db.prepare(`DELETE FROM echo_log WHERE created_ms < ?`).run(Date.now() - 7 * 24 * 3600 * 1000); } catch (e) {}
+function cleanupOldData() {
+  const cutoffMs = Date.now() - RETENTION_MS;
+  const cutoffSql = sqlTime(cutoffMs);
+  try {
+    db.prepare(`
+      DELETE FROM messages
+      WHERE COALESCE(message_time, 0) < ?
+         AND datetime(created_at) < datetime(?)
+    `).run(cutoffMs, cutoffSql);
+
+    db.prepare(`
+      DELETE FROM replies
+      WHERE COALESCE(reply_time, 0) < ?
+         AND datetime(created_at) < datetime(?)
+    `).run(cutoffMs, cutoffSql);
+
+    db.prepare(`
+      DELETE FROM moderator_assignments
+      WHERE COALESCE(assigned_at, 0) < ?
+    `).run(cutoffMs);
+
+    db.prepare(`DELETE FROM echo_log WHERE created_ms < ?`).run(Date.now() - 7 * 24 * 3600 * 1000);
+  } catch (e) {
+    console.error("cleanupOldData error:", e.message);
+  }
+}
+
+cleanupOldData();
+setInterval(cleanupOldData, 6 * 3600 * 1000).unref();
 
 const existingSrCount = db.prepare(`SELECT COUNT(*) as cnt FROM saved_replies`).get().cnt;
 if (existingSrCount === 0) {
@@ -506,7 +537,7 @@ function sendFacebookPayload(pageId, bodyObj) {
   return new Promise((resolve, reject) => {
     const token = getPageToken(pageId);
     if (!token) {
-      return reject(new Error(`Page ID (${pageId}) এর জন্য Railway Variables-এ SWAPONS_WORLD_PAGE_TOKEN বা STONE_ROSE_PAGE_TOKEN সেট করা নেই!`));
+      return reject(new Error(`Page ID (${pageId}) এর জন্য SWAPONS_WORLD_PAGE_TOKEN বা STONE_ROSE_PAGE_TOKEN সেট করা নেই!`));
     }
 
     const payload = JSON.stringify(bodyObj);
@@ -1586,6 +1617,93 @@ app.get("/api/ads/campaign-detail", requireAuth, async (req, res) => {
   }
 });
 
+/* ------------------------------------------------------------------ */
+/* Accurate "Seen, no reply" helper (latest message per customer)       */
+/* ------------------------------------------------------------------ */
+function querySeenNoReplyRows(targetDate, scope) {
+  const pcM = pageClause(scope.ids, "m.page_id");
+  const seenThresholdMs = Date.now() - SEEN_NO_REPLY_MS;
+
+  return db
+    .prepare(
+      `WITH latest_msg AS (
+         SELECT m.page_id, m.sender_id, MAX(m.id) AS last_id
+         FROM messages m
+         WHERE ${DAY_M} = ?${pcM.sql}
+         GROUP BY m.page_id, m.sender_id
+       )
+       SELECT
+         m.page_id,
+         m.sender_id,
+         m.message_text,
+         m.message_time,
+         m.read_time,
+         c.name AS customer_name
+       FROM latest_msg lm
+       JOIN messages m ON m.id = lm.last_id
+       LEFT JOIN customers c ON c.page_id = m.page_id AND c.sender_id = m.sender_id
+       WHERE m.status = 'read'
+         AND COALESCE(m.read_time, 0) > 0
+         AND COALESCE(m.read_time, 0) <= ?
+         AND NOT EXISTS (
+           SELECT 1 FROM replies r
+           WHERE r.page_id = m.page_id
+             AND r.sender_id = m.sender_id
+             AND ${DAY_R} = ?
+             AND COALESCE(r.reply_time, 0) >= COALESCE(m.message_time, 0)
+         )
+       ORDER BY m.read_time ASC`
+    )
+    .all(targetDate, ...pcM.params, seenThresholdMs, targetDate);
+}
+
+app.get("/api/seen-no-reply", requireAuth, async (req, res) => {
+  try {
+    const rawDate = String(req.query.date || "");
+    const targetDate = /^\d{4}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : dhakaDate();
+    const scope = resolveScope(req.query.page_id || req.query.scope);
+
+    const rows = querySeenNoReplyRows(targetDate, scope);
+    const nowMs = Date.now();
+
+    const missing = rows
+      .filter((r) => !r.customer_name || String(r.customer_name).startsWith("Customer_"))
+      .slice(0, 20);
+    for (const m of missing) {
+      syncCustomerAndAdFromGraph(m.page_id, m.sender_id).catch(() => {});
+    }
+
+    const items = rows.map((r) => {
+      const waitMin = r.read_time ? Math.max(0, Math.round((nowMs - Number(r.read_time)) / 60000)) : 0;
+      const cleanName = r.customer_name && !String(r.customer_name).startsWith("Customer_")
+        ? r.customer_name
+        : "";
+      return {
+        page_id: r.page_id,
+        page_name: PAGE_NAMES[r.page_id] || r.page_id,
+        sender_id: r.sender_id,
+        customer_name: cleanName || `Customer_${String(r.sender_id).slice(-4)}`,
+        has_real_name: Boolean(cleanName),
+        last_message: r.message_text || "",
+        message_time: r.message_time || 0,
+        read_time: r.read_time || 0,
+        waiting_minutes: waitMin,
+        business_suite_url: `https://business.facebook.com/latest/inbox/all?asset_id=${encodeURIComponent(r.page_id)}`
+      };
+    });
+
+    res.json({
+      date: targetDate,
+      scope: { key: scope.key, label: scope.label },
+      count: items.length,
+      items
+    });
+  } catch (err) {
+    console.error("seen-no-reply list error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get("/api/daily-report", requireAuth, async (req, res) => {
   try {
     const rawDate = String(req.query.date || "");
@@ -1637,22 +1755,8 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       [targetDate, ...pc.params]
     );
 
-    const nowMs = Date.now();
-    const seenThresholdMs = nowMs - SEEN_NO_REPLY_MS;
-    const readNoReply = count(
-      `SELECT COUNT(DISTINCT ${CUST_M}) AS count
-       FROM messages m
-       WHERE m.status = 'read'
-         AND COALESCE(m.read_time, 0) > 0
-         AND COALESCE(m.read_time, 0) <= ?
-         AND ${DAY_M} = ?${pcM.sql}
-         AND NOT EXISTS (
-           SELECT 1 FROM replies r
-           WHERE r.sender_id = m.sender_id AND r.page_id = m.page_id
-             AND ${DAY_R} = ?
-         )`,
-      [seenThresholdMs, targetDate, ...pcM.params, targetDate]
-    );
+    const seenRows = querySeenNoReplyRows(targetDate, scope);
+    const readNoReply = seenRows.length;
 
     const dayReplyRowsForOrder = db
       .prepare(`SELECT page_id, sender_id, reply_text, is_order_confirm FROM replies WHERE ${DAY} = ?${pc.sql}`)
