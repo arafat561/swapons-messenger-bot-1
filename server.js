@@ -538,7 +538,13 @@ function extractPhoneNumber(text) {
 }
 
 function isOrderConfirmText(text) {
-  return /your\s+order\s+is\s+confirm(?:ed)?/i.test(String(text || ""));
+  const s = String(text || "").trim();
+  if (!s) return false;
+  return (
+    /your\s+order\s+is\s+confirm(?:ed)?/i.test(s) ||
+    /\border\s+confirm(?:ed)?\b/i.test(s) ||
+    /(?:অর্ডার|order)\s*(?:কনফার্ম|নিশ্চিত)/i.test(s)
+  );
 }
 
 const fbAgent = new https.Agent({ keepAlive: true, maxSockets: 20 });
@@ -1060,7 +1066,6 @@ async function handleMessagingEvent(pageId, event) {
     const isConfirm = isOrderConfirmText(replyText) ? 1 : 0;
 
     // রিপ্লাই Meta-তেই থাকছে; ডাটাবেসের `replies` বা `echo_log` টেবিলে নতুন রিপ্লাই রেকর্ড সেভ করা হচ্ছে না
-    // শুধু মডারেটর অ্যাসাইনমেন্ট/কাউন্টার আপডেট এবং ওই কাস্টমারের seen/unread স্ট্যাটাস ক্লিয়ার করা হচ্ছে
     let mod = null;
     try {
       const resolved = await resolveEchoModerator(pageId, customerId, event);
@@ -1740,27 +1745,6 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
     const seenRows = querySeenNoReplyRows(targetDate, scope);
     const readNoReply = seenRows.length;
 
-    const dayReplyRowsForOrder = db
-      .prepare(`SELECT page_id, sender_id, reply_text, is_order_confirm FROM replies WHERE ${DAY} = ?${pc.sql}`)
-      .all(targetDate, ...pc.params);
-    const confirmedCustSet = new Set();
-    for (const r of dayReplyRowsForOrder) {
-      if (r.is_order_confirm || isOrderConfirmText(r.reply_text)) {
-        confirmedCustSet.add(`${r.page_id}:${r.sender_id}`);
-      }
-    }
-    const orderConfirms = confirmedCustSet.size;
-
-    const dayPhoneRows = db
-      .prepare(`SELECT page_id, sender_id, message_text, phone_number FROM messages WHERE ${DAY} = ?${pc.sql}`)
-      .all(targetDate, ...pc.params);
-    const uniquePhones = new Set();
-    for (const p of dayPhoneRows) {
-      const ph = p.phone_number || extractPhoneNumber(p.message_text);
-      if (ph) uniquePhones.add(ph);
-    }
-    const phoneCount = uniquePhones.size;
-
     const isShift = win.key !== "all";
     const inShift = (t) => !isShift || (t >= win.startMs && t < win.endMs);
 
@@ -1782,8 +1766,8 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
 
     const firstByCustomer = new Map();
     let unattributedMessages = 0;
+    const confirmedCustSet = new Set();
 
-    // 1. moderator_assignments থেকে হিসাব (রিপ্লাই ডাটাবেসে সেভ না করলেও মডারেটর ট্র্যাক থাকে)
     const dayAssignments = db
       .prepare(
         `SELECT a.page_id, a.sender_id, a.moderator, a.assigned_at,
@@ -1797,6 +1781,10 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
 
     for (const a of dayAssignments) {
       const t = Number(a.assigned_at) || Date.now();
+      const ordCnt = Number(a.order_count) || 0;
+      if (ordCnt > 0 && inShift(t)) {
+        confirmedCustSet.add(`${a.page_id}:${a.sender_id}`);
+      }
       const cur = ensureMod(a.moderator);
       if (!cur) {
         if (inShift(t)) unattributedMessages += Math.max(1, Number(a.msg_count) || 1);
@@ -1808,11 +1796,10 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       }
       if (inShift(t)) {
         cur.total_messages += Math.max(1, Number(a.msg_count) || 0);
-        cur.confirmed_orders += Number(a.order_count) || 0;
+        cur.confirmed_orders += ordCnt;
       }
     }
 
-    // 2. পুরোনো replies রেকর্ড থাকলে সেগুলোও মেলানো
     const dayReplies = db
       .prepare(
         `SELECT r.page_id, r.sender_id, r.moderator, r.reply_time, r.created_at, r.is_order_confirm, r.reply_text
@@ -1827,6 +1814,9 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       const custKey = `${r.page_id}:${r.sender_id}`;
       if (seenAssignedKeys.has(custKey)) continue;
       const t = Number(r.reply_time) > 0 ? Number(r.reply_time) : Date.parse(String(r.created_at).replace(" ", "T") + "Z") || 0;
+      if ((r.is_order_confirm || isOrderConfirmText(r.reply_text)) && inShift(t)) {
+        confirmedCustSet.add(custKey);
+      }
       const cur = ensureMod(r.moderator);
       if (!cur) {
         if (inShift(t)) unattributedMessages += 1;
@@ -1840,6 +1830,18 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
         if (r.is_order_confirm || isOrderConfirmText(r.reply_text)) cur.confirmed_orders += 1;
       }
     }
+
+    const orderConfirms = confirmedCustSet.size;
+
+    const dayPhoneRows = db
+      .prepare(`SELECT page_id, sender_id, message_text, phone_number FROM messages WHERE ${DAY} = ?${pc.sql}`)
+      .all(targetDate, ...pc.params);
+    const uniquePhones = new Set();
+    for (const p of dayPhoneRows) {
+      const ph = p.phone_number || extractPhoneNumber(p.message_text);
+      if (ph) uniquePhones.add(ph);
+    }
+    const phoneCount = uniquePhones.size;
 
     for (const info of firstByCustomer.values()) {
       if (inShift(info.time)) {
