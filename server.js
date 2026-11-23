@@ -338,6 +338,8 @@ db.exec(`
     moderator TEXT NOT NULL,
     assigned_at INTEGER,
     bucket TEXT DEFAULT 'pending',
+    msg_count INTEGER DEFAULT 0,
+    order_count INTEGER DEFAULT 0,
     PRIMARY KEY (page_id, sender_id, day)
   );
 
@@ -406,6 +408,8 @@ try { db.exec(`ALTER TABLE replies ADD COLUMN image_url TEXT;`); } catch (e) {}
 try { db.exec(`ALTER TABLE customers ADD COLUMN ad_info TEXT;`); } catch (e) {}
 try { db.exec(`ALTER TABLE customers ADD COLUMN profile_pic TEXT;`); } catch (e) {}
 try { db.exec(`ALTER TABLE moderator_assignments ADD COLUMN bucket TEXT DEFAULT 'pending';`); } catch (e) {}
+try { db.exec(`ALTER TABLE moderator_assignments ADD COLUMN msg_count INTEGER DEFAULT 0;`); } catch (e) {}
+try { db.exec(`ALTER TABLE moderator_assignments ADD COLUMN order_count INTEGER DEFAULT 0;`); } catch (e) {}
 try { db.exec(`ALTER TABLE saved_replies ADD COLUMN page_group TEXT DEFAULT 'all';`); } catch (e) {}
 try { db.exec(`UPDATE saved_replies SET page_group = 'all' WHERE page_group IS NULL OR page_group = '';`); } catch (e) {}
 try { db.exec(`UPDATE customers SET ad_info = NULL WHERE ad_info LIKE '%Customer Sent Product Photo%'`); } catch (e) {}
@@ -492,14 +496,20 @@ const stmts = {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `),
   assignModerator: db.prepare(`
-    INSERT OR IGNORE INTO moderator_assignments (page_id, sender_id, day, moderator, assigned_at, bucket)
-    VALUES (?, ?, ?, ?, ?, 'pending')
+    INSERT INTO moderator_assignments (page_id, sender_id, day, moderator, assigned_at, bucket, msg_count, order_count)
+    VALUES (?, ?, ?, ?, ?, 'pending', 1, ?)
+    ON CONFLICT(page_id, sender_id, day) DO UPDATE SET
+      moderator = COALESCE(NULLIF(moderator_assignments.moderator, ''), excluded.moderator),
+      assigned_at = COALESCE(moderator_assignments.assigned_at, excluded.assigned_at),
+      msg_count = COALESCE(moderator_assignments.msg_count, 0) + 1,
+      order_count = COALESCE(moderator_assignments.order_count, 0) + excluded.order_count
   `),
   markReplied: db.prepare(`
     UPDATE messages
     SET status = 'replied'
-    WHERE page_id = ? AND sender_id = ? AND status != 'replied'
-      AND ${DAY} = ?
+    WHERE page_id = ? AND sender_id = ?
+      AND status IN ('unread', 'read')
+      AND COALESCE(message_time, 0) <= ?
   `),
   insertSession: db.prepare(`INSERT INTO sessions (token_hash, created_at) VALUES (?, ?)`),
   getSession: db.prepare(`SELECT created_at FROM sessions WHERE token_hash = ?`),
@@ -1044,23 +1054,30 @@ async function handleMessagingEvent(pageId, event) {
     const customerId = event.recipient && event.recipient.id;
     if (!customerId) return;
 
+    const replyText = event.message.text || "";
     const replyTime = event.timestamp || Date.now();
     const replyDay = dhakaDate(replyTime);
+    const isConfirm = isOrderConfirmText(replyText) ? 1 : 0;
 
-    // রিপ্লাই Meta-তেই থাকছে; ডাটাবেসের `replies` বা `echo_log` টেবিলে নতুন রেকর্ড সেভ করা হচ্ছে না
-    db.prepare(`
-      UPDATE messages
-      SET status = 'replied'
-      WHERE page_id = ? AND sender_id = ?
-        AND status IN ('unread', 'read')
-        AND COALESCE(message_time, 0) <= ?
-    `).run(pageId, customerId, replyTime);
-
+    // রিপ্লাই Meta-তেই থাকছে; ডাটাবেসের `replies` বা `echo_log` টেবিলে নতুন রিপ্লাই রেকর্ড সেভ করা হচ্ছে না
+    // শুধু মডারেটর অ্যাসাইনমেন্ট/কাউন্টার আপডেট এবং ওই কাস্টমারের seen/unread স্ট্যাটাস ক্লিয়ার করা হচ্ছে
+    let mod = null;
     try {
-      const mod = (await resolveEchoModerator(pageId, customerId, event)).mod;
-      if (mod) stmts.assignModerator.run(pageId, customerId, replyDay, mod, replyTime);
+      const resolved = await resolveEchoModerator(pageId, customerId, event);
+      mod = resolved.mod;
     } catch (e) {}
 
+    if (!mod) {
+      try {
+        const prev = db
+          .prepare(`SELECT moderator FROM moderator_assignments WHERE page_id = ? AND sender_id = ? AND day = ?`)
+          .get(pageId, customerId, replyDay);
+        if (prev && prev.moderator) mod = normalizeModeratorName(prev.moderator);
+      } catch (e) {}
+    }
+
+    stmts.assignModerator.run(pageId, customerId, replyDay, mod || "Unassigned", replyTime, isConfirm);
+    stmts.markReplied.run(pageId, customerId, replyTime);
     return;
   }
 
@@ -1581,9 +1598,6 @@ app.get("/api/ads/campaign-detail", requireAuth, async (req, res) => {
   }
 });
 
-/* ------------------------------------------------------------------ */
-/* Accurate "Seen, no reply" helper (latest message per customer)       */
-/* ------------------------------------------------------------------ */
 function querySeenNoReplyRows(targetDate, scope) {
   const pcM = pageClause(scope.ids, "m.page_id");
   const seenThresholdMs = Date.now() - SEEN_NO_REPLY_MS;
@@ -1681,6 +1695,7 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
     const pc = pageClause(scope.ids);
     const pcM = pageClause(scope.ids, "m.page_id");
     const pcR = pageClause(scope.ids, "r.page_id");
+    const pcA = pageClause(scope.ids, "a.page_id");
 
     const CUST = "page_id || ':' || sender_id";
     const CUST_M = "m.page_id || ':' || m.sender_id";
@@ -1749,19 +1764,10 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
     const isShift = win.key !== "all";
     const inShift = (t) => !isShift || (t >= win.startMs && t < win.endMs);
 
-    const dayReplies = db
-      .prepare(
-        `SELECT r.page_id, r.sender_id, r.moderator, r.reply_time, r.created_at, r.is_order_confirm, r.reply_text
-         FROM replies r
-         WHERE ${DAY_R} = ?${pcR.sql}
-         ORDER BY COALESCE(r.reply_time, 0) ASC, r.id ASC`
-      )
-      .all(targetDate, ...pcR.params);
-
     const mergedByMod = new Map();
     const ensureMod = (rawMod) => {
       const modName = normalizeModeratorName(rawMod);
-      if (!modName) return null;
+      if (!modName || modName === "Unassigned") return null;
       if (!mergedByMod.has(modName)) {
         mergedByMod.set(modName, {
           name: modName,
@@ -1777,20 +1783,58 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
     const firstByCustomer = new Map();
     let unattributedMessages = 0;
 
+    // 1. moderator_assignments থেকে হিসাব (রিপ্লাই ডাটাবেসে সেভ না করলেও মডারেটর ট্র্যাক থাকে)
+    const dayAssignments = db
+      .prepare(
+        `SELECT a.page_id, a.sender_id, a.moderator, a.assigned_at,
+                COALESCE(a.msg_count, 0) AS msg_count,
+                COALESCE(a.order_count, 0) AS order_count
+         FROM moderator_assignments a
+         WHERE a.day = ?${pcA.sql}
+         ORDER BY COALESCE(a.assigned_at, 0) ASC`
+      )
+      .all(targetDate, ...pcA.params);
+
+    for (const a of dayAssignments) {
+      const t = Number(a.assigned_at) || Date.now();
+      const cur = ensureMod(a.moderator);
+      if (!cur) {
+        if (inShift(t)) unattributedMessages += Math.max(1, Number(a.msg_count) || 1);
+        continue;
+      }
+      const custKey = `${a.page_id}:${a.sender_id}`;
+      if (!firstByCustomer.has(custKey)) {
+        firstByCustomer.set(custKey, { mod: cur.name, time: t });
+      }
+      if (inShift(t)) {
+        cur.total_messages += Math.max(1, Number(a.msg_count) || 0);
+        cur.confirmed_orders += Number(a.order_count) || 0;
+      }
+    }
+
+    // 2. পুরোনো replies রেকর্ড থাকলে সেগুলোও মেলানো
+    const dayReplies = db
+      .prepare(
+        `SELECT r.page_id, r.sender_id, r.moderator, r.reply_time, r.created_at, r.is_order_confirm, r.reply_text
+         FROM replies r
+         WHERE ${DAY_R} = ?${pcR.sql}
+         ORDER BY COALESCE(r.reply_time, 0) ASC, r.id ASC`
+      )
+      .all(targetDate, ...pcR.params);
+
+    const seenAssignedKeys = new Set(dayAssignments.map((x) => `${x.page_id}:${x.sender_id}`));
     for (const r of dayReplies) {
+      const custKey = `${r.page_id}:${r.sender_id}`;
+      if (seenAssignedKeys.has(custKey)) continue;
       const t = Number(r.reply_time) > 0 ? Number(r.reply_time) : Date.parse(String(r.created_at).replace(" ", "T") + "Z") || 0;
       const cur = ensureMod(r.moderator);
-
       if (!cur) {
         if (inShift(t)) unattributedMessages += 1;
         continue;
       }
-
-      const custKey = `${r.page_id}:${r.sender_id}`;
       if (!firstByCustomer.has(custKey)) {
         firstByCustomer.set(custKey, { mod: cur.name, time: t });
       }
-
       if (inShift(t)) {
         cur.total_messages += 1;
         if (r.is_order_confirm || isOrderConfirmText(r.reply_text)) cur.confirmed_orders += 1;
