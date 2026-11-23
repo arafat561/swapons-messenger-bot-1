@@ -343,6 +343,17 @@ db.exec(`
     PRIMARY KEY (page_id, sender_id, day)
   );
 
+  CREATE TABLE IF NOT EXISTS moderator_msg_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    page_id TEXT NOT NULL,
+    sender_id TEXT NOT NULL,
+    day TEXT NOT NULL,
+    moderator TEXT NOT NULL,
+    sent_at INTEGER NOT NULL,
+    is_welcome INTEGER DEFAULT 0,
+    is_order_confirm INTEGER DEFAULT 0
+  );
+
   CREATE TABLE IF NOT EXISTS customers (
     page_id TEXT NOT NULL,
     sender_id TEXT NOT NULL,
@@ -393,6 +404,7 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_replies_created_at ON replies(created_at);
   CREATE INDEX IF NOT EXISTS idx_replies_time ON replies(reply_time);
   CREATE INDEX IF NOT EXISTS idx_assign_day ON moderator_assignments(day);
+  CREATE INDEX IF NOT EXISTS idx_mod_msg_day ON moderator_msg_log(day, page_id, sender_id);
   CREATE INDEX IF NOT EXISTS idx_saved_replies_updated ON saved_replies(updated_at);
   CREATE INDEX IF NOT EXISTS idx_echo_log_ms ON echo_log(created_ms);
 `);
@@ -453,6 +465,11 @@ function cleanupOldData() {
       WHERE COALESCE(assigned_at, 0) < ?
     `).run(cutoffMs);
 
+    db.prepare(`
+      DELETE FROM moderator_msg_log
+      WHERE COALESCE(sent_at, 0) < ?
+    `).run(cutoffMs);
+
     db.prepare(`DELETE FROM echo_log WHERE created_ms < ?`).run(Date.now() - 7 * 24 * 3600 * 1000);
   } catch (e) {
     console.error("cleanupOldData error:", e.message);
@@ -499,10 +516,28 @@ const stmts = {
     INSERT INTO moderator_assignments (page_id, sender_id, day, moderator, assigned_at, bucket, msg_count, order_count)
     VALUES (?, ?, ?, ?, ?, 'pending', 1, ?)
     ON CONFLICT(page_id, sender_id, day) DO UPDATE SET
-      moderator = COALESCE(NULLIF(moderator_assignments.moderator, ''), excluded.moderator),
+      moderator = CASE
+        WHEN (moderator_assignments.moderator IS NULL OR moderator_assignments.moderator = '' OR moderator_assignments.moderator = 'Unassigned')
+             AND excluded.moderator != 'Unassigned'
+        THEN excluded.moderator
+        ELSE moderator_assignments.moderator
+      END,
       assigned_at = COALESCE(moderator_assignments.assigned_at, excluded.assigned_at),
       msg_count = COALESCE(moderator_assignments.msg_count, 0) + 1,
       order_count = COALESCE(moderator_assignments.order_count, 0) + excluded.order_count
+  `),
+  setWelcomeModerator: db.prepare(`
+    INSERT INTO moderator_assignments (page_id, sender_id, day, moderator, assigned_at, bucket, msg_count, order_count)
+    VALUES (?, ?, ?, ?, ?, 'pending', 1, ?)
+    ON CONFLICT(page_id, sender_id, day) DO UPDATE SET
+      moderator = excluded.moderator,
+      assigned_at = excluded.assigned_at,
+      msg_count = COALESCE(moderator_assignments.msg_count, 0) + 1,
+      order_count = COALESCE(moderator_assignments.order_count, 0) + excluded.order_count
+  `),
+  insertModMsgLog: db.prepare(`
+    INSERT INTO moderator_msg_log (page_id, sender_id, day, moderator, sent_at, is_welcome, is_order_confirm)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `),
   markReplied: db.prepare(`
     UPDATE messages
@@ -936,13 +971,14 @@ function extractAdReferral(event) {
 }
 
 async function resolveEchoModerator(pageId, customerId, event) {
-  const info = { mod: null, via: "", fromId: "", fromName: "" };
+  const info = { mod: null, via: "", fromId: "", fromName: "", isWelcome: false };
   const replyText = String((event.message && event.message.text) || "").trim();
 
   const welcomeName = detectModeratorFromWelcomeText(replyText);
   if (welcomeName) {
     info.mod = normalizeModeratorName(welcomeName);
     info.via = "welcome_text";
+    info.isWelcome = true;
     return info;
   }
 
@@ -1067,21 +1103,50 @@ async function handleMessagingEvent(pageId, event) {
 
     // রিপ্লাই Meta-তেই থাকছে; ডাটাবেসের `replies` বা `echo_log` টেবিলে নতুন রিপ্লাই রেকর্ড সেভ করা হচ্ছে না
     let mod = null;
+    let isWelcome = false;
     try {
       const resolved = await resolveEchoModerator(pageId, customerId, event);
       mod = resolved.mod;
+      isWelcome = Boolean(resolved.isWelcome);
     } catch (e) {}
 
-    if (!mod) {
-      try {
-        const prev = db
-          .prepare(`SELECT moderator FROM moderator_assignments WHERE page_id = ? AND sender_id = ? AND day = ?`)
-          .get(pageId, customerId, replyDay);
-        if (prev && prev.moderator) mod = normalizeModeratorName(prev.moderator);
-      } catch (e) {}
+    const existingAssign = db
+      .prepare(`SELECT moderator FROM moderator_assignments WHERE page_id = ? AND sender_id = ? AND day = ?`)
+      .get(pageId, customerId, replyDay);
+
+    const hasAssignedWelcomeMod =
+      existingAssign &&
+      existingAssign.moderator &&
+      existingAssign.moderator !== "Unassigned";
+
+    if (!mod && hasAssignedWelcomeMod) {
+      mod = normalizeModeratorName(existingAssign.moderator);
     }
 
-    stmts.assignModerator.run(pageId, customerId, replyDay, mod || "Unassigned", replyTime, isConfirm);
+    const effectiveMod = mod || "Unassigned";
+
+    // যে মডারেটর আগে স্বাগতম ("আমি <name>") মেসেজ দেবে, ওই কাস্টমার তার নামেই অ্যাসাইন হবে
+    if (isWelcome && mod) {
+      if (!hasAssignedWelcomeMod) {
+        stmts.setWelcomeModerator.run(pageId, customerId, replyDay, mod, replyTime, isConfirm);
+      } else {
+        stmts.assignModerator.run(pageId, customerId, replyDay, mod, replyTime, isConfirm);
+      }
+    } else {
+      stmts.assignModerator.run(pageId, customerId, replyDay, effectiveMod, replyTime, isConfirm);
+    }
+
+    // যে মডারেটর মেসেজ পাঠাচ্ছে তার নামে মেসেজ কাউন্ট লগ রাখা হচ্ছে (কিন্তু কাস্টমার মালিকানা প্রথম স্বাগতম মডারেটরেরই থাকছে)
+    stmts.insertModMsgLog.run(
+      pageId,
+      customerId,
+      replyDay,
+      effectiveMod,
+      replyTime,
+      isWelcome ? 1 : 0,
+      isConfirm
+    );
+
     stmts.markReplied.run(pageId, customerId, replyTime);
     return;
   }
@@ -1701,6 +1766,7 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
     const pcM = pageClause(scope.ids, "m.page_id");
     const pcR = pageClause(scope.ids, "r.page_id");
     const pcA = pageClause(scope.ids, "a.page_id");
+    const pcL = pageClause(scope.ids, "l.page_id");
 
     const CUST = "page_id || ':' || sender_id";
     const CUST_M = "m.page_id || ':' || m.sender_id";
@@ -1764,7 +1830,8 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       return mergedByMod.get(modName);
     };
 
-    const firstByCustomer = new Map();
+    // ১. যে মডারেটর আগে স্বাগতম ("আমি <name>") মেসেজ দেবে, ওই কাস্টমার তার নামেই অ্যাসাইন হবে (১ জন = ১ customer)
+    const customerOwnerMap = new Map();
     let unattributedMessages = 0;
     const confirmedCustSet = new Set();
 
@@ -1785,18 +1852,56 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       if (ordCnt > 0 && inShift(t)) {
         confirmedCustSet.add(`${a.page_id}:${a.sender_id}`);
       }
+      const modName = normalizeModeratorName(a.moderator);
+      const custKey = `${a.page_id}:${a.sender_id}`;
+      if (modName && modName !== "Unassigned" && !customerOwnerMap.has(custKey)) {
+        customerOwnerMap.set(custKey, { mod: modName, time: t });
+      }
+    }
+
+    // ২. প্রতিটি মেসেজ যে মডারেটর দিয়েছে তার নামে মেসেজ কাউন্ট এবং কনফার্মড অর্ডার যোগ করা
+    const dayMsgLogs = db
+      .prepare(
+        `SELECT l.page_id, l.sender_id, l.moderator, l.sent_at, l.is_order_confirm
+         FROM moderator_msg_log l
+         WHERE l.day = ?${pcL.sql}
+         ORDER BY COALESCE(l.sent_at, 0) ASC, l.id ASC`
+      )
+      .all(targetDate, ...pcL.params);
+
+    const loggedCustDays = new Set();
+    for (const l of dayMsgLogs) {
+      const t = Number(l.sent_at) || Date.now();
+      const custKey = `${l.page_id}:${l.sender_id}`;
+      loggedCustDays.add(custKey);
+
+      const cur = ensureMod(l.moderator);
+      if (!cur) {
+        if (inShift(t)) unattributedMessages += 1;
+        continue;
+      }
+      if (inShift(t)) {
+        cur.total_messages += 1;
+        if (Number(l.is_order_confirm) > 0) {
+          cur.confirmed_orders += 1;
+          confirmedCustSet.add(custKey);
+        }
+      }
+    }
+
+    // পুরোনো/ব্যাকফিল assignment বা replies থাকলে সেগুলোর msg_count/order_count যুক্ত করা
+    for (const a of dayAssignments) {
+      const custKey = `${a.page_id}:${a.sender_id}`;
+      if (loggedCustDays.has(custKey)) continue;
+      const t = Number(a.assigned_at) || Date.now();
       const cur = ensureMod(a.moderator);
       if (!cur) {
         if (inShift(t)) unattributedMessages += Math.max(1, Number(a.msg_count) || 1);
         continue;
       }
-      const custKey = `${a.page_id}:${a.sender_id}`;
-      if (!firstByCustomer.has(custKey)) {
-        firstByCustomer.set(custKey, { mod: cur.name, time: t });
-      }
       if (inShift(t)) {
-        cur.total_messages += Math.max(1, Number(a.msg_count) || 0);
-        cur.confirmed_orders += ordCnt;
+        cur.total_messages += Math.max(1, Number(a.msg_count) || 1);
+        cur.confirmed_orders += Number(a.order_count) || 0;
       }
     }
 
@@ -1809,10 +1914,9 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
       )
       .all(targetDate, ...pcR.params);
 
-    const seenAssignedKeys = new Set(dayAssignments.map((x) => `${x.page_id}:${x.sender_id}`));
     for (const r of dayReplies) {
       const custKey = `${r.page_id}:${r.sender_id}`;
-      if (seenAssignedKeys.has(custKey)) continue;
+      if (loggedCustDays.has(custKey)) continue;
       const t = Number(r.reply_time) > 0 ? Number(r.reply_time) : Date.parse(String(r.created_at).replace(" ", "T") + "Z") || 0;
       if ((r.is_order_confirm || isOrderConfirmText(r.reply_text)) && inShift(t)) {
         confirmedCustSet.add(custKey);
@@ -1822,8 +1926,8 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
         if (inShift(t)) unattributedMessages += 1;
         continue;
       }
-      if (!firstByCustomer.has(custKey)) {
-        firstByCustomer.set(custKey, { mod: cur.name, time: t });
+      if (!customerOwnerMap.has(custKey)) {
+        customerOwnerMap.set(custKey, { mod: cur.name, time: t });
       }
       if (inShift(t)) {
         cur.total_messages += 1;
@@ -1833,6 +1937,15 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
 
     const orderConfirms = confirmedCustSet.size;
 
+    // ৩. কাস্টমার মালিকানা (যিনি আগে স্বাগতম মেসেজ দিয়েছেন) অনুযায়ী Customer কাউন্ট (১ জন = ১)
+    for (const info of customerOwnerMap.values()) {
+      if (inShift(info.time)) {
+        const cur = ensureMod(info.mod);
+        if (cur) cur.total_conversations += 1;
+      }
+    }
+
+    // ৪. কাস্টমার ১১ ডিজিটের ফোন নম্বর দিলে, যে মডারেটর আগে স্বাগতম মেসেজ দিয়েছে তার নামে নম্বর যুক্ত হবে
     const dayPhoneRows = db
       .prepare(`SELECT page_id, sender_id, message_text, phone_number FROM messages WHERE ${DAY} = ?${pc.sql}`)
       .all(targetDate, ...pc.params);
@@ -1843,21 +1956,14 @@ app.get("/api/daily-report", requireAuth, async (req, res) => {
     }
     const phoneCount = uniquePhones.size;
 
-    for (const info of firstByCustomer.values()) {
-      if (inShift(info.time)) {
-        const cur = ensureMod(info.mod);
-        if (cur) cur.total_conversations += 1;
-      }
-    }
-
     const phoneSetByMod = new Map();
     for (const p of dayPhoneRows) {
       const ph = p.phone_number || extractPhoneNumber(p.message_text);
       if (!ph) continue;
-      const first = firstByCustomer.get(`${p.page_id}:${p.sender_id}`);
-      if (!first || !inShift(first.time)) continue;
-      if (!phoneSetByMod.has(first.mod)) phoneSetByMod.set(first.mod, new Set());
-      phoneSetByMod.get(first.mod).add(ph);
+      const owner = customerOwnerMap.get(`${p.page_id}:${p.sender_id}`);
+      if (!owner || !inShift(owner.time)) continue;
+      if (!phoneSetByMod.has(owner.mod)) phoneSetByMod.set(owner.mod, new Set());
+      phoneSetByMod.get(owner.mod).add(ph);
     }
     for (const [modName, set] of phoneSetByMod.entries()) {
       const cur = ensureMod(modName);
