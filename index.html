@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Live Analytics & Operations Dashboard</title>
-  <link rel="preconnect" href="[https://fonts.googleapis.com](https://fonts.googleapis.com)">
-  <link rel="preconnect" href="[https://fonts.gstatic.com](https://fonts.gstatic.com)" crossorigin>
-  <link href="[https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;600;700;800&family=Hind+Siliguri:wght@400;500;600;700&display=swap](https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;600;700;800&family=Hind+Siliguri:wght@400;500;600;700&display=swap)" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;600;700;800&family=Hind+Siliguri:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script>
     (function () {
       try {
@@ -437,7 +437,7 @@
         <div>
           <h3 class="display" id="snrTitle">Seen, no reply (&gt;30 min)</h3>
           <div class="detail" id="snrSub">
-            <strong>চেক করার নিয়ম:</strong> Meta Business Suite-এ ID দিয়ে সার্চ কাজ করে না। তাই আগে <strong>Copy Name</strong> চাপুন, <strong>Meta Inbox ↗</strong> খুলে Search বক্সে নাম পেস্ট করুন (সঠিক পেজ সিলেক্ট রাখুন)। নাম না পেলে <strong>Copy Msg</strong> চেপে শেষ মেসেজ বা ওয়েটিং সময় দেখে ইনবক্সে খুঁজুন। আপনি Meta-তে রিপ্লাই দিলে তা Meta-তেই থাকবে এবং নতুন রিপ্লাই ডাটাবেসে সেভ হবে না।
+            <strong>চেক করার নিয়ম:</strong> Meta Business Suite-এ ID দিয়ে সার্চ কাজ করে না। তাই আগে <strong>Copy Name</strong> চাপুন, <strong>Meta Inbox ↗</strong> খুলে Search বক্সে নাম পেস্ট করুন (সঠিক পেজ সিলেক্ট রাখুন)। নাম না পেলে <strong>Copy Msg</strong> চেপে শেষ মেসেজ বা ওয়েটিং সময় দেখে ইনবক্সে খুঁজুন। আপনি Meta-তে রিপ্লাই দিলে তা Meta-তেই থাকবে এবং নতুন রিপ্লাই ডাটাবেসে সেভ হবে না।
           </div>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
@@ -739,7 +739,7 @@
         if (!text) return;
         if (navigator.clipboard && navigator.clipboard.writeText) {
           navigator.clipboard.writeText(text).then(function () {
-            toast((label || "Text") + " কপি হয়েছে: " + text);
+            toast((label || "Text") + " কপি হয়েছে: " + text);
           }).catch(function () {});
         } else {
           var ta = document.createElement("textarea");
@@ -748,7 +748,7 @@
           ta.select();
           document.execCommand("copy");
           ta.remove();
-          toast((label || "Text") + " কপি হয়েছে: " + text);
+          toast((label || "Text") + " কপি হয়েছে: " + text);
         }
       }
 
@@ -848,7 +848,7 @@
         $("snrCountBadge").textContent = filtered.length + " customers";
         var tbody = $("snrTableBody");
         if (!filtered.length) {
-          tbody.innerHTML = '<tr><td colspan="6" class="empty">কোনো Seen, no reply কাস্টমার পাওয়া যায়নি।</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="6" class="empty">কোনো Seen, no reply কাস্টমার পাওয়া যায়নি।</td></tr>';
           return;
         }
 
@@ -886,7 +886,7 @@
             renderSnrTable("");
           })
           .catch(function () {
-            $("snrTableBody").innerHTML = '<tr><td colspan="6" class="empty">তালিকা লোড করা যায়নি।</td></tr>';
+            $("snrTableBody").innerHTML = '<tr><td colspan="6" class="empty">তালিকা লোড করা যায়নি।</td></tr>';
           });
       }
 
